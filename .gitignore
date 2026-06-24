@@ -12,4 +12,7 @@ build/
 .env.*
 !.env.example
 .loro/config.local.toml
+.loro/audit.jsonl
+.loro/memory/
+artifacts/
 *.log

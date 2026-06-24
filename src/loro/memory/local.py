@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 from loro.config import LocalMemoryConfig
@@ -44,6 +45,11 @@ class LocalMemoryStore:
                     memory_id=data["memory_id"],
                     content=data["content"],
                     scope=data.get("scope", "local"),
+                    created_at=datetime.fromisoformat(data["created_at"]),
                 )
             )
         return records
+
+    def search(self, query: str) -> list[MemoryRecord]:
+        normalized = query.casefold()
+        return [record for record in self.list() if normalized in record.content.casefold()]

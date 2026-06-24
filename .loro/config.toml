@@ -11,7 +11,7 @@ web = "deny"
 
 [memory.local]
 enabled = true
-path = "~/.local/share/loro/memory"
+path = ".loro/memory"
 auto_propose = true
 
 [memory.shared]
@@ -24,3 +24,8 @@ read_policy = "semantic_retrieval_with_citations"
 enabled = false
 cli_path = "polaris"
 require_role_inspection = true
+
+[audit]
+enabled = true
+path = ".loro/audit.jsonl"
+include_prompt_preview = true

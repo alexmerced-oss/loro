@@ -14,7 +14,9 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Local and shared memory interfaces.
 - Postgres and Iceberg memory backend placeholders.
 - Polaris client and artifact-generation module placeholders.
-- Basic tests for CLI and configuration behavior.
+- Real MVP artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
+- JSONL audit logging for runtime tasks, memory writes, and artifact creation.
+- Basic tests for CLI, configuration, memory, audit, and artifact behavior.
 
 ## Development
 
@@ -32,7 +34,13 @@ pytest
 loro plan "Create a release readiness checklist"
 loro remember --local "Status briefs should include risks, blockers, next steps, and owner."
 loro docs create "Draft a project kickoff document"
+loro slides create "Quarterly platform update"
+loro sheets create "Launch readiness tracker"
+loro brief meeting "Prepare for roadmap sync"
+loro memory search "status briefs"
 ```
+
+Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location.
 
 ## License
 

@@ -51,11 +51,18 @@ class PolarisConfig(BaseModel):
     require_role_inspection: bool = True
 
 
+class AuditConfig(BaseModel):
+    enabled: bool = True
+    path: str = "~/.local/state/loro/audit.jsonl"
+    include_prompt_preview: bool = True
+
+
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
 
 
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

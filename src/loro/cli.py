@@ -1,9 +1,16 @@
+from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
 from loro import __version__
+from loro.artifacts.briefs import create_brief_artifact
+from loro.artifacts.common import ArtifactResult
+from loro.artifacts.documents import create_document_artifact
+from loro.artifacts.presentations import create_presentation_artifact
+from loro.artifacts.spreadsheets import create_spreadsheet_artifact
+from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
 from loro.memory.local import LocalMemoryStore
 from loro.runtime import AgentRuntime
@@ -29,10 +36,26 @@ app.add_typer(brief_app, name="brief")
 app.add_typer(data_app, name="data")
 
 console = Console()
+DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
 def _runtime() -> AgentRuntime:
     return AgentRuntime(load_config())
+
+
+def _audit() -> AuditLogger:
+    return AuditLogger(load_config().audit)
+
+
+def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
+    _audit().write(
+        "artifact.created",
+        kind=result.kind,
+        title=result.title,
+        paths=[str(path) for path in result.paths],
+        prompt_preview=prompt_preview(prompt),
+    )
+    console.print(result.summary)
 
 
 @app.callback()
@@ -74,6 +97,7 @@ def doctor() -> None:
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
+    console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
 
 
 @memory_app.command("list")
@@ -85,6 +109,21 @@ def memory_list() -> None:
         console.print("No local memories yet.")
         return
     for memory in memories:
+        console.print(
+            f"- [bold]{memory.memory_id}[/bold] "
+            f"({memory.created_at.date().isoformat()}): {memory.content}"
+        )
+
+
+@memory_app.command("search")
+def memory_search(query: Annotated[str, typer.Argument(help="Search query.")]) -> None:
+    """Search local memories."""
+    store = LocalMemoryStore.from_config(load_config().memory.local)
+    memories = store.search(query)
+    if not memories:
+        console.print("No matching local memories.")
+        return
+    for memory in memories:
         console.print(f"- [bold]{memory.memory_id}[/bold]: {memory.content}")
 
 
@@ -93,6 +132,12 @@ def remember_local(content: Annotated[str, typer.Argument(help="Memory content."
     """Explicitly write a local memory."""
     store = LocalMemoryStore.from_config(load_config().memory.local)
     memory = store.remember(content)
+    _audit().write(
+        "memory.local_written",
+        memory_id=memory.memory_id,
+        scope=memory.scope,
+        content_preview=prompt_preview(content),
+    )
     console.print(f"Saved local memory: {memory.memory_id}")
 
 
@@ -106,6 +151,11 @@ def remember(
 ) -> None:
     """Explicitly write a local or shared memory."""
     if shared:
+        _audit().write(
+            "memory.shared_write_blocked",
+            reason="shared memory backend not implemented",
+            prompt_preview=prompt_preview(content),
+        )
         console.print(
             "[yellow]Shared memory backends are scaffolded but not implemented yet. "
             "The explicit write gate is reserved here.[/yellow]"
@@ -114,31 +164,101 @@ def remember(
     if local or not shared:
         store = LocalMemoryStore.from_config(load_config().memory.local)
         memory = store.remember(content)
+        _audit().write(
+            "memory.local_written",
+            memory_id=memory.memory_id,
+            scope=memory.scope,
+            content_preview=prompt_preview(content),
+        )
         console.print(f"Saved local memory: {memory.memory_id}")
 
 
 @docs_app.command("create")
-def docs_create(prompt: Annotated[str, typer.Argument(help="Document prompt.")]) -> None:
-    result = _runtime().run(prompt, mode="document")
-    console.print(result.summary)
+def docs_create(
+    prompt: Annotated[str, typer.Argument(help="Document prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_document_artifact(prompt, output_dir)
+    _print_artifact_result(result, prompt)
 
 
 @slides_app.command("create")
-def slides_create(prompt: Annotated[str, typer.Argument(help="Presentation prompt.")]) -> None:
-    result = _runtime().run(prompt, mode="presentation")
-    console.print(result.summary)
+def slides_create(
+    prompt: Annotated[str, typer.Argument(help="Presentation prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_presentation_artifact(prompt, output_dir)
+    _print_artifact_result(result, prompt)
 
 
 @sheets_app.command("analyze")
-def sheets_analyze(prompt: Annotated[str, typer.Argument(help="Spreadsheet prompt.")]) -> None:
-    result = _runtime().run(prompt, mode="spreadsheet")
-    console.print(result.summary)
+def sheets_analyze(
+    prompt: Annotated[str, typer.Argument(help="Spreadsheet prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_spreadsheet_artifact(prompt, output_dir)
+    _print_artifact_result(result, prompt)
+
+
+@sheets_app.command("create")
+def sheets_create(
+    prompt: Annotated[str, typer.Argument(help="Spreadsheet prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_spreadsheet_artifact(prompt, output_dir)
+    _print_artifact_result(result, prompt)
 
 
 @brief_app.command("meeting")
-def brief_meeting(prompt: Annotated[str, typer.Argument(help="Meeting brief prompt.")]) -> None:
-    result = _runtime().run(prompt, mode="briefing")
-    console.print(result.summary)
+def brief_meeting(
+    prompt: Annotated[str, typer.Argument(help="Meeting brief prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_brief_artifact(prompt, output_dir, brief_type="meeting")
+    _print_artifact_result(result, prompt)
+
+
+@brief_app.command("project")
+def brief_project(
+    prompt: Annotated[str, typer.Argument(help="Project brief prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_brief_artifact(prompt, output_dir, brief_type="project")
+    _print_artifact_result(result, prompt)
+
+
+@brief_app.command("incident")
+def brief_incident(
+    prompt: Annotated[str, typer.Argument(help="Incident brief prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_brief_artifact(prompt, output_dir, brief_type="incident")
+    _print_artifact_result(result, prompt)
+
+
+@brief_app.command("executive")
+def brief_executive(
+    prompt: Annotated[str, typer.Argument(help="Executive brief prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+) -> None:
+    result = create_brief_artifact(prompt, output_dir, brief_type="executive")
+    _print_artifact_result(result, prompt)
 
 
 @data_app.command("catalogs")
