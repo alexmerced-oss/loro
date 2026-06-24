@@ -3,6 +3,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from loro.artifacts.briefs import create_brief_artifact
+from loro.artifacts.common import write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
@@ -34,3 +35,10 @@ def test_brief_artifact(tmp_path: Path) -> None:
     result = create_brief_artifact("Prepare for roadmap sync", tmp_path, brief_type="meeting")
     assert result.paths[0].exists()
     assert "## Next Steps" in result.paths[0].read_text(encoding="utf-8")
+
+
+def test_artifact_provenance(tmp_path: Path) -> None:
+    result = create_brief_artifact("Prepare for roadmap sync", tmp_path, brief_type="meeting")
+    provenance = write_provenance(result=result, prompt_preview="Prepare for roadmap sync")
+    assert provenance.exists()
+    assert "loro.mvp.artifacts" in provenance.read_text(encoding="utf-8")

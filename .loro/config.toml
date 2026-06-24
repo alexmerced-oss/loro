@@ -29,3 +29,6 @@ require_role_inspection = true
 enabled = true
 path = ".loro/audit.jsonl"
 include_prompt_preview = true
+
+[sessions]
+path = ".loro/sessions"

@@ -14,5 +14,6 @@ build/
 .loro/config.local.toml
 .loro/audit.jsonl
 .loro/memory/
-artifacts/
+.loro/sessions/
+/artifacts/
 *.log

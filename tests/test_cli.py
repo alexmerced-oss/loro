@@ -31,3 +31,17 @@ def test_brief_meeting(tmp_path) -> None:
     )
     assert result.exit_code == 0
     assert "Created meeting brief artifact" in result.stdout
+
+
+def test_sessions_list_after_plan(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[sessions]\npath = \"{tmp_path / 'sessions'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    runner = CliRunner()
+    plan_result = runner.invoke(app, ["plan", "Draft a rollout plan"])
+    assert plan_result.exit_code == 0
+    list_result = runner.invoke(app, ["sessions", "list"])
+    assert list_result.exit_code == 0
+    assert "Draft a rollout plan" in list_result.stdout

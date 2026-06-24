@@ -6,7 +6,7 @@ from rich.console import Console
 
 from loro import __version__
 from loro.artifacts.briefs import create_brief_artifact
-from loro.artifacts.common import ArtifactResult
+from loro.artifacts.common import ArtifactResult, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
@@ -14,6 +14,7 @@ from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
 from loro.memory.local import LocalMemoryStore
 from loro.runtime import AgentRuntime
+from loro.sessions import SessionStore
 
 app = typer.Typer(
     name="loro",
@@ -27,6 +28,7 @@ slides_app = typer.Typer(help="Create and transform presentations.")
 sheets_app = typer.Typer(help="Create and transform spreadsheets.")
 brief_app = typer.Typer(help="Create enterprise briefs.")
 data_app = typer.Typer(help="Discover governed enterprise data.")
+sessions_app = typer.Typer(help="Inspect saved Loro sessions.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -34,6 +36,7 @@ app.add_typer(slides_app, name="slides")
 app.add_typer(sheets_app, name="sheets")
 app.add_typer(brief_app, name="brief")
 app.add_typer(data_app, name="data")
+app.add_typer(sessions_app, name="sessions")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -48,14 +51,17 @@ def _audit() -> AuditLogger:
 
 
 def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
+    provenance_path = write_provenance(result=result, prompt_preview=prompt_preview(prompt))
     _audit().write(
         "artifact.created",
         kind=result.kind,
         title=result.title,
         paths=[str(path) for path in result.paths],
+        provenance_path=str(provenance_path),
         prompt_preview=prompt_preview(prompt),
     )
     console.print(result.summary)
+    console.print(f"Provenance: {provenance_path}")
 
 
 @app.callback()
@@ -98,6 +104,7 @@ def doctor() -> None:
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
     console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
+    console.print(f"Session path: {config.sessions.path}")
 
 
 @memory_app.command("list")
@@ -264,3 +271,29 @@ def brief_executive(
 @data_app.command("catalogs")
 def data_catalogs() -> None:
     console.print("Polaris catalog discovery is scaffolded. Enable [polaris] to connect.")
+
+
+@sessions_app.command("list")
+def sessions_list() -> None:
+    """List saved sessions."""
+    store = SessionStore(load_config().sessions)
+    records = store.list()
+    if not records:
+        console.print("No saved sessions yet.")
+        return
+    for record in records:
+        console.print(
+            f"- [bold]{record['session_id']}[/bold] "
+            f"({record['mode']}, {record['created_at']}): {record['prompt']}"
+        )
+
+
+@sessions_app.command("show")
+def sessions_show(session_id: Annotated[str, typer.Argument(help="Session ID.")]) -> None:
+    """Show a saved session."""
+    store = SessionStore(load_config().sessions)
+    try:
+        record = store.get(session_id)
+    except FileNotFoundError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=record)

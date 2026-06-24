@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -57,12 +58,17 @@ class AuditConfig(BaseModel):
     include_prompt_preview: bool = True
 
 
+class SessionConfig(BaseModel):
+    path: str = ".loro/sessions"
+
+
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    sessions: SessionConfig = Field(default_factory=SessionConfig)
 
 
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -96,4 +102,10 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
     data: dict[str, Any] = {}
     for path in config_paths(project_root):
         data = _merge(data, _read_toml(path))
+    env_config = os.environ.get("LORO_CONFIG")
+    if env_config:
+        data = _merge(data, _read_toml(Path(env_config).expanduser()))
+    env_content = os.environ.get("LORO_CONFIG_CONTENT")
+    if env_content:
+        data = _merge(data, tomllib.loads(env_content))
     return LoroConfig.model_validate(data)
