@@ -24,11 +24,36 @@ class PolarisClient:
         self.config = config
 
     def run_readonly(self, args: list[str]) -> PolarisResult:
+        self._validate_readonly(args)
         command = [self.config.cli_path, *args]
-        completed: CompletedProcess[str] = run(command, capture_output=True, text=True, check=False)
+        completed: CompletedProcess[str] = run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         return PolarisResult(
             command=command,
             stdout=completed.stdout,
             stderr=completed.stderr,
             returncode=completed.returncode,
         )
+
+    def _validate_readonly(self, args: list[str]) -> None:
+        if len(args) < 2:
+            raise ValueError("Polaris read-only operations require a resource and action.")
+        resource, action = args[0], args[1]
+        allowed_resources = {
+            "catalogs",
+            "namespaces",
+            "tables",
+            "views",
+            "principal-roles",
+            "catalog-roles",
+            "privileges",
+            "policies",
+            "applicable-policies",
+        }
+        allowed_actions = {"list", "get", "show", "describe"}
+        if resource not in allowed_resources or action not in allowed_actions:
+            raise PermissionError(f"Polaris operation is not read-only: {' '.join(args)}")

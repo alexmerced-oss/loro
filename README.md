@@ -18,6 +18,8 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
 - JSONL audit logging for runtime tasks, memory writes, and artifact creation.
 - Durable session records with `loro sessions list` and `loro sessions show`.
+- Permission-gated file and shell tools.
+- A read-only Polaris CLI wrapper for governed catalog discovery scaffolding.
 - Basic tests for CLI, configuration, memory, audit, and artifact behavior.
 
 ## Development
@@ -41,11 +43,16 @@ loro sheets create "Launch readiness tracker"
 loro brief meeting "Prepare for roadmap sync"
 loro memory search "status briefs"
 loro sessions list
+loro file search "Polaris" --root .
+loro file read PRD.md --limit 1000
+loro shell run --yes -- python -c "print('hello from Loro')"
 ```
 
 Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location. Each generated artifact also gets a `.provenance.json` sidecar.
 
 Configuration can be layered from `.loro/config.toml`, `LORO_CONFIG`, and `LORO_CONFIG_CONTENT`.
+
+For shell commands, use `--` before the command when passing flags to the child process.
 
 ## License
 

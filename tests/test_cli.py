@@ -45,3 +45,26 @@ def test_sessions_list_after_plan(tmp_path, monkeypatch) -> None:
     list_result = runner.invoke(app, ["sessions", "list"])
     assert list_result.exit_code == 0
     assert "Draft a rollout plan" in list_result.stdout
+
+
+def test_file_read_command(tmp_path) -> None:
+    note = tmp_path / "note.txt"
+    note.write_text("hello loro\n", encoding="utf-8")
+    result = CliRunner().invoke(app, ["file", "read", str(note)])
+    assert result.exit_code == 0
+    assert "hello loro" in result.stdout
+
+
+def test_shell_run_requires_yes() -> None:
+    result = CliRunner().invoke(app, ["shell", "run", "--", "python", "-c", "print('loro')"])
+    assert result.exit_code != 0
+    assert "requires approval" in str(result.exception)
+
+
+def test_shell_run_with_yes() -> None:
+    result = CliRunner().invoke(
+        app,
+        ["shell", "run", "--yes", "--", "python", "-c", "print('loro')"],
+    )
+    assert result.exit_code == 0
+    assert "loro" in result.stdout
