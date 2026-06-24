@@ -9,6 +9,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Memory](memory.md)
 - [Artifacts](artifacts.md)
 - [Polaris And Iceberg](polaris-iceberg.md)
+- [AI Providers](providers.md)
 - [Safety](safety.md)
 - [Development Roadmap](roadmap.md)
 

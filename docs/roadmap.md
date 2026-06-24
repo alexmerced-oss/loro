@@ -11,6 +11,7 @@
 - File and shell tools
 - Read-only Polaris wrapper validation
 - Safety scanning before memory and artifact writes
+- Provider profiles and local configuration wizard
 
 ## Next MVP Work
 

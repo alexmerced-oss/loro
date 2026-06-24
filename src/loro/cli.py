@@ -17,6 +17,12 @@ from loro.memory.local import LocalMemoryStore
 from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
+from loro.providers import (
+    get_provider_profile,
+    model_config_from_profile,
+    provider_names,
+    write_local_model_config,
+)
 from loro.runtime import AgentRuntime
 from loro.safety import SafetyScanner
 from loro.sessions import SessionStore
@@ -39,6 +45,7 @@ sessions_app = typer.Typer(help="Inspect saved Loro sessions.")
 file_app = typer.Typer(help="Read and search local files.")
 shell_app = typer.Typer(help="Run permission-gated shell commands.")
 safety_app = typer.Typer(help="Scan content for obvious secrets.")
+providers_app = typer.Typer(help="Inspect and configure AI providers.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -50,6 +57,7 @@ app.add_typer(sessions_app, name="sessions")
 app.add_typer(file_app, name="file")
 app.add_typer(shell_app, name="shell")
 app.add_typer(safety_app, name="safety")
+app.add_typer(providers_app, name="providers")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -132,11 +140,75 @@ def show_config() -> None:
 
 
 @app.command()
+def configure(
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Provider name. Omit for interactive prompt."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Primary model name.")] = None,
+    small_model: Annotated[
+        str | None,
+        typer.Option("--small-model", help="Small/fast model name."),
+    ] = None,
+    api_key_env: Annotated[
+        str | None,
+        typer.Option("--api-key-env", help="Environment variable containing API key."),
+    ] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Create a local provider configuration."""
+    chosen_provider = provider
+    if chosen_provider is None:
+        console.print("Available providers:")
+        for name in provider_names():
+            profile = get_provider_profile(name)
+            console.print(f"- {name}: {profile.display_name}")
+        chosen_provider = typer.prompt("Provider", default="mock")
+    profile = get_provider_profile(chosen_provider)
+    chosen_model = model or typer.prompt("Primary model", default=profile.default_model)
+    chosen_small = small_model or typer.prompt("Small model", default=profile.small_model)
+    chosen_key_env = api_key_env
+    if chosen_key_env is None and profile.api_key_env:
+        chosen_key_env = typer.prompt("API key env var", default=profile.api_key_env)
+    chosen_base_url = base_url
+    if chosen_base_url is None and profile.base_url:
+        chosen_base_url = typer.prompt("Base URL", default=profile.base_url)
+
+    config = load_config()
+    config.model = model_config_from_profile(
+        profile.name,
+        model=chosen_model,
+        small_model=chosen_small,
+        api_key_env=chosen_key_env,
+        base_url=chosen_base_url,
+    )
+    written = write_local_model_config(output, config)
+    _audit().write(
+        "config.provider_written",
+        provider=config.model.provider,
+        model=config.model.model,
+        path=str(written),
+    )
+    console.print(f"Wrote provider config: {written}")
+
+
+@app.command()
 def doctor() -> None:
     """Validate provider, permission, memory, Polaris, and artifact configuration."""
     config = load_config()
     console.print("[bold green]Loro doctor[/bold green]")
     console.print(f"Model provider: {config.model.provider}")
+    console.print(f"Model: {config.model.model}")
+    if config.model.small_model:
+        console.print(f"Small model: {config.model.small_model}")
+    if config.model.api_key_env:
+        console.print(f"API key env var: {config.model.api_key_env}")
+    if config.model.base_url:
+        console.print(f"Base URL: {config.model.base_url}")
     console.print(f"Default permission: {config.permissions.default}")
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
@@ -554,6 +626,38 @@ def safety_scan(
     for finding in findings:
         console.print(f"- {finding.kind}: {finding.snippet} ({finding.start}-{finding.end})")
     raise typer.Exit(code=1)
+
+
+@providers_app.command("list")
+def providers_list() -> None:
+    """List built-in provider profiles."""
+    for name in provider_names():
+        profile = get_provider_profile(name)
+        console.print(
+            f"- [bold]{name}[/bold]: {profile.display_name} "
+            f"({profile.protocol}, default={profile.default_model})"
+        )
+
+
+@providers_app.command("show")
+def providers_show(provider: Annotated[str, typer.Argument(help="Provider name.")]) -> None:
+    """Show one provider profile."""
+    try:
+        profile = get_provider_profile(provider)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(
+        data={
+            "name": profile.name,
+            "display_name": profile.display_name,
+            "default_model": profile.default_model,
+            "small_model": profile.small_model,
+            "api_key_env": profile.api_key_env,
+            "base_url": profile.base_url,
+            "protocol": profile.protocol,
+            "notes": profile.notes,
+        }
+    )
 
 
 @sessions_app.command("list")

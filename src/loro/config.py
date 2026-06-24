@@ -17,6 +17,11 @@ class ModelConfig(BaseModel):
     provider: str = "mock"
     model: str = "mock-agent"
     small_model: str = "mock-small"
+    api_key_env: str | None = None
+    base_url: str | None = None
+    timeout_seconds: int = 120
+    temperature: float = 0.2
+    max_tokens: int | None = None
 
 
 class PermissionsConfig(BaseModel):

@@ -124,3 +124,43 @@ def test_memory_write_allows_secret_with_flag(tmp_path, monkeypatch) -> None:
     )
     assert result.exit_code == 0
     assert "Saved local memory" in result.stdout
+
+
+def test_providers_list() -> None:
+    result = CliRunner().invoke(app, ["providers", "list"])
+    assert result.exit_code == 0
+    assert "openai" in result.stdout
+    assert "ollama" in result.stdout
+
+
+def test_provider_show() -> None:
+    result = CliRunner().invoke(app, ["providers", "show", "anthropic"])
+    assert result.exit_code == 0
+    assert "ANTHROPIC_API_KEY" in result.stdout
+
+
+def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "configure",
+            "--provider",
+            "ollama",
+            "--model",
+            "llama3.2",
+            "--small-model",
+            "llama3.2",
+            "--base-url",
+            "http://localhost:11434",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert output.exists()
+    assert 'provider = "ollama"' in output.read_text(encoding="utf-8")

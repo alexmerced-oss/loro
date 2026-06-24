@@ -6,8 +6,17 @@
 loro --version
 loro doctor
 loro config
+loro configure
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
+```
+
+## Providers
+
+```bash
+loro providers list
+loro providers show openai
+loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
 
 ## Memory

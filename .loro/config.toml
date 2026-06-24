@@ -2,6 +2,8 @@
 provider = "mock"
 model = "mock-agent"
 small_model = "mock-small"
+timeout_seconds = 120
+temperature = 0.2
 
 [permissions]
 default = "ask"

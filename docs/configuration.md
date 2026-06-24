@@ -16,6 +16,8 @@ Loro uses TOML configuration and merges layers in increasing precedence:
 provider = "mock"
 model = "mock-agent"
 small_model = "mock-small"
+timeout_seconds = 120
+temperature = 0.2
 
 [permissions]
 default = "ask"
@@ -56,3 +58,12 @@ LORO_CONFIG_CONTENT='[permissions]\nshell = "allow"\n' loro doctor
 ```
 
 Future managed enterprise policy should be non-overridable. The current MVP uses deep-merge precedence.
+
+## Provider Wizard
+
+Use the configuration wizard to create `.loro/config.local.toml`:
+
+```bash
+loro configure
+loro configure --provider openai --model gpt-4.1 --small-model gpt-4.1-mini
+```

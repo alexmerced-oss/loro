@@ -42,6 +42,7 @@ class AgentRuntime:
             )
         summary = (
             f"Loro {mode} mode is scaffolded.\n\n"
+            f"Provider: {self.config.model.provider} / {self.config.model.model}\n\n"
             f"Prompt: {prompt}"
             f"{memory_section}\n\n"
             "Next implementation step: connect model adapters, tools, permissions, "

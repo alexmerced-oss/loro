@@ -29,6 +29,7 @@ flowchart LR
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.config`: layered configuration model and environment overrides.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
+- `loro.providers`: AI provider profiles and local configuration writer.
 - `loro.tools`: local file and shell tools, with more tools expected behind typed interfaces.
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
 - `loro.memory`: local memory plus shared-memory schemas and backend adapters.
@@ -74,6 +75,22 @@ Current examples:
 - `loro file read` and `loro file search` are read-only and internally approved for the current CLI command.
 
 Future work should add command/path/network/data-scope matchers and managed enterprise denies.
+
+## AI Providers
+
+Provider profiles are stored in `loro.providers`. Profiles capture:
+
+- Provider name and display name.
+- Default primary model.
+- Default small/fast model.
+- API key environment variable.
+- Base URL.
+- Protocol family.
+- Notes for special providers.
+
+Current profiles cover OpenAI, Anthropic, Gemini, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Azure OpenAI, AWS Bedrock, Ollama, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
+
+`loro configure` writes `.loro/config.local.toml`, keeping user-specific provider choices and endpoint details out of source control. The model runtime still uses deterministic scaffolding; future model adapters should consume this provider metadata.
 
 ## Memory
 

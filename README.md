@@ -21,6 +21,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Permission-gated file and shell tools.
 - Shared memory draft staging and Postgres/Iceberg schema output.
 - Safety scanner for obvious secrets before memory and artifact writes.
+- AI provider profiles and `loro configure` setup wizard.
 - A read-only Polaris CLI wrapper for governed catalog discovery scaffolding.
 - Basic tests for CLI, configuration, memory, audit, and artifact behavior.
 
@@ -52,6 +53,8 @@ loro file search "Polaris" --root .
 loro file read PRD.md --limit 1000
 loro shell run --yes -- python -c "print('hello from Loro')"
 loro safety scan "api_key = 'abc123456789'"
+loro providers list
+loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
 
 Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location. Each generated artifact also gets a `.provenance.json` sidecar.
