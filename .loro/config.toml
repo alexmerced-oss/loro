@@ -1,0 +1,26 @@
+[model]
+provider = "mock"
+model = "mock-agent"
+small_model = "mock-small"
+
+[permissions]
+default = "ask"
+shell = "ask"
+edit = "ask"
+web = "deny"
+
+[memory.local]
+enabled = true
+path = "~/.local/share/loro/memory"
+auto_propose = true
+
+[memory.shared]
+enabled = false
+backend = "postgres"
+write_policy = "explicit_user_dictation_only"
+read_policy = "semantic_retrieval_with_citations"
+
+[polaris]
+enabled = false
+cli_path = "polaris"
+require_role_inspection = true
