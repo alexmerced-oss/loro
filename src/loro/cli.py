@@ -12,7 +12,9 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
+from loro.memory.base import SharedMemoryDraft
 from loro.memory.local import LocalMemoryStore
+from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.runtime import AgentRuntime
@@ -160,6 +162,35 @@ def remember_local(content: Annotated[str, typer.Argument(help="Memory content."
     console.print(f"Saved local memory: {memory.memory_id}")
 
 
+@memory_app.command("drafts")
+def memory_drafts() -> None:
+    """List staged shared memory drafts."""
+    store = SharedMemoryDraftStore(Path(load_config().memory.local.path))
+    drafts = store.list()
+    if not drafts:
+        console.print("No shared memory drafts yet.")
+        return
+    for draft in drafts:
+        console.print(
+            f"- [bold]{draft.draft_id}[/bold] "
+            f"({draft.tenant_id}/{draft.scope_type}/{draft.scope_key}): {draft.summary}"
+        )
+
+
+@memory_app.command("schema")
+def memory_schema(
+    backend: Annotated[
+        str,
+        typer.Option("--backend", help="Shared memory backend: postgres or iceberg."),
+    ] = "postgres",
+) -> None:
+    """Print shared memory backend schema SQL."""
+    try:
+        console.print(shared_memory_schema(backend))  # type: ignore[arg-type]
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
 @app.command("remember")
 def remember(
     content: Annotated[str, typer.Argument(help="Memory content.")],
@@ -167,17 +198,47 @@ def remember(
     shared: Annotated[
         bool, typer.Option("--shared", help="Write shared enterprise memory.")
     ] = False,
+    tenant_id: Annotated[
+        str, typer.Option("--tenant-id", help="Shared memory tenant.")
+    ] = "default",
+    scope_type: Annotated[
+        str, typer.Option("--scope-type", help="Shared memory scope type.")
+    ] = "org",
+    scope_key: Annotated[
+        str, typer.Option("--scope-key", help="Shared memory scope key.")
+    ] = "default",
+    memory_type: Annotated[str, typer.Option("--memory-type", help="Shared memory type.")] = "fact",
+    classification: Annotated[
+        str, typer.Option("--classification", help="Shared memory classification.")
+    ] = "public-internal",
+    created_by: Annotated[
+        str, typer.Option("--created-by", help="Shared memory author.")
+    ] = "local-user",
 ) -> None:
     """Explicitly write a local or shared memory."""
     if shared:
+        draft = SharedMemoryDraft(
+            content=content,
+            summary=prompt_preview(content, limit=120),
+            tenant_id=tenant_id,
+            scope_type=scope_type,
+            scope_key=scope_key,
+            memory_type=memory_type,
+            classification=classification,
+            created_by=created_by,
+        )
+        SharedMemoryDraftStore(Path(load_config().memory.local.path)).stage(draft)
         _audit().write(
-            "memory.shared_write_blocked",
-            reason="shared memory backend not implemented",
+            "memory.shared_draft_staged",
+            draft_id=draft.draft_id,
+            tenant_id=draft.tenant_id,
+            scope_type=draft.scope_type,
+            scope_key=draft.scope_key,
             prompt_preview=prompt_preview(content),
         )
         console.print(
-            "[yellow]Shared memory backends are scaffolded but not implemented yet. "
-            "The explicit write gate is reserved here.[/yellow]"
+            f"Staged shared memory draft: {draft.draft_id}\n"
+            "Live shared backend commits are not enabled yet."
         )
         return
     if local or not shared:

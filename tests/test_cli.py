@@ -68,3 +68,28 @@ def test_shell_run_with_yes() -> None:
     )
     assert result.exit_code == 0
     assert "loro" in result.stdout
+
+
+def test_shared_memory_schema_command() -> None:
+    result = CliRunner().invoke(app, ["memory", "schema", "--backend", "iceberg"])
+    assert result.exit_code == 0
+    assert "USING iceberg" in result.stdout
+
+
+def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    runner = CliRunner()
+    remember_result = runner.invoke(
+        app,
+        ["remember", "--shared", "Use the enterprise launch readiness template"],
+    )
+    assert remember_result.exit_code == 0
+    assert "Staged shared memory draft" in remember_result.stdout
+    drafts_result = runner.invoke(app, ["memory", "drafts"])
+    assert drafts_result.exit_code == 0
+    assert "enterprise" in drafts_result.stdout
+    assert "launch readiness" in drafts_result.stdout

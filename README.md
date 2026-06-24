@@ -19,6 +19,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - JSONL audit logging for runtime tasks, memory writes, and artifact creation.
 - Durable session records with `loro sessions list` and `loro sessions show`.
 - Permission-gated file and shell tools.
+- Shared memory draft staging and Postgres/Iceberg schema output.
 - A read-only Polaris CLI wrapper for governed catalog discovery scaffolding.
 - Basic tests for CLI, configuration, memory, audit, and artifact behavior.
 
@@ -37,6 +38,9 @@ pytest
 ```bash
 loro plan "Create a release readiness checklist"
 loro remember --local "Status briefs should include risks, blockers, next steps, and owner."
+loro remember --shared "Use the enterprise launch readiness template for launches."
+loro memory drafts
+loro memory schema --backend postgres
 loro docs create "Draft a project kickoff document"
 loro slides create "Quarterly platform update"
 loro sheets create "Launch readiness tracker"

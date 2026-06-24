@@ -1,0 +1,58 @@
+# Configuration
+
+Loro uses TOML configuration and merges layers in increasing precedence:
+
+1. `/etc/loro/config.toml`
+2. `~/.config/loro/config.toml`
+3. `.loro/config.toml`
+4. `.loro/config.local.toml`
+5. `LORO_CONFIG`
+6. `LORO_CONFIG_CONTENT`
+
+## Example
+
+```toml
+[model]
+provider = "mock"
+model = "mock-agent"
+small_model = "mock-small"
+
+[permissions]
+default = "ask"
+shell = "ask"
+edit = "ask"
+web = "deny"
+
+[memory.local]
+enabled = true
+path = ".loro/memory"
+auto_propose = true
+
+[memory.shared]
+enabled = false
+backend = "postgres"
+write_policy = "explicit_user_dictation_only"
+read_policy = "semantic_retrieval_with_citations"
+
+[polaris]
+enabled = false
+cli_path = "polaris"
+require_role_inspection = true
+
+[audit]
+enabled = true
+path = ".loro/audit.jsonl"
+include_prompt_preview = true
+
+[sessions]
+path = ".loro/sessions"
+```
+
+## Runtime Overrides
+
+```bash
+LORO_CONFIG=/path/to/config.toml loro doctor
+LORO_CONFIG_CONTENT='[permissions]\nshell = "allow"\n' loro doctor
+```
+
+Future managed enterprise policy should be non-overridable. The current MVP uses deep-merge precedence.
