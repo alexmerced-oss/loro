@@ -10,6 +10,7 @@
 - Artifact generation and provenance
 - File and shell tools
 - Read-only Polaris wrapper validation
+- Safety scanning before memory and artifact writes
 
 ## Next MVP Work
 

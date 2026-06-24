@@ -9,6 +9,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Memory](memory.md)
 - [Artifacts](artifacts.md)
 - [Polaris And Iceberg](polaris-iceberg.md)
+- [Safety](safety.md)
 - [Development Roadmap](roadmap.md)
 
 The product-level requirements live in [../PRD.md](../PRD.md), and the engineering architecture lives in [../ARCHITECTURE.md](../ARCHITECTURE.md).

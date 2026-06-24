@@ -62,6 +62,11 @@ class SessionConfig(BaseModel):
     path: str = ".loro/sessions"
 
 
+class SafetyConfig(BaseModel):
+    enabled: bool = True
+    block_on_findings: bool = True
+
+
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
@@ -69,6 +74,7 @@ class LoroConfig(BaseModel):
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
 
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

@@ -32,3 +32,7 @@ include_prompt_preview = true
 
 [sessions]
 path = ".loro/sessions"
+
+[safety]
+enabled = true
+block_on_findings = true

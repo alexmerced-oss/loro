@@ -48,6 +48,15 @@ loro sessions list
 loro sessions show <session-id>
 ```
 
+## Safety
+
+```bash
+loro safety scan "api_key = 'abc123456789'"
+loro safety scan --file .env
+```
+
+Memory and artifact commands scan for obvious secrets before writing files or memory records. Use `--allow-sensitive` only when policy allows persistence.
+
 ## Governed Data
 
 ```bash

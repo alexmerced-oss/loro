@@ -18,6 +18,7 @@ from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.runtime import AgentRuntime
+from loro.safety import SafetyScanner
 from loro.sessions import SessionStore
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
@@ -37,6 +38,7 @@ data_app = typer.Typer(help="Discover governed enterprise data.")
 sessions_app = typer.Typer(help="Inspect saved Loro sessions.")
 file_app = typer.Typer(help="Read and search local files.")
 shell_app = typer.Typer(help="Run permission-gated shell commands.")
+safety_app = typer.Typer(help="Scan content for obvious secrets.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -47,6 +49,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(sessions_app, name="sessions")
 app.add_typer(file_app, name="file")
 app.add_typer(shell_app, name="shell")
+app.add_typer(safety_app, name="safety")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -62,6 +65,27 @@ def _audit() -> AuditLogger:
 
 def _permissions() -> PermissionEngine:
     return PermissionEngine(load_config().permissions)
+
+
+def _safety() -> SafetyScanner:
+    return SafetyScanner(load_config().safety)
+
+
+def _enforce_safe_content(content: str, context: str, allow_sensitive: bool = False) -> None:
+    findings = _safety().scan(content)
+    if not findings:
+        return
+    _audit().write(
+        "safety.findings_detected",
+        context=context,
+        finding_kinds=sorted({finding.kind for finding in findings}),
+    )
+    if load_config().safety.block_on_findings and not allow_sensitive:
+        kinds = ", ".join(sorted({finding.kind for finding in findings}))
+        raise typer.BadParameter(
+            f"Sensitive content detected ({kinds}). Re-run with --allow-sensitive "
+            "only if policy allows storing this content."
+        )
 
 
 def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
@@ -119,6 +143,7 @@ def doctor() -> None:
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
     console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
     console.print(f"Session path: {config.sessions.path}")
+    console.print(f"Safety scanner: {'enabled' if config.safety.enabled else 'disabled'}")
 
 
 @memory_app.command("list")
@@ -149,8 +174,15 @@ def memory_search(query: Annotated[str, typer.Argument(help="Search query.")]) -
 
 
 @memory_app.command("remember")
-def remember_local(content: Annotated[str, typer.Argument(help="Memory content.")]) -> None:
+def remember_local(
+    content: Annotated[str, typer.Argument(help="Memory content.")],
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
+) -> None:
     """Explicitly write a local memory."""
+    _enforce_safe_content(content, context="memory.local", allow_sensitive=allow_sensitive)
     store = LocalMemoryStore.from_config(load_config().memory.local)
     memory = store.remember(content)
     _audit().write(
@@ -214,8 +246,17 @@ def remember(
     created_by: Annotated[
         str, typer.Option("--created-by", help="Shared memory author.")
     ] = "local-user",
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
     """Explicitly write a local or shared memory."""
+    _enforce_safe_content(
+        content,
+        context="memory.shared" if shared else "memory.local",
+        allow_sensitive=allow_sensitive,
+    )
     if shared:
         draft = SharedMemoryDraft(
             content=content,
@@ -259,7 +300,12 @@ def docs_create(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.document", allow_sensitive=allow_sensitive)
     result = create_document_artifact(prompt, output_dir)
     _print_artifact_result(result, prompt)
 
@@ -270,7 +316,12 @@ def slides_create(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.presentation", allow_sensitive=allow_sensitive)
     result = create_presentation_artifact(prompt, output_dir)
     _print_artifact_result(result, prompt)
 
@@ -281,7 +332,12 @@ def sheets_analyze(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.spreadsheet", allow_sensitive=allow_sensitive)
     result = create_spreadsheet_artifact(prompt, output_dir)
     _print_artifact_result(result, prompt)
 
@@ -292,7 +348,12 @@ def sheets_create(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.spreadsheet", allow_sensitive=allow_sensitive)
     result = create_spreadsheet_artifact(prompt, output_dir)
     _print_artifact_result(result, prompt)
 
@@ -303,7 +364,12 @@ def brief_meeting(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
     result = create_brief_artifact(prompt, output_dir, brief_type="meeting")
     _print_artifact_result(result, prompt)
 
@@ -314,7 +380,12 @@ def brief_project(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
     result = create_brief_artifact(prompt, output_dir, brief_type="project")
     _print_artifact_result(result, prompt)
 
@@ -325,7 +396,12 @@ def brief_incident(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
     result = create_brief_artifact(prompt, output_dir, brief_type="incident")
     _print_artifact_result(result, prompt)
 
@@ -336,7 +412,12 @@ def brief_executive(
     output_dir: Annotated[
         Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
     ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
 ) -> None:
+    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
     result = create_brief_artifact(prompt, output_dir, brief_type="executive")
     _print_artifact_result(result, prompt)
 
@@ -449,6 +530,30 @@ def shell_run(
     if result.stderr:
         console.print(result.stderr)
     raise typer.Exit(code=result.returncode)
+
+
+@safety_app.command("scan")
+def safety_scan(
+    text: Annotated[str | None, typer.Argument(help="Text to scan.")] = None,
+    file: Annotated[Path | None, typer.Option("--file", "-f", help="File to scan.")] = None,
+) -> None:
+    """Scan text or a file for obvious secrets."""
+    if text is None and file is None:
+        raise typer.BadParameter("Provide text or --file.")
+    content = file.read_text(encoding="utf-8") if file else text or ""
+    findings = _safety().scan(content)
+    _audit().write(
+        "safety.scan",
+        source=str(file) if file else "argument",
+        finding_count=len(findings),
+        finding_kinds=sorted({finding.kind for finding in findings}),
+    )
+    if not findings:
+        console.print("No obvious secrets detected.")
+        return
+    for finding in findings:
+        console.print(f"- {finding.kind}: {finding.snippet} ({finding.start}-{finding.end})")
+    raise typer.Exit(code=1)
 
 
 @sessions_app.command("list")

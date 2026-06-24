@@ -93,3 +93,34 @@ def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
     assert drafts_result.exit_code == 0
     assert "enterprise" in drafts_result.stdout
     assert "launch readiness" in drafts_result.stdout
+
+
+def test_safety_scan_detects_secret() -> None:
+    result = CliRunner().invoke(app, ["safety", "scan", "api_key = 'abc123456789'"])
+    assert result.exit_code == 1
+    assert "assignment_secret" in result.stdout
+
+
+def test_memory_write_blocks_secret(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(app, ["remember", "--local", "token = 'abc123456789'"])
+    assert result.exit_code != 0
+    assert "Sensitive content detected" in result.stderr
+
+
+def test_memory_write_allows_secret_with_flag(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["remember", "--local", "--allow-sensitive", "token = 'abc123456789'"],
+    )
+    assert result.exit_code == 0
+    assert "Saved local memory" in result.stdout

@@ -20,6 +20,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Durable session records with `loro sessions list` and `loro sessions show`.
 - Permission-gated file and shell tools.
 - Shared memory draft staging and Postgres/Iceberg schema output.
+- Safety scanner for obvious secrets before memory and artifact writes.
 - A read-only Polaris CLI wrapper for governed catalog discovery scaffolding.
 - Basic tests for CLI, configuration, memory, audit, and artifact behavior.
 
@@ -50,6 +51,7 @@ loro sessions list
 loro file search "Polaris" --root .
 loro file read PRD.md --limit 1000
 loro shell run --yes -- python -c "print('hello from Loro')"
+loro safety scan "api_key = 'abc123456789'"
 ```
 
 Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location. Each generated artifact also gets a `.provenance.json` sidecar.
@@ -57,6 +59,8 @@ Generated files are written to `artifacts/` by default. Use `--output-dir` to ch
 Configuration can be layered from `.loro/config.toml`, `LORO_CONFIG`, and `LORO_CONFIG_CONTENT`.
 
 For shell commands, use `--` before the command when passing flags to the child process.
+
+Memory and artifact commands scan for obvious secrets by default. Use `--allow-sensitive` only when enterprise policy allows that content to be persisted.
 
 ## License
 
