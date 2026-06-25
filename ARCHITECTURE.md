@@ -88,7 +88,7 @@ Provider profiles are stored in `loro.providers`. Profiles capture:
 - Protocol family.
 - Notes for special providers.
 
-Current profiles cover OpenAI, Anthropic, Gemini, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Azure OpenAI, AWS Bedrock, Ollama, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
+Current profiles cover OpenAI, Anthropic, Gemini, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, AWS Bedrock, Ollama, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
 
 `loro configure` writes `.loro/config.local.toml`, keeping user-specific provider choices and endpoint details out of source control. The model runtime still uses deterministic scaffolding; future model adapters should consume this provider metadata.
 

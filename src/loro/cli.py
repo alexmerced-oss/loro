@@ -162,6 +162,7 @@ def configure(
 ) -> None:
     """Create a local provider configuration."""
     chosen_provider = provider
+    interactive = chosen_provider is None
     if chosen_provider is None:
         console.print("Available providers:")
         for name in provider_names():
@@ -169,14 +170,30 @@ def configure(
             console.print(f"- {name}: {profile.display_name}")
         chosen_provider = typer.prompt("Provider", default="mock")
     profile = get_provider_profile(chosen_provider)
-    chosen_model = model or typer.prompt("Primary model", default=profile.default_model)
-    chosen_small = small_model or typer.prompt("Small model", default=profile.small_model)
+    chosen_model = model or (
+        typer.prompt("Primary model", default=profile.default_model)
+        if interactive
+        else profile.default_model
+    )
+    chosen_small = small_model or (
+        typer.prompt("Small model", default=profile.small_model)
+        if interactive
+        else profile.small_model
+    )
     chosen_key_env = api_key_env
-    if chosen_key_env is None and profile.api_key_env:
-        chosen_key_env = typer.prompt("API key env var", default=profile.api_key_env)
+    if chosen_key_env is None:
+        chosen_key_env = (
+            typer.prompt("API key env var", default=profile.api_key_env)
+            if profile.api_key_env and interactive
+            else profile.api_key_env
+        )
     chosen_base_url = base_url
-    if chosen_base_url is None and profile.base_url:
-        chosen_base_url = typer.prompt("Base URL", default=profile.base_url)
+    if chosen_base_url is None:
+        chosen_base_url = (
+            typer.prompt("Base URL", default=profile.base_url)
+            if profile.base_url and interactive
+            else profile.base_url
+        )
 
     config = load_config()
     config.model = model_config_from_profile(
@@ -652,6 +669,7 @@ def providers_show(provider: Annotated[str, typer.Argument(help="Provider name."
             "display_name": profile.display_name,
             "default_model": profile.default_model,
             "small_model": profile.small_model,
+            "aliases": list(profile.aliases),
             "api_key_env": profile.api_key_env,
             "base_url": profile.base_url,
             "protocol": profile.protocol,

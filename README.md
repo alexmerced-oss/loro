@@ -54,6 +54,7 @@ loro file read PRD.md --limit 1000
 loro shell run --yes -- python -c "print('hello from Loro')"
 loro safety scan "api_key = 'abc123456789'"
 loro providers list
+loro providers show nous-portal
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
 

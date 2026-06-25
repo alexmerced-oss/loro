@@ -139,6 +139,13 @@ def test_provider_show() -> None:
     assert "ANTHROPIC_API_KEY" in result.stdout
 
 
+def test_provider_show_alias() -> None:
+    result = CliRunner().invoke(app, ["providers", "show", "nous-portal"])
+    assert result.exit_code == 0
+    assert "NOUS_API_KEY" in result.stdout
+    assert "inference.nousresearch.com" in result.stdout
+
+
 def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
@@ -164,3 +171,29 @@ def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert output.exists()
     assert 'provider = "ollama"' in output.read_text(encoding="utf-8")
+
+
+def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "configure",
+            "--provider",
+            "go",
+            "--model",
+            "kimi-k2",
+            "--small-model",
+            "glm-5",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert 'provider = "opencode-go"' in text
+    assert 'api_key_env = "OPENCODE_GO_API_KEY"' in text

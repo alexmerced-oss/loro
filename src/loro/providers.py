@@ -12,6 +12,7 @@ class ProviderProfile:
     display_name: str
     default_model: str
     small_model: str
+    aliases: tuple[str, ...] = ()
     api_key_env: str | None = None
     base_url: str | None = None
     protocol: str = "openai-compatible"
@@ -125,6 +126,45 @@ PROVIDER_PROFILES: dict[str, ProviderProfile] = {
         api_key_env="OPENROUTER_API_KEY",
         base_url="https://openrouter.ai/api/v1",
     ),
+    "nous": ProviderProfile(
+        name="nous",
+        display_name="Nous Research",
+        default_model="hermes-3-405b",
+        small_model="hermes-3-70b",
+        aliases=("nous-portal", "nousresearch"),
+        api_key_env="NOUS_API_KEY",
+        base_url="https://inference.nousresearch.com/v1",
+        notes=(
+            "Mirrors Hermes' Nous provider profile: Nous Portal / Nous Research "
+            "Hermes model family."
+        ),
+    ),
+    "opencode-zen": ProviderProfile(
+        name="opencode-zen",
+        display_name="OpenCode Zen",
+        default_model="opencode-zen-selected-model",
+        small_model="gemini-3-flash",
+        aliases=("opencode", "opencode_zen", "zen"),
+        api_key_env="OPENCODE_ZEN_API_KEY",
+        base_url="https://opencode.ai/zen/v1",
+        notes=(
+            "OpenCode team provider. Pick a concrete model from the OpenCode "
+            "Zen catalog after connecting."
+        ),
+    ),
+    "opencode-go": ProviderProfile(
+        name="opencode-go",
+        display_name="OpenCode Go",
+        default_model="opencode-go-selected-model",
+        small_model="glm-5",
+        aliases=("opencode_go", "go", "opencode-go-sub"),
+        api_key_env="OPENCODE_GO_API_KEY",
+        base_url="https://opencode.ai/zen/go/v1",
+        notes=(
+            "Low-cost OpenCode subscription provider. Pick a concrete model from "
+            "the OpenCode Go catalog after connecting."
+        ),
+    ),
     "azure-openai": ProviderProfile(
         name="azure-openai",
         display_name="Azure OpenAI",
@@ -179,9 +219,19 @@ def provider_names() -> list[str]:
     return sorted(PROVIDER_PROFILES)
 
 
+def provider_aliases() -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for name, profile in PROVIDER_PROFILES.items():
+        aliases[name] = name
+        for alias in profile.aliases:
+            aliases[alias] = name
+    return aliases
+
+
 def get_provider_profile(name: str) -> ProviderProfile:
+    canonical = provider_aliases().get(name, name)
     try:
-        return PROVIDER_PROFILES[name]
+        return PROVIDER_PROFILES[canonical]
     except KeyError as error:
         raise ValueError(f"Unsupported provider: {name}") from error
 

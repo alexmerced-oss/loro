@@ -38,6 +38,9 @@ Cloud and gateway profiles:
 - xAI
 - Perplexity
 - OpenRouter
+- Nous Portal / Nous Research
+- OpenCode Zen
+- OpenCode Go
 - Azure OpenAI
 - AWS Bedrock
 
@@ -51,3 +54,28 @@ Local and self-hosted profiles:
 ## Current Scope
 
 The MVP stores provider configuration and exposes provider metadata. The runtime still uses deterministic scaffolding until model adapters are implemented. The provider profiles are designed so future adapters can support native protocols and OpenAI-compatible APIs without changing user config.
+
+## Notes From Hermes And OpenCode
+
+Hermes models providers as reusable `ProviderProfile` plugins. Loro mirrors that idea with a central provider profile registry.
+
+The Nous profile follows Hermes' bundled Nous plugin:
+
+- Provider ID: `nous`
+- Aliases: `nous-portal`, `nousresearch`
+- API key env var: `NOUS_API_KEY`
+- Base URL: `https://inference.nousresearch.com/v1`
+- Default models: `hermes-3-405b`, `hermes-3-70b`
+
+OpenCode documents OpenCode Zen and OpenCode Go as optional OpenCode-team providers that are connected through `/connect`, authenticated through `opencode.ai/auth`, and then selected through the OpenCode model list. Hermes also ships an `opencode-zen` provider plugin that defines both Zen and Go:
+
+- OpenCode Zen provider ID: `opencode-zen`
+- Zen aliases: `opencode`, `opencode_zen`, `zen`
+- Zen API key env var: `OPENCODE_ZEN_API_KEY`
+- Zen base URL: `https://opencode.ai/zen/v1`
+- OpenCode Go provider ID: `opencode-go`
+- Go aliases: `opencode_go`, `go`, `opencode-go-sub`
+- Go API key env var: `OPENCODE_GO_API_KEY`
+- Go base URL: `https://opencode.ai/zen/go/v1`
+
+Zen and Go model IDs should be configured after consulting the current OpenCode model catalog.
