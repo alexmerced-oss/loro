@@ -197,3 +197,29 @@ def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
     text = output.read_text(encoding="utf-8")
     assert 'provider = "opencode-go"' in text
     assert 'api_key_env = "OPENCODE_GO_API_KEY"' in text
+
+
+def test_providers_check_missing_key(monkeypatch) -> None:
+    monkeypatch.delenv("NOUS_API_KEY", raising=False)
+    result = CliRunner().invoke(app, ["providers", "check", "nous"])
+    assert result.exit_code == 1
+    assert "NOUS_API_KEY" in result.stdout
+
+
+def test_providers_request_openai_compatible(monkeypatch) -> None:
+    monkeypatch.setenv("NOUS_API_KEY", "secret")
+    result = CliRunner().invoke(
+        app,
+        [
+            "providers",
+            "request",
+            "hello",
+            "--provider",
+            "nous",
+            "--model",
+            "hermes-test",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "chat/completions" in result.stdout
+    assert "[redacted]" in result.stdout

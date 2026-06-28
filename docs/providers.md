@@ -7,6 +7,8 @@ Loro supports provider configuration through built-in profiles and a local setup
 ```bash
 loro providers list
 loro providers show openai
+loro providers check openai
+loro providers request "hello" --provider openai --model gpt-4.1
 loro configure
 ```
 
@@ -21,6 +23,8 @@ loro configure \
 ```
 
 By default, `loro configure` writes `.loro/config.local.toml`, which is ignored by Git.
+
+`loro providers check` validates the configured provider profile and reports missing API key environment variables. `loro providers request` builds and prints a redacted request payload without sending it over the network.
 
 ## Built-In Profiles
 

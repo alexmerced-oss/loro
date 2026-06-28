@@ -15,9 +15,11 @@ from loro.config import load_config
 from loro.memory.base import SharedMemoryDraft
 from loro.memory.local import LocalMemoryStore
 from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
+from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.providers import (
+    check_provider_config,
     get_provider_profile,
     model_config_from_profile,
     provider_names,
@@ -676,6 +678,67 @@ def providers_show(provider: Annotated[str, typer.Argument(help="Provider name."
             "notes": profile.notes,
         }
     )
+
+
+@providers_app.command("check")
+def providers_check(
+    provider: Annotated[
+        str | None,
+        typer.Argument(help="Provider name. Defaults to configured provider."),
+    ] = None,
+) -> None:
+    """Check provider config and required environment variables."""
+    config = load_config()
+    model_config = config.model
+    if provider:
+        profile = get_provider_profile(provider)
+        model_config = model_config_from_profile(
+            profile.name,
+            model=profile.default_model,
+            small_model=profile.small_model,
+        )
+    check = check_provider_config(model_config)
+    console.print_json(
+        data={
+            "provider": check.provider,
+            "ok": check.ok,
+            "api_key_env": check.api_key_env,
+            "api_key_present": check.api_key_present,
+            "base_url": check.base_url,
+            "protocol": check.protocol,
+            "messages": check.messages,
+        }
+    )
+    raise typer.Exit(code=0 if check.ok else 1)
+
+
+@providers_app.command("request")
+def providers_request(
+    prompt: Annotated[str, typer.Argument(help="Prompt to build a request for.")],
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Provider name. Defaults to configured provider."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model override.")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url", help="Base URL override.")] = None,
+) -> None:
+    """Print a redacted model request without sending it."""
+    config = load_config()
+    model_config = config.model
+    if provider:
+        profile = get_provider_profile(provider)
+        model_config = model_config_from_profile(
+            profile.name,
+            model=model or profile.default_model,
+            small_model=profile.small_model,
+            base_url=base_url,
+        )
+    elif model or base_url:
+        model_config.model = model or model_config.model
+        model_config.base_url = base_url or model_config.base_url
+    client = create_model_client(model_config)
+    request = client.build_request([ModelMessage(role="user", content=prompt)])
+    console.print_json(data=redact_model_request(request))
 
 
 @sessions_app.command("list")

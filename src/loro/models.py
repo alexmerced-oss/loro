@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -217,3 +218,26 @@ def create_model_client(config: ModelConfig) -> ModelClient:
     if profile.protocol == "bedrock":
         raise NotImplementedError("Bedrock adapter requires AWS SDK integration.")
     return OpenAICompatibleClient(config)
+
+
+def redact_model_request(request: ModelRequest) -> dict[str, Any]:
+    headers = dict(request.headers)
+    for key in list(headers):
+        if key.lower() in {"authorization", "x-api-key"}:
+            headers[key] = "[redacted]"
+    url = request.url
+    parsed = urlsplit(url)
+    if parsed.query:
+        query = [
+            (key, "[redacted]" if key.lower() in {"key", "api_key", "apikey"} else value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+        url = urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment)
+        )
+    return {
+        "method": request.method,
+        "url": url,
+        "headers": headers,
+        "json": request.json,
+    }

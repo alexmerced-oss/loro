@@ -55,6 +55,8 @@ loro shell run --yes -- python -c "print('hello from Loro')"
 loro safety scan "api_key = 'abc123456789'"
 loro providers list
 loro providers show nous-portal
+loro providers check nous
+loro providers request "hello" --provider nous --model hermes-3-405b
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
 

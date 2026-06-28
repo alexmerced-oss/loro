@@ -9,6 +9,7 @@ from loro.models import (
     OllamaClient,
     OpenAICompatibleClient,
     create_model_client,
+    redact_model_request,
 )
 
 
@@ -79,3 +80,20 @@ def test_no_api_key_header_when_env_missing(monkeypatch: pytest.MonkeyPatch) -> 
     client = OpenAICompatibleClient(ModelConfig(api_key_env="MISSING_API_KEY"))
     request = client.build_request([ModelMessage(role="user", content="hello")])
     assert "Authorization" not in request.headers
+
+
+def test_redact_model_request_redacts_headers_and_query() -> None:
+    client = GeminiClient(
+        ModelConfig(provider="gemini", model="gemini-test", api_key_env="GEMINI_API_KEY")
+    )
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+    request = type(request)(
+        method=request.method,
+        url=f"{request.url}?key=secret-key",
+        headers={"Authorization": "Bearer secret", "x-api-key": "secret"},
+        json=request.json,
+    )
+    redacted = redact_model_request(request)
+    assert redacted["headers"]["Authorization"] == "[redacted]"
+    assert redacted["headers"]["x-api-key"] == "[redacted]"
+    assert "key=%5Bredacted%5D" in redacted["url"]

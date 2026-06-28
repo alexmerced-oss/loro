@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,17 @@ class ProviderProfile:
     base_url: str | None = None
     protocol: str = "openai-compatible"
     notes: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderCheck:
+    provider: str
+    ok: bool
+    api_key_env: str | None
+    api_key_present: bool
+    base_url: str | None
+    protocol: str
+    messages: list[str]
 
 
 PROVIDER_PROFILES: dict[str, ProviderProfile] = {
@@ -251,6 +263,38 @@ def model_config_from_profile(
         small_model=small_model or profile.small_model,
         api_key_env=api_key_env if api_key_env is not None else profile.api_key_env,
         base_url=base_url if base_url is not None else profile.base_url,
+    )
+
+
+def check_provider_config(config: ModelConfig) -> ProviderCheck:
+    profile = get_provider_profile(config.provider)
+    api_key_env = config.api_key_env if config.api_key_env is not None else profile.api_key_env
+    base_url = config.base_url if config.base_url is not None else profile.base_url
+    messages: list[str] = []
+    api_key_present = True
+    if api_key_env:
+        api_key_present = bool(os.environ.get(api_key_env))
+        if api_key_present:
+            messages.append(f"Found API key environment variable: {api_key_env}")
+        else:
+            messages.append(f"Missing API key environment variable: {api_key_env}")
+    else:
+        messages.append("No API key environment variable required by this profile.")
+    if base_url:
+        messages.append(f"Base URL: {base_url}")
+    else:
+        messages.append("No base URL configured.")
+    if profile.protocol == "bedrock":
+        messages.append("Bedrock profile exists, but runtime adapter is not implemented yet.")
+    ok = api_key_present and profile.protocol != "bedrock"
+    return ProviderCheck(
+        provider=profile.name,
+        ok=ok,
+        api_key_env=api_key_env,
+        api_key_present=api_key_present,
+        base_url=base_url,
+        protocol=profile.protocol,
+        messages=messages,
     )
 
 

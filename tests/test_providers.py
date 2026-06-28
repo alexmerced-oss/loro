@@ -1,5 +1,6 @@
 from loro.config import LoroConfig
 from loro.providers import (
+    check_provider_config,
     get_provider_profile,
     model_config_from_profile,
     provider_aliases,
@@ -68,3 +69,19 @@ def test_write_local_model_config(tmp_path) -> None:
     text = path.read_text(encoding="utf-8")
     assert 'provider = "ollama"' in text
     assert 'model = "llama3.2"' in text
+
+
+def test_check_provider_config_missing_key(monkeypatch) -> None:
+    monkeypatch.delenv("NOUS_API_KEY", raising=False)
+    config = model_config_from_profile("nous")
+    check = check_provider_config(config)
+    assert check.ok is False
+    assert check.api_key_env == "NOUS_API_KEY"
+
+
+def test_check_provider_config_present_key(monkeypatch) -> None:
+    monkeypatch.setenv("NOUS_API_KEY", "test-key")
+    config = model_config_from_profile("nous")
+    check = check_provider_config(config)
+    assert check.ok is True
+    assert check.api_key_present is True
