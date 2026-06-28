@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import LoroConfig
 from loro.memory.local import LocalMemoryStore
+from loro.models import ModelMessage, create_model_client
 from loro.sessions import SessionRecord, SessionStore
 
 
@@ -40,11 +41,15 @@ class AgentRuntime:
             memory_section = "\n\nRecalled local memories:\n" + "\n".join(
                 f"- {memory}" for memory in recalled_memories
             )
+        model_response = create_model_client(self.config.model).complete(
+            [ModelMessage(role="user", content=prompt)]
+        )
         summary = (
             f"Loro {mode} mode is scaffolded.\n\n"
             f"Provider: {self.config.model.provider} / {self.config.model.model}\n\n"
             f"Prompt: {prompt}"
             f"{memory_section}\n\n"
+            f"Model response: {model_response.content}\n\n"
             "Next implementation step: connect model adapters, tools, permissions, "
             "and governed shared memory retrieval."
         )

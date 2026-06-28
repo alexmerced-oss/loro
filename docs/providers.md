@@ -53,7 +53,17 @@ Local and self-hosted profiles:
 
 ## Current Scope
 
-The MVP stores provider configuration and exposes provider metadata. The runtime still uses deterministic scaffolding until model adapters are implemented. The provider profiles are designed so future adapters can support native protocols and OpenAI-compatible APIs without changing user config.
+The MVP stores provider configuration, exposes provider metadata, and includes request-building adapters for:
+
+- OpenAI-compatible providers
+- Anthropic
+- Gemini
+- Ollama
+- Mock local provider
+
+OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
+
+AWS Bedrock is configured as a profile but intentionally raises `NotImplementedError` until AWS SDK integration is added.
 
 ## Notes From Hermes And OpenCode
 

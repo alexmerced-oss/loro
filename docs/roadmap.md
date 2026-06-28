@@ -18,7 +18,7 @@
 - Shared memory schema and draft workflow
 - Postgres shared memory backend
 - Iceberg shared memory backend
-- Model provider adapters
+- Complete model provider adapters, including Bedrock and streaming
 - Typed tool-calling runtime loop
 - Richer permission policy matching
 - Polaris typed client methods
