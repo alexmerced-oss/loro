@@ -3,7 +3,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from loro.config import SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft
+from loro.memory.iceberg import IcebergSharedMemoryStore
 
 SharedBackend = Literal["postgres", "iceberg"]
 
@@ -88,10 +90,15 @@ PARTITIONED BY (tenant_id, event_type);
 """.strip()
 
 
-def shared_memory_schema(backend: SharedBackend) -> str:
+def shared_memory_schema(
+    backend: SharedBackend,
+    config: SharedMemoryConfig | None = None,
+) -> str:
     if backend == "postgres":
         return POSTGRES_SHARED_MEMORY_SCHEMA
     if backend == "iceberg":
+        if config is not None:
+            return IcebergSharedMemoryStore(config).render_schema()
         return ICEBERG_SHARED_MEMORY_SCHEMA
     raise ValueError(f"Unsupported shared memory backend: {backend}")
 

@@ -12,7 +12,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Configuration loading from managed, user, project, local, environment, and runtime sources.
 - Permission decision primitives.
 - Local and shared memory interfaces.
-- Postgres shared memory SQL adapter and Iceberg schema scaffolding.
+- Postgres and Iceberg shared memory SQL adapters.
 - Polaris client and artifact-generation module placeholders.
 - Real MVP artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
 - Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.

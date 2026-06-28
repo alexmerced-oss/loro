@@ -76,12 +76,35 @@ def test_shared_memory_schema_command() -> None:
     assert "USING iceberg" in result.stdout
 
 
+def test_shared_memory_schema_command_uses_iceberg_config(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[memory.shared]\n"
+        'iceberg_namespace = "enterprise_memory"\n'
+        'iceberg_table = "agent_facts"\n',
+    )
+    result = CliRunner().invoke(app, ["memory", "schema", "--backend", "iceberg"])
+    assert result.exit_code == 0
+    assert "enterprise_memory.agent_facts" in result.stdout
+
+
 def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
     monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
     result = CliRunner().invoke(app, ["memory", "backend-check"])
     assert result.exit_code == 1
     assert "postgres" in result.stdout
     assert "LORO_POSTGRES_DSN" in result.stdout
+
+
+def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[memory.shared]\nbackend = \"iceberg\"\niceberg_table = \"agent_facts\"\n",
+    )
+    result = CliRunner().invoke(app, ["memory", "backend-check"])
+    assert result.exit_code == 1
+    assert "agent_memory.agent_facts" in result.stdout
+    assert "Live Iceberg commits" in result.stdout
 
 
 def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:

@@ -13,6 +13,7 @@ from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
 from loro.memory.base import SharedMemoryDraft
+from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.postgres import PostgresSharedMemoryStore, SharedMemoryBackendCheck
 from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
@@ -309,8 +310,9 @@ def memory_schema(
     ] = "postgres",
 ) -> None:
     """Print shared memory backend schema SQL."""
+    config = load_config()
     try:
-        console.print(shared_memory_schema(backend))  # type: ignore[arg-type]
+        console.print(shared_memory_schema(backend, config.memory.shared))  # type: ignore[arg-type]
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
 
@@ -322,11 +324,13 @@ def memory_backend_check() -> None:
     if config.memory.shared.backend == "postgres":
         check = PostgresSharedMemoryStore(config.memory.shared).check()
     elif config.memory.shared.backend == "iceberg":
+        store = IcebergSharedMemoryStore(config.memory.shared)
         check = SharedMemoryBackendCheck(
             backend="iceberg",
             ok=False,
             messages=[
-                "Iceberg shared memory schema is available.",
+                f"Iceberg memory table: {store.memory_table}",
+                f"Iceberg event table: {store.events_table}",
                 "Live Iceberg commits are not enabled in this MVP.",
             ],
         )

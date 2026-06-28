@@ -14,10 +14,11 @@
 - Provider profiles and local configuration wizard
 - Shared memory schema and draft workflow
 - Postgres shared memory SQL adapter and backend check
+- Iceberg shared memory SQL adapter
 
 ## Next MVP Work
 
-- Iceberg shared memory backend
+- Iceberg governed execution integration
 - Postgres migration/apply command and live integration tests
 - Complete model provider adapters, including Bedrock and streaming
 - Typed tool-calling runtime loop

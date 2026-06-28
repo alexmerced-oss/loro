@@ -21,8 +21,8 @@ Shared memory is intended for enterprise-wide reuse across users and agents. It 
 - Records need provenance, scope, classification, status, author, and audit metadata.
 
 The MVP includes backend schema generation, draft staging, Postgres readiness diagnostics,
-and a Postgres SQL adapter that can render insert/search statements. Live Iceberg commits
-should be added behind the same logical schema.
+and Postgres/Iceberg SQL adapters that can render insert/search statements. Live Iceberg
+commits should be added behind the same logical schema through a governed execution engine.
 
 ```bash
 loro remember --shared "Use the enterprise launch readiness template" \
@@ -62,7 +62,8 @@ iceberg_namespace = "agent_memory"
 iceberg_table = "shared_memories"
 ```
 
-The current MVP emits Iceberg DDL through `loro memory schema --backend iceberg`.
+The current MVP emits configured Iceberg DDL through `loro memory schema --backend iceberg`
+and provides SQL rendering for future append/search execution.
 Polaris catalog access is handled by the governed data commands documented in
 `docs/polaris.md`.
 
