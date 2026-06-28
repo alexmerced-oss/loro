@@ -35,6 +35,10 @@ enabled = false
 backend = "postgres"
 write_policy = "explicit_user_dictation_only"
 read_policy = "semantic_retrieval_with_citations"
+postgres_dsn_env = "LORO_POSTGRES_DSN"
+postgres_schema = "public"
+iceberg_namespace = "agent_memory"
+iceberg_table = "shared_memories"
 
 [polaris]
 enabled = false
@@ -67,3 +71,13 @@ Use the configuration wizard to create `.loro/config.local.toml`:
 loro configure
 loro configure --provider openai --model gpt-4.1 --small-model gpt-4.1-mini
 ```
+
+## Shared Memory Backend Checks
+
+```bash
+export LORO_POSTGRES_DSN="postgresql://user:pass@host:5432/loro"
+loro memory backend-check
+```
+
+The command validates local client readiness only. It does not create tables or commit
+memory records.

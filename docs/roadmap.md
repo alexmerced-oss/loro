@@ -12,12 +12,13 @@
 - Read-only Polaris wrapper validation
 - Safety scanning before memory and artifact writes
 - Provider profiles and local configuration wizard
+- Shared memory schema and draft workflow
+- Postgres shared memory SQL adapter and backend check
 
 ## Next MVP Work
 
-- Shared memory schema and draft workflow
-- Postgres shared memory backend
 - Iceberg shared memory backend
+- Postgres migration/apply command and live integration tests
 - Complete model provider adapters, including Bedrock and streaming
 - Typed tool-calling runtime loop
 - Richer permission policy matching

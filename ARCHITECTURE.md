@@ -99,7 +99,7 @@ Loro has two memory planes:
 - Local memory: JSONL-backed today, private to the current environment, searchable by substring.
 - Shared memory: schema-first scaffolding for explicit user-approved enterprise memory.
 
-Shared memory writes must stay explicit. The agent can propose a memory, but only user-approved text should be staged or committed. Current code supports shared memory schema generation and draft records. Future Postgres and Iceberg adapters should implement the same logical schema.
+Shared memory writes must stay explicit. The agent can propose a memory, but only user-approved text should be staged or committed. Current code supports shared memory schema generation, draft records, Postgres readiness diagnostics, and a Postgres adapter that renders insert/search SQL and can execute explicit draft commits when `psycopg` plus a DSN are available. Future Iceberg adapters should implement the same logical schema.
 
 ## Artifact Generation
 
@@ -143,5 +143,6 @@ The MVP uses focused unit and CLI tests:
 - Session roundtrips.
 - File, shell, and Polaris tool behavior.
 - Typer CLI smoke behavior.
+- Postgres shared-memory SQL rendering and backend readiness checks.
 
 Integration tests for real Postgres, Iceberg, Polaris, and model providers should live behind optional test markers once those services are implemented.

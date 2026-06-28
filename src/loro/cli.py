@@ -14,6 +14,7 @@ from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
 from loro.memory.base import SharedMemoryDraft
 from loro.memory.local import LocalMemoryStore
+from loro.memory.postgres import PostgresSharedMemoryStore, SharedMemoryBackendCheck
 from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -312,6 +313,31 @@ def memory_schema(
         console.print(shared_memory_schema(backend))  # type: ignore[arg-type]
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
+
+
+@memory_app.command("backend-check")
+def memory_backend_check() -> None:
+    """Check whether the configured shared memory backend is ready."""
+    config = load_config()
+    if config.memory.shared.backend == "postgres":
+        check = PostgresSharedMemoryStore(config.memory.shared).check()
+    elif config.memory.shared.backend == "iceberg":
+        check = SharedMemoryBackendCheck(
+            backend="iceberg",
+            ok=False,
+            messages=[
+                "Iceberg shared memory schema is available.",
+                "Live Iceberg commits are not enabled in this MVP.",
+            ],
+        )
+    else:
+        check = SharedMemoryBackendCheck(
+            backend=config.memory.shared.backend,
+            ok=False,
+            messages=["Unsupported shared memory backend."],
+        )
+    console.print_json(data=check.__dict__)
+    raise typer.Exit(code=0 if check.ok else 1)
 
 
 @app.command("remember")

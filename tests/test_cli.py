@@ -76,6 +76,14 @@ def test_shared_memory_schema_command() -> None:
     assert "USING iceberg" in result.stdout
 
 
+def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
+    monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
+    result = CliRunner().invoke(app, ["memory", "backend-check"])
+    assert result.exit_code == 1
+    assert "postgres" in result.stdout
+    assert "LORO_POSTGRES_DSN" in result.stdout
+
+
 def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",

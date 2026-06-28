@@ -12,7 +12,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Configuration loading from managed, user, project, local, environment, and runtime sources.
 - Permission decision primitives.
 - Local and shared memory interfaces.
-- Postgres and Iceberg memory backend placeholders.
+- Postgres shared memory SQL adapter and Iceberg schema scaffolding.
 - Polaris client and artifact-generation module placeholders.
 - Real MVP artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
 - Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
@@ -20,6 +20,7 @@ This repository is an initial scaffold based on [PRD.md](./PRD.md). It includes:
 - Durable session records with `loro sessions list` and `loro sessions show`.
 - Permission-gated file and shell tools.
 - Shared memory draft staging and Postgres/Iceberg schema output.
+- Shared memory backend diagnostics.
 - Safety scanner for obvious secrets before memory and artifact writes.
 - AI provider profiles and `loro configure` setup wizard.
 - A read-only Polaris CLI wrapper for governed catalog discovery scaffolding.
@@ -43,6 +44,7 @@ loro remember --local "Status briefs should include risks, blockers, next steps,
 loro remember --shared "Use the enterprise launch readiness template for launches."
 loro memory drafts
 loro memory schema --backend postgres
+loro memory backend-check
 loro docs create "Draft a project kickoff document"
 loro slides create "Quarterly platform update"
 loro sheets create "Launch readiness tracker"

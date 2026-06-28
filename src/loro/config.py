@@ -42,6 +42,10 @@ class SharedMemoryConfig(BaseModel):
     backend: Literal["postgres", "iceberg"] = "postgres"
     write_policy: str = "explicit_user_dictation_only"
     read_policy: str = "semantic_retrieval_with_citations"
+    postgres_dsn_env: str = "LORO_POSTGRES_DSN"
+    postgres_schema: str = "public"
+    iceberg_namespace: str = "agent_memory"
+    iceberg_table: str = "shared_memories"
 
 
 class MemoryConfig(BaseModel):

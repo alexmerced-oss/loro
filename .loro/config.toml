@@ -21,6 +21,10 @@ enabled = false
 backend = "postgres"
 write_policy = "explicit_user_dictation_only"
 read_policy = "semantic_retrieval_with_citations"
+postgres_dsn_env = "LORO_POSTGRES_DSN"
+postgres_schema = "public"
+iceberg_namespace = "agent_memory"
+iceberg_table = "shared_memories"
 
 [polaris]
 enabled = false
