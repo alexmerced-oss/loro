@@ -45,6 +45,8 @@ def test_shared_memory_draft_store(tmp_path) -> None:
     )
     drafts = store.list()
     assert drafts[0] == draft
+    assert store.get(draft.draft_id) == draft
+    assert store.get("missing") is None
 
 
 def test_postgres_shared_memory_insert_sql() -> None:

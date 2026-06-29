@@ -126,6 +126,45 @@ def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
     assert "launch readiness" in drafts_result.stdout
 
 
+def test_shared_memory_commit_draft_renders_postgres_sql(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    runner = CliRunner()
+    remember_result = runner.invoke(
+        app,
+        ["remember", "--shared", "Use the enterprise launch readiness template"],
+    )
+    assert remember_result.exit_code == 0
+    draft_id = remember_result.stdout.splitlines()[0].split(": ", maxsplit=1)[1]
+    commit_result = runner.invoke(app, ["memory", "commit-draft", draft_id])
+    assert commit_result.exit_code == 0
+    assert '"backend": "postgres"' in commit_result.stdout
+    assert "INSERT INTO public.shared_memories" in commit_result.stdout
+    assert "enterprise launch readiness" in commit_result.stdout
+
+
+def test_shared_memory_commit_draft_rejects_iceberg_execute(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n"
+        '[memory.shared]\nbackend = "iceberg"\n',
+    )
+    runner = CliRunner()
+    remember_result = runner.invoke(
+        app,
+        ["remember", "--shared", "Use the enterprise launch readiness template"],
+    )
+    assert remember_result.exit_code == 0
+    draft_id = remember_result.stdout.splitlines()[0].split(": ", maxsplit=1)[1]
+    commit_result = runner.invoke(app, ["memory", "commit-draft", draft_id, "--execute"])
+    assert commit_result.exit_code != 0
+    assert "Live Iceberg commits are not enabled" in commit_result.stderr
+
+
 def test_safety_scan_detects_secret() -> None:
     result = CliRunner().invoke(app, ["safety", "scan", "api_key = 'abc123456789'"])
     assert result.exit_code == 1

@@ -43,6 +43,7 @@ loro plan "Create a release readiness checklist"
 loro remember --local "Status briefs should include risks, blockers, next steps, and owner."
 loro remember --shared "Use the enterprise launch readiness template for launches."
 loro memory drafts
+loro memory commit-draft <draft-id>
 loro memory schema --backend postgres
 loro memory backend-check
 loro docs create "Draft a project kickoff document"

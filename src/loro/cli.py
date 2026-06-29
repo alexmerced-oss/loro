@@ -114,6 +114,16 @@ def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
     console.print(f"Provenance: {provenance_path}")
 
 
+def _jsonable_params(params: dict[str, object]) -> dict[str, object]:
+    jsonable: dict[str, object] = {}
+    for key, value in params.items():
+        if hasattr(value, "isoformat"):
+            jsonable[key] = value.isoformat()  # type: ignore[union-attr]
+        else:
+            jsonable[key] = value
+    return jsonable
+
+
 @app.callback()
 def main(
     version: Annotated[bool, typer.Option("--version", help="Show Loro version.")] = False,
@@ -342,6 +352,63 @@ def memory_backend_check() -> None:
         )
     console.print_json(data=check.__dict__)
     raise typer.Exit(code=0 if check.ok else 1)
+
+
+@memory_app.command("commit-draft")
+def memory_commit_draft(
+    draft_id: Annotated[str, typer.Argument(help="Shared memory draft id.")],
+    execute: Annotated[
+        bool,
+        typer.Option(
+            "--execute",
+            help="Execute the commit. Without this flag Loro only renders backend SQL.",
+        ),
+    ] = False,
+) -> None:
+    """Render or execute an explicit shared memory draft commit."""
+    config = load_config()
+    draft_store = SharedMemoryDraftStore(Path(config.memory.local.path))
+    draft = draft_store.get(draft_id)
+    if draft is None:
+        raise typer.BadParameter(f"Unknown shared memory draft id: {draft_id}")
+
+    if config.memory.shared.backend == "postgres":
+        store = PostgresSharedMemoryStore(config.memory.shared)
+        if execute:
+            store.commit_draft(draft)
+            _audit().write(
+                "memory.shared_draft_committed",
+                backend="postgres",
+                draft_id=draft.draft_id,
+                tenant_id=draft.tenant_id,
+            )
+            console.print(f"Committed shared memory draft: {draft.draft_id}")
+            return
+        statement = store.render_insert(draft)
+    elif config.memory.shared.backend == "iceberg":
+        if execute:
+            raise typer.BadParameter("Live Iceberg commits are not enabled in this MVP.")
+        statement = IcebergSharedMemoryStore(config.memory.shared).render_insert(draft)
+    else:
+        raise typer.BadParameter(
+            f"Unsupported shared memory backend: {config.memory.shared.backend}"
+        )
+
+    _audit().write(
+        "memory.shared_draft_sql_rendered",
+        backend=config.memory.shared.backend,
+        draft_id=draft.draft_id,
+        tenant_id=draft.tenant_id,
+    )
+    console.print_json(
+        data={
+            "backend": config.memory.shared.backend,
+            "draft_id": draft.draft_id,
+            "execute": False,
+            "sql": statement.sql,
+            "params": _jsonable_params(statement.params),
+        }
+    )
 
 
 @app.command("remember")

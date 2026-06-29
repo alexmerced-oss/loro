@@ -28,10 +28,16 @@ commits should be added behind the same logical schema through a governed execut
 loro remember --shared "Use the enterprise launch readiness template" \
   --tenant-id acme --scope-type team --scope-key platform
 loro memory drafts
+loro memory commit-draft <draft-id>
+loro memory commit-draft <draft-id> --execute
 loro memory schema --backend postgres
 loro memory schema --backend iceberg
 loro memory backend-check
 ```
+
+`loro memory commit-draft <draft-id>` is a dry run by default. It renders the SQL and
+bound parameters that would be used for the configured backend. `--execute` is currently
+supported only for Postgres and still requires a configured DSN plus `psycopg`.
 
 ## Postgres Backend
 
@@ -48,6 +54,13 @@ postgres_schema = "public"
 `loro memory backend-check` verifies that the configured DSN environment variable is
 present and that `psycopg` is importable. The adapter only commits explicit user-dictated
 shared memory drafts.
+
+Postgres draft commits are explicit:
+
+```bash
+loro memory commit-draft <draft-id>
+loro memory commit-draft <draft-id> --execute
+```
 
 ## Iceberg Backend
 

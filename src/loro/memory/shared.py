@@ -151,3 +151,9 @@ class SharedMemoryDraftStore:
                 )
             )
         return drafts
+
+    def get(self, draft_id: str) -> SharedMemoryDraft | None:
+        for draft in self.list():
+            if draft.draft_id == draft_id:
+                return draft
+        return None
