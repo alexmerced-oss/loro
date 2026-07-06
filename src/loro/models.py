@@ -44,6 +44,20 @@ class BaseModelClient:
             return None
         return os.environ.get(self.config.api_key_env)
 
+    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, str]]:
+        return [message.__dict__ for message in messages]
+
+    def _send(self, request: ModelRequest) -> dict[str, Any]:
+        with httpx.Client(timeout=self.config.timeout_seconds) as client:
+            response = client.request(
+                request.method,
+                request.url,
+                headers=request.headers,
+                json=request.json,
+            )
+        response.raise_for_status()
+        return response.json()
+
 
 class MockModelClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
@@ -68,7 +82,7 @@ class OpenAICompatibleClient(BaseModelClient):
             headers["Authorization"] = f"Bearer {api_key}"
         payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": [message.__dict__ for message in messages],
+            "messages": self._message_payload(messages),
             "temperature": self.config.temperature,
         }
         if self.config.max_tokens:
@@ -82,15 +96,7 @@ class OpenAICompatibleClient(BaseModelClient):
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.request(
-                request.method,
-                request.url,
-                headers=request.headers,
-                json=request.json,
-            )
-        response.raise_for_status()
-        payload = response.json()
+        payload = self._send(request)
         content = payload["choices"][0]["message"]["content"]
         return ModelResponse(content=content, raw=payload)
 
@@ -107,7 +113,7 @@ class AnthropicClient(BaseModelClient):
             headers["x-api-key"] = api_key
         payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": [message.__dict__ for message in messages],
+            "messages": self._message_payload(messages),
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens or 4096,
         }
@@ -120,15 +126,7 @@ class AnthropicClient(BaseModelClient):
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.request(
-                request.method,
-                request.url,
-                headers=request.headers,
-                json=request.json,
-            )
-        response.raise_for_status()
-        payload = response.json()
+        payload = self._send(request)
         content = "".join(
             block.get("text", "")
             for block in payload.get("content", [])
@@ -163,15 +161,7 @@ class GeminiClient(BaseModelClient):
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.request(
-                request.method,
-                request.url,
-                headers=request.headers,
-                json=request.json,
-            )
-        response.raise_for_status()
-        payload = response.json()
+        payload = self._send(request)
         content = payload["candidates"][0]["content"]["parts"][0]["text"]
         return ModelResponse(content=content, raw=payload)
 
@@ -185,7 +175,7 @@ class OllamaClient(BaseModelClient):
             headers={"Content-Type": "application/json"},
             json={
                 "model": self.config.model,
-                "messages": [message.__dict__ for message in messages],
+                "messages": self._message_payload(messages),
                 "stream": False,
                 "options": {"temperature": self.config.temperature},
             },
@@ -193,15 +183,7 @@ class OllamaClient(BaseModelClient):
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.request(
-                request.method,
-                request.url,
-                headers=request.headers,
-                json=request.json,
-            )
-        response.raise_for_status()
-        payload = response.json()
+        payload = self._send(request)
         return ModelResponse(content=payload["message"]["content"], raw=payload)
 
 

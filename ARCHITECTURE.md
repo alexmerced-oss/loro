@@ -29,7 +29,8 @@ flowchart LR
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.config`: layered configuration model and environment overrides.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
-- `loro.providers`: AI provider profiles and local configuration writer.
+- `loro.provider_profiles`: built-in AI provider profile registry.
+- `loro.providers`: provider lookup, validation, and local configuration writer.
 - `loro.tools`: local file and shell tools, with more tools expected behind typed interfaces.
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
 - `loro.memory`: local memory, shared-memory schemas, backend adapters, and shared-memory operations.
