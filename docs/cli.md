@@ -11,6 +11,15 @@ loro plan "Draft a rollout plan"
 loro run "Summarize the project"
 ```
 
+`plan` and `run` can execute explicit typed tool directives in the prompt:
+
+```bash
+loro plan '@tool file.read {"path": "README.md", "limit": 1000}'
+loro plan '@tool file.search {"query": "Polaris", "root": ".", "limit": 5}'
+```
+
+The initial runtime loop supports explicit `file.read` and `file.search` calls.
+
 ## Providers
 
 ```bash

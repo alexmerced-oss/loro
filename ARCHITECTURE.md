@@ -32,6 +32,7 @@ flowchart LR
 - `loro.provider_profiles`: built-in AI provider profile registry.
 - `loro.providers`: provider lookup, validation, and local configuration writer.
 - `loro.tools`: local file and shell tools, with more tools expected behind typed interfaces.
+- `loro.tool_runtime`: explicit typed runtime tool-call parsing and execution.
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
 - `loro.memory`: local memory, shared-memory draft storage, schema generation, backend adapters, and shared-memory operations.
 - `loro.polaris`: controlled read-only wrapper around the Polaris CLI.
@@ -48,7 +49,7 @@ flowchart LR
 5. The runtime emits `runtime.task_completed`.
 6. Artifact and tool commands emit their own audit events with previews and metadata, not full sensitive payloads.
 
-The current runtime is deterministic scaffolding. The intended next layer is a model adapter and typed tool-calling loop that uses the same config, permission, audit, memory, and session services.
+The current runtime can execute explicit typed tool directives before producing the model response. The intended next layer is model-directed tool calling that uses the same config, permission, audit, memory, and session services.
 
 ## Configuration
 

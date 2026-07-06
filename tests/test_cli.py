@@ -17,6 +17,23 @@ def test_plan_scaffold() -> None:
     assert "Loro plan mode is scaffolded" in result.stdout
 
 
+def test_plan_with_explicit_tool_call(tmp_path, monkeypatch) -> None:
+    note = tmp_path / "note.txt"
+    note.write_text("hello from tool\n", encoding="utf-8")
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[sessions]\npath = \"{tmp_path / 'sessions'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["plan", f'Read the note.\n@tool file.read {{"path": "{note}", "limit": 30}}'],
+    )
+    assert result.exit_code == 0
+    assert "Tool results" in result.stdout
+    assert "hello from tool" in result.stdout
+
+
 def test_docs_create(tmp_path) -> None:
     result = CliRunner().invoke(
         app,

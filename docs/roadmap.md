@@ -17,13 +17,14 @@
 - Iceberg shared memory SQL adapter
 - Polaris typed catalog, namespace, table, and view commands
 - Polaris typed role, privilege, policy, and applicable-policy commands
+- Explicit typed runtime tool loop for file read/search
 
 ## Next MVP Work
 
 - Iceberg governed execution integration
 - Postgres migration/apply command and live integration tests
 - Complete model provider adapters, including Bedrock and streaming
-- Typed tool-calling runtime loop
+- Model-directed tool-calling runtime loop
 - Richer permission policy matching
 - Secret scanning before memory and artifact writes
 
