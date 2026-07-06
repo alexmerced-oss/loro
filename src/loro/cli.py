@@ -13,13 +13,14 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
+from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import (
     check_shared_memory_backend,
     create_shared_memory_draft,
     render_or_commit_shared_draft,
 )
-from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
+from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient

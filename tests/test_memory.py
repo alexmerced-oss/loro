@@ -2,10 +2,12 @@ import pytest
 
 from loro.config import SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft
+from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.postgres import PostgresSharedMemoryStore
-from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
+from loro.memory.schemas import shared_memory_schema
+from loro.memory.shared import SharedMemoryDraftStore as CompatDraftStore
 
 
 def test_local_memory_search(tmp_path) -> None:
@@ -47,6 +49,10 @@ def test_shared_memory_draft_store(tmp_path) -> None:
     assert drafts[0] == draft
     assert store.get(draft.draft_id) == draft
     assert store.get("missing") is None
+
+
+def test_shared_memory_compat_imports() -> None:
+    assert CompatDraftStore is SharedMemoryDraftStore
 
 
 def test_postgres_shared_memory_insert_sql() -> None:
