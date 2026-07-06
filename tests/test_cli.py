@@ -1,3 +1,5 @@
+from subprocess import CompletedProcess
+
 from typer.testing import CliRunner
 
 from loro.cli import app
@@ -53,6 +55,40 @@ def test_file_read_command(tmp_path) -> None:
     result = CliRunner().invoke(app, ["file", "read", str(note)])
     assert result.exit_code == 0
     assert "hello loro" in result.stdout
+
+
+def test_data_tables_typed_command(monkeypatch, tmp_path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        commands.append(command)
+        return CompletedProcess(command, 0, stdout="events\n", stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[polaris]\n"
+        'enabled = true\n'
+        'cli_path = "polaris"\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["data", "tables", "--namespace", "analytics", "--catalog", "prod"],
+    )
+    assert result.exit_code == 0
+    assert "events" in result.stdout
+    assert commands == [
+        [
+            "polaris",
+            "tables",
+            "list",
+            "--namespace",
+            "analytics",
+            "--catalog",
+            "prod",
+        ]
+    ]
 
 
 def test_shell_run_requires_yes() -> None:

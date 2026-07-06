@@ -39,6 +39,74 @@ class PolarisClient:
             returncode=completed.returncode,
         )
 
+    def list_catalogs(self) -> PolarisResult:
+        return self.run_readonly(["catalogs", "list"])
+
+    def get_catalog(self, catalog: str) -> PolarisResult:
+        return self.run_readonly(["catalogs", "get", catalog])
+
+    def list_namespaces(self, catalog: str | None = None) -> PolarisResult:
+        args = ["namespaces", "list"]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def get_namespace(self, namespace: str, catalog: str | None = None) -> PolarisResult:
+        args = ["namespaces", "get", namespace]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def list_tables(
+        self,
+        namespace: str | None = None,
+        catalog: str | None = None,
+    ) -> PolarisResult:
+        args = ["tables", "list"]
+        if namespace:
+            args.extend(["--namespace", namespace])
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def get_table(
+        self,
+        table: str,
+        namespace: str | None = None,
+        catalog: str | None = None,
+    ) -> PolarisResult:
+        args = ["tables", "get", table]
+        if namespace:
+            args.extend(["--namespace", namespace])
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def list_views(
+        self,
+        namespace: str | None = None,
+        catalog: str | None = None,
+    ) -> PolarisResult:
+        args = ["views", "list"]
+        if namespace:
+            args.extend(["--namespace", namespace])
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def get_view(
+        self,
+        view: str,
+        namespace: str | None = None,
+        catalog: str | None = None,
+    ) -> PolarisResult:
+        args = ["views", "get", view]
+        if namespace:
+            args.extend(["--namespace", namespace])
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
     def _validate_readonly(self, args: list[str]) -> None:
         if len(args) < 2:
             raise ValueError("Polaris read-only operations require a resource and action.")

@@ -1,4 +1,5 @@
 from pathlib import Path
+from subprocess import CompletedProcess
 
 import pytest
 
@@ -34,3 +35,71 @@ def test_polaris_rejects_mutation() -> None:
     client = PolarisClient(PolarisConfig())
     with pytest.raises(PermissionError):
         client.run_readonly(["catalogs", "create", "example"])
+
+
+def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        calls.append(command)
+        return CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    client = PolarisClient(PolarisConfig(cli_path="polaris"))
+
+    assert client.list_catalogs().command == ["polaris", "catalogs", "list"]
+    assert client.get_catalog("prod").command == ["polaris", "catalogs", "get", "prod"]
+    assert client.list_namespaces(catalog="prod").command == [
+        "polaris",
+        "namespaces",
+        "list",
+        "--catalog",
+        "prod",
+    ]
+    assert client.get_namespace("analytics", catalog="prod").command == [
+        "polaris",
+        "namespaces",
+        "get",
+        "analytics",
+        "--catalog",
+        "prod",
+    ]
+    assert client.list_tables(namespace="analytics", catalog="prod").command == [
+        "polaris",
+        "tables",
+        "list",
+        "--namespace",
+        "analytics",
+        "--catalog",
+        "prod",
+    ]
+    assert client.get_table("events", namespace="analytics", catalog="prod").command == [
+        "polaris",
+        "tables",
+        "get",
+        "events",
+        "--namespace",
+        "analytics",
+        "--catalog",
+        "prod",
+    ]
+    assert client.list_views(namespace="analytics", catalog="prod").command == [
+        "polaris",
+        "views",
+        "list",
+        "--namespace",
+        "analytics",
+        "--catalog",
+        "prod",
+    ]
+    assert client.get_view("daily_events", namespace="analytics", catalog="prod").command == [
+        "polaris",
+        "views",
+        "get",
+        "daily_events",
+        "--namespace",
+        "analytics",
+        "--catalog",
+        "prod",
+    ]
+    assert len(calls) == 8

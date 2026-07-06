@@ -10,10 +10,19 @@ Current MVP behavior:
 
 ```bash
 loro data catalogs
+loro data catalog prod
+loro data namespaces --catalog prod
+loro data namespace analytics --catalog prod
+loro data tables --catalog prod --namespace analytics
+loro data table events --catalog prod --namespace analytics
+loro data views --catalog prod --namespace analytics
+loro data view daily_events --catalog prod --namespace analytics
 loro data polaris catalogs list
 ```
 
-The `data polaris` command validates the requested operation against a read-only allowlist before executing the Polaris CLI.
+Typed `data` commands call the Polaris CLI through a constrained client. The lower-level
+`data polaris` command remains available for read-only operations and validates the requested
+operation against an allowlist before executing the Polaris CLI.
 
 ## Iceberg
 
@@ -26,9 +35,6 @@ Current MVP behavior:
 
 ## Future Typed Operations
 
-- List/get catalogs
-- List/get namespaces
-- List/get tables/views
 - Inspect schemas
 - Inspect principal roles and catalog roles
 - Inspect privileges and policies

@@ -23,7 +23,7 @@ from loro.memory.operations import (
 from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
-from loro.polaris import PolarisClient
+from loro.polaris import PolarisClient, PolarisResult
 from loro.providers import (
     check_provider_config,
     get_provider_profile,
@@ -150,6 +150,30 @@ def _create_and_print_brief(
             brief_type=brief_type,
         ),
     )
+
+
+def _run_polaris_result(result: PolarisResult) -> None:
+    _audit().write(
+        "polaris.readonly_executed",
+        command=result.command,
+        returncode=result.returncode,
+    )
+    if result.stdout:
+        console.print(result.stdout)
+    if result.stderr:
+        console.print(result.stderr)
+    raise typer.Exit(code=result.returncode)
+
+
+def _polaris_client() -> PolarisClient:
+    config = load_config()
+    if not config.polaris.enabled:
+        console.print(
+            "Polaris is disabled. Enable [polaris] before using this command.",
+            markup=False,
+        )
+        raise typer.Exit(code=2)
+    return PolarisClient(config.polaris)
 
 
 @app.callback()
@@ -645,24 +669,81 @@ def brief_executive(
 
 @data_app.command("catalogs")
 def data_catalogs() -> None:
-    config = load_config()
-    if not config.polaris.enabled:
-        console.print(
-            "Polaris catalog discovery is disabled. Enable [polaris] to connect.",
-            markup=False,
-        )
-        return
-    result = PolarisClient(config.polaris).run_readonly(["catalogs", "list"])
-    _audit().write(
-        "polaris.readonly_executed",
-        command=result.command,
-        returncode=result.returncode,
-    )
-    if result.stdout:
-        console.print(result.stdout)
-    if result.stderr:
-        console.print(result.stderr)
-    raise typer.Exit(code=result.returncode)
+    """List Polaris catalogs through the typed client."""
+    _run_polaris_result(_polaris_client().list_catalogs())
+
+
+@data_app.command("catalog")
+def data_catalog(catalog: Annotated[str, typer.Argument(help="Catalog name.")]) -> None:
+    """Describe one Polaris catalog through the typed client."""
+    _run_polaris_result(_polaris_client().get_catalog(catalog))
+
+
+@data_app.command("namespaces")
+def data_namespaces(
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris namespaces through the typed client."""
+    _run_polaris_result(_polaris_client().list_namespaces(catalog=catalog))
+
+
+@data_app.command("namespace")
+def data_namespace(
+    namespace: Annotated[str, typer.Argument(help="Namespace name.")],
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Describe one Polaris namespace through the typed client."""
+    _run_polaris_result(_polaris_client().get_namespace(namespace, catalog=catalog))
+
+
+@data_app.command("tables")
+def data_tables(
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris tables through the typed client."""
+    _run_polaris_result(_polaris_client().list_tables(namespace=namespace, catalog=catalog))
+
+
+@data_app.command("table")
+def data_table(
+    table: Annotated[str, typer.Argument(help="Table name.")],
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Describe one Polaris table through the typed client."""
+    _run_polaris_result(_polaris_client().get_table(table, namespace=namespace, catalog=catalog))
+
+
+@data_app.command("views")
+def data_views(
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris views through the typed client."""
+    _run_polaris_result(_polaris_client().list_views(namespace=namespace, catalog=catalog))
+
+
+@data_app.command("view")
+def data_view(
+    view: Annotated[str, typer.Argument(help="View name.")],
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Describe one Polaris view through the typed client."""
+    _run_polaris_result(_polaris_client().get_view(view, namespace=namespace, catalog=catalog))
 
 
 @data_app.command("polaris")
@@ -670,24 +751,7 @@ def data_polaris(
     args: Annotated[list[str], typer.Argument(help="Read-only Polaris CLI arguments.")],
 ) -> None:
     """Run a read-only Polaris CLI operation through Loro's wrapper."""
-    config = load_config()
-    if not config.polaris.enabled:
-        console.print(
-            "Polaris is disabled. Enable [polaris] before using this command.",
-            markup=False,
-        )
-        raise typer.Exit(code=2)
-    result = PolarisClient(config.polaris).run_readonly(args)
-    _audit().write(
-        "polaris.readonly_executed",
-        command=result.command,
-        returncode=result.returncode,
-    )
-    if result.stdout:
-        console.print(result.stdout)
-    if result.stderr:
-        console.print(result.stderr)
-    raise typer.Exit(code=result.returncode)
+    _run_polaris_result(_polaris_client().run_readonly(args))
 
 
 @file_app.command("read")

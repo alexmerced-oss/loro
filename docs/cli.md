@@ -72,7 +72,12 @@ Memory and artifact commands scan for obvious secrets before writing files or me
 
 ```bash
 loro data catalogs
+loro data namespaces --catalog prod
+loro data tables --catalog prod --namespace analytics
+loro data views --catalog prod --namespace analytics
 loro data polaris catalogs list
 ```
 
-Polaris commands require `[polaris].enabled = true` and are restricted to read-only operation families.
+Polaris commands require `[polaris].enabled = true`. Typed commands cover common catalog,
+namespace, table, and view discovery. The lower-level `data polaris` escape hatch is
+restricted to read-only operation families.
