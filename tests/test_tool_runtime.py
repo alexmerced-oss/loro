@@ -1,3 +1,5 @@
+import pytest
+
 from loro.config import LoroConfig
 from loro.tool_runtime import ToolRegistry, parse_tool_calls
 
@@ -9,6 +11,11 @@ def test_parse_tool_calls() -> None:
     assert len(calls) == 1
     assert calls[0].name == "file.read"
     assert calls[0].args == {"path": "README.md", "limit": 20}
+
+
+def test_parse_tool_calls_rejects_non_object_args() -> None:
+    with pytest.raises(ValueError, match="JSON object"):
+        parse_tool_calls('@tool file.read ["README.md"]')
 
 
 def test_tool_registry_file_read(tmp_path) -> None:

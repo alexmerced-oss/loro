@@ -13,10 +13,83 @@ from loro.models import (
 )
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        return self.payload
+
+
+class FakeHttpClient:
+    payload = {}
+    calls = []
+
+    def __init__(self, timeout):
+        self.timeout = timeout
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def request(self, method, url, headers, json):
+        self.__class__.calls.append(
+            {"method": method, "url": url, "headers": headers, "json": json}
+        )
+        return FakeResponse(self.__class__.payload)
+
+
 def test_mock_model_client_complete() -> None:
     client = MockModelClient(ModelConfig())
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "Mock response for: hello"
+
+
+def test_openai_compatible_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {"choices": [{"message": {"content": "done"}}]}
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
+    )
+    response = client.complete([ModelMessage(role="user", content="hello")])
+    assert response.content == "done"
+    assert response.raw == FakeHttpClient.payload
+    assert FakeHttpClient.calls[0]["url"] == "https://example.com/v1/chat/completions"
+
+
+def test_anthropic_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {
+        "content": [{"type": "text", "text": "hello"}, {"type": "tool_use", "name": "noop"}]
+    }
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = AnthropicClient(ModelConfig(provider="anthropic", model="claude-test"))
+    response = client.complete([ModelMessage(role="user", content="hello")])
+    assert response.content == "hello"
+
+
+def test_gemini_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {"candidates": [{"content": {"parts": [{"text": "gemini"}]}}]}
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = GeminiClient(ModelConfig(provider="gemini", model="gemini-test"))
+    response = client.complete([ModelMessage(role="user", content="hello")])
+    assert response.content == "gemini"
+
+
+def test_ollama_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {"message": {"content": "ollama"}}
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = OllamaClient(ModelConfig(provider="ollama", model="llama3.2"))
+    response = client.complete([ModelMessage(role="user", content="hello")])
+    assert response.content == "ollama"
 
 
 def test_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:

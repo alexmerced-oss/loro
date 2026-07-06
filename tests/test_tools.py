@@ -17,6 +17,12 @@ def test_permission_requires_approval_for_ask() -> None:
     assert engine.require_allowed(PermissionRequest(tool="shell", action="run"), approved=True)
 
 
+def test_permission_denies_policy() -> None:
+    engine = PermissionEngine(PermissionsConfig(shell="deny"))
+    with pytest.raises(PermissionError, match="denied by policy"):
+        engine.require_allowed(PermissionRequest(tool="shell", action="run"), approved=True)
+
+
 def test_file_search(tmp_path: Path) -> None:
     path = tmp_path / "note.txt"
     path.write_text("hello loro\nanother line\n", encoding="utf-8")
