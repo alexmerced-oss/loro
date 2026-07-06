@@ -32,9 +32,10 @@ flowchart LR
 - `loro.providers`: AI provider profiles and local configuration writer.
 - `loro.tools`: local file and shell tools, with more tools expected behind typed interfaces.
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
-- `loro.memory`: local memory plus shared-memory schemas and backend adapters.
+- `loro.memory`: local memory, shared-memory schemas, backend adapters, and shared-memory operations.
 - `loro.polaris`: controlled read-only wrapper around the Polaris CLI.
 - `loro.audit`: JSONL audit event writer.
+- `loro.serialization`: small helpers for JSON-safe CLI output.
 - `loro.sessions`: durable JSON session records.
 
 ## Runtime Flow

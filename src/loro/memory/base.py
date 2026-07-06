@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 
@@ -25,6 +25,19 @@ class SharedMemoryDraft:
     status: str = "draft"
     draft_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class SharedMemoryStatement:
+    sql: str
+    params: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SharedMemoryBackendCheck:
+    backend: str
+    ok: bool
+    messages: list[str]
 
 
 class MemoryStore(Protocol):

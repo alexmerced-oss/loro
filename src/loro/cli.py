@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
@@ -12,10 +13,12 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
-from loro.memory.base import SharedMemoryDraft
-from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
-from loro.memory.postgres import PostgresSharedMemoryStore, SharedMemoryBackendCheck
+from loro.memory.operations import (
+    check_shared_memory_backend,
+    create_shared_memory_draft,
+    render_or_commit_shared_draft,
+)
 from loro.memory.shared import SharedMemoryDraftStore, shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -29,6 +32,7 @@ from loro.providers import (
 )
 from loro.runtime import AgentRuntime
 from loro.safety import SafetyScanner
+from loro.serialization import jsonable_mapping
 from loro.sessions import SessionStore
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
@@ -114,14 +118,37 @@ def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
     console.print(f"Provenance: {provenance_path}")
 
 
-def _jsonable_params(params: dict[str, object]) -> dict[str, object]:
-    jsonable: dict[str, object] = {}
-    for key, value in params.items():
-        if hasattr(value, "isoformat"):
-            jsonable[key] = value.isoformat()  # type: ignore[union-attr]
-        else:
-            jsonable[key] = value
-    return jsonable
+def _create_and_print_artifact(
+    *,
+    prompt: str,
+    output_dir: Path,
+    allow_sensitive: bool,
+    context: str,
+    factory: Callable[[str, Path], ArtifactResult],
+) -> None:
+    _enforce_safe_content(prompt, context=context, allow_sensitive=allow_sensitive)
+    result = factory(prompt, output_dir)
+    _print_artifact_result(result, prompt)
+
+
+def _create_and_print_brief(
+    *,
+    prompt: str,
+    output_dir: Path,
+    allow_sensitive: bool,
+    brief_type: str,
+) -> None:
+    _create_and_print_artifact(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        context="artifact.brief",
+        factory=lambda artifact_prompt, artifact_dir: create_brief_artifact(
+            artifact_prompt,
+            artifact_dir,
+            brief_type=brief_type,
+        ),
+    )
 
 
 @app.callback()
@@ -331,25 +358,7 @@ def memory_schema(
 def memory_backend_check() -> None:
     """Check whether the configured shared memory backend is ready."""
     config = load_config()
-    if config.memory.shared.backend == "postgres":
-        check = PostgresSharedMemoryStore(config.memory.shared).check()
-    elif config.memory.shared.backend == "iceberg":
-        store = IcebergSharedMemoryStore(config.memory.shared)
-        check = SharedMemoryBackendCheck(
-            backend="iceberg",
-            ok=False,
-            messages=[
-                f"Iceberg memory table: {store.memory_table}",
-                f"Iceberg event table: {store.events_table}",
-                "Live Iceberg commits are not enabled in this MVP.",
-            ],
-        )
-    else:
-        check = SharedMemoryBackendCheck(
-            backend=config.memory.shared.backend,
-            ok=False,
-            messages=["Unsupported shared memory backend."],
-        )
+    check = check_shared_memory_backend(config.memory.shared)
     console.print_json(data=check.__dict__)
     raise typer.Exit(code=0 if check.ok else 1)
 
@@ -372,41 +381,37 @@ def memory_commit_draft(
     if draft is None:
         raise typer.BadParameter(f"Unknown shared memory draft id: {draft_id}")
 
-    if config.memory.shared.backend == "postgres":
-        store = PostgresSharedMemoryStore(config.memory.shared)
-        if execute:
-            store.commit_draft(draft)
-            _audit().write(
-                "memory.shared_draft_committed",
-                backend="postgres",
-                draft_id=draft.draft_id,
-                tenant_id=draft.tenant_id,
-            )
-            console.print(f"Committed shared memory draft: {draft.draft_id}")
-            return
-        statement = store.render_insert(draft)
-    elif config.memory.shared.backend == "iceberg":
-        if execute:
-            raise typer.BadParameter("Live Iceberg commits are not enabled in this MVP.")
-        statement = IcebergSharedMemoryStore(config.memory.shared).render_insert(draft)
-    else:
-        raise typer.BadParameter(
-            f"Unsupported shared memory backend: {config.memory.shared.backend}"
+    try:
+        result = render_or_commit_shared_draft(config, draft, execute=execute)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
+    if result.executed:
+        _audit().write(
+            "memory.shared_draft_committed",
+            backend=result.backend,
+            draft_id=draft.draft_id,
+            tenant_id=draft.tenant_id,
         )
+        console.print(f"Committed shared memory draft: {draft.draft_id}")
+        return
+
+    if result.statement is None:
+        raise typer.BadParameter("Shared memory dry run did not produce a statement.")
 
     _audit().write(
         "memory.shared_draft_sql_rendered",
-        backend=config.memory.shared.backend,
+        backend=result.backend,
         draft_id=draft.draft_id,
         tenant_id=draft.tenant_id,
     )
     console.print_json(
         data={
-            "backend": config.memory.shared.backend,
+            "backend": result.backend,
             "draft_id": draft.draft_id,
             "execute": False,
-            "sql": statement.sql,
-            "params": _jsonable_params(statement.params),
+            "sql": result.statement.sql,
+            "params": jsonable_mapping(result.statement.params),
         }
     )
 
@@ -446,9 +451,8 @@ def remember(
         allow_sensitive=allow_sensitive,
     )
     if shared:
-        draft = SharedMemoryDraft(
+        draft = create_shared_memory_draft(
             content=content,
-            summary=prompt_preview(content, limit=120),
             tenant_id=tenant_id,
             scope_type=scope_type,
             scope_key=scope_key,
@@ -493,9 +497,13 @@ def docs_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.document", allow_sensitive=allow_sensitive)
-    result = create_document_artifact(prompt, output_dir)
-    _print_artifact_result(result, prompt)
+    _create_and_print_artifact(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        context="artifact.document",
+        factory=create_document_artifact,
+    )
 
 
 @slides_app.command("create")
@@ -509,9 +517,13 @@ def slides_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.presentation", allow_sensitive=allow_sensitive)
-    result = create_presentation_artifact(prompt, output_dir)
-    _print_artifact_result(result, prompt)
+    _create_and_print_artifact(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        context="artifact.presentation",
+        factory=create_presentation_artifact,
+    )
 
 
 @sheets_app.command("analyze")
@@ -525,9 +537,13 @@ def sheets_analyze(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.spreadsheet", allow_sensitive=allow_sensitive)
-    result = create_spreadsheet_artifact(prompt, output_dir)
-    _print_artifact_result(result, prompt)
+    _create_and_print_artifact(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        context="artifact.spreadsheet",
+        factory=create_spreadsheet_artifact,
+    )
 
 
 @sheets_app.command("create")
@@ -541,9 +557,13 @@ def sheets_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.spreadsheet", allow_sensitive=allow_sensitive)
-    result = create_spreadsheet_artifact(prompt, output_dir)
-    _print_artifact_result(result, prompt)
+    _create_and_print_artifact(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        context="artifact.spreadsheet",
+        factory=create_spreadsheet_artifact,
+    )
 
 
 @brief_app.command("meeting")
@@ -557,9 +577,12 @@ def brief_meeting(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
-    result = create_brief_artifact(prompt, output_dir, brief_type="meeting")
-    _print_artifact_result(result, prompt)
+    _create_and_print_brief(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        brief_type="meeting",
+    )
 
 
 @brief_app.command("project")
@@ -573,9 +596,12 @@ def brief_project(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
-    result = create_brief_artifact(prompt, output_dir, brief_type="project")
-    _print_artifact_result(result, prompt)
+    _create_and_print_brief(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        brief_type="project",
+    )
 
 
 @brief_app.command("incident")
@@ -589,9 +615,12 @@ def brief_incident(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
-    result = create_brief_artifact(prompt, output_dir, brief_type="incident")
-    _print_artifact_result(result, prompt)
+    _create_and_print_brief(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        brief_type="incident",
+    )
 
 
 @brief_app.command("executive")
@@ -605,9 +634,12 @@ def brief_executive(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
 ) -> None:
-    _enforce_safe_content(prompt, context="artifact.brief", allow_sensitive=allow_sensitive)
-    result = create_brief_artifact(prompt, output_dir, brief_type="executive")
-    _print_artifact_result(result, prompt)
+    _create_and_print_brief(
+        prompt=prompt,
+        output_dir=output_dir,
+        allow_sensitive=allow_sensitive,
+        brief_type="executive",
+    )
 
 
 @data_app.command("catalogs")

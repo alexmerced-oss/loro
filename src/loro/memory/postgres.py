@@ -1,27 +1,12 @@
 import json
 import os
 import re
-from dataclasses import dataclass
-from typing import Any
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
-from loro.memory.base import SharedMemoryDraft
+from loro.memory.base import SharedMemoryBackendCheck, SharedMemoryDraft, SharedMemoryStatement
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-@dataclass(frozen=True)
-class PostgresStatement:
-    sql: str
-    params: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class SharedMemoryBackendCheck:
-    backend: str
-    ok: bool
-    messages: list[str]
 
 
 class PostgresSharedMemoryStore:
@@ -60,7 +45,7 @@ class PostgresSharedMemoryStore:
             messages=messages,
         )
 
-    def render_insert(self, draft: SharedMemoryDraft) -> PostgresStatement:
+    def render_insert(self, draft: SharedMemoryDraft) -> SharedMemoryStatement:
         memory_id = str(uuid4())
         event_id = str(uuid4())
         sql = f"""
@@ -112,7 +97,7 @@ SELECT
   %(event_payload)s::jsonb
 FROM inserted_memory;
 """.strip()
-        return PostgresStatement(
+        return SharedMemoryStatement(
             sql=sql,
             params={
                 "memory_id": memory_id,
@@ -137,7 +122,7 @@ FROM inserted_memory;
         tenant_id: str,
         query: str,
         limit: int = 20,
-    ) -> PostgresStatement:
+    ) -> SharedMemoryStatement:
         sql = f"""
 SELECT
   memory_id,
@@ -158,7 +143,7 @@ WHERE tenant_id = %(tenant_id)s
 ORDER BY created_at DESC
 LIMIT %(limit)s;
 """.strip()
-        return PostgresStatement(
+        return SharedMemoryStatement(
             sql=sql,
             params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
         )

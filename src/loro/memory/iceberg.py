@@ -1,19 +1,11 @@
 import json
 import re
-from dataclasses import dataclass
-from typing import Any
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
-from loro.memory.base import SharedMemoryDraft
+from loro.memory.base import SharedMemoryDraft, SharedMemoryStatement
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-@dataclass(frozen=True)
-class IcebergStatement:
-    sql: str
-    params: dict[str, Any]
 
 
 class IcebergSharedMemoryStore:
@@ -80,7 +72,7 @@ USING iceberg
 PARTITIONED BY (tenant_id, event_type);
 """.strip()
 
-    def render_insert(self, draft: SharedMemoryDraft) -> IcebergStatement:
+    def render_insert(self, draft: SharedMemoryDraft) -> SharedMemoryStatement:
         memory_id = str(uuid4())
         event_id = str(uuid4())
         sql = f"""
@@ -146,7 +138,7 @@ VALUES (
   :event_payload
 );
 """.strip()
-        return IcebergStatement(
+        return SharedMemoryStatement(
             sql=sql,
             params={
                 "memory_id": memory_id,
@@ -171,7 +163,7 @@ VALUES (
         tenant_id: str,
         query: str,
         limit: int = 20,
-    ) -> IcebergStatement:
+    ) -> SharedMemoryStatement:
         sql = f"""
 SELECT
   memory_id,
@@ -192,7 +184,7 @@ WHERE tenant_id = :tenant_id
 ORDER BY created_at DESC
 LIMIT :limit;
 """.strip()
-        return IcebergStatement(
+        return SharedMemoryStatement(
             sql=sql,
             params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
         )
