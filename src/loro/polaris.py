@@ -107,6 +107,61 @@ class PolarisClient:
             args.extend(["--catalog", catalog])
         return self.run_readonly(args)
 
+    def list_principal_roles(self) -> PolarisResult:
+        return self.run_readonly(["principal-roles", "list"])
+
+    def get_principal_role(self, role: str) -> PolarisResult:
+        return self.run_readonly(["principal-roles", "get", role])
+
+    def list_catalog_roles(self, catalog: str | None = None) -> PolarisResult:
+        args = ["catalog-roles", "list"]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def get_catalog_role(self, role: str, catalog: str | None = None) -> PolarisResult:
+        args = ["catalog-roles", "get", role]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def list_privileges(
+        self,
+        catalog_role: str | None = None,
+        catalog: str | None = None,
+    ) -> PolarisResult:
+        args = ["privileges", "list"]
+        if catalog_role:
+            args.extend(["--catalog-role", catalog_role])
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def list_policies(self, catalog: str | None = None) -> PolarisResult:
+        args = ["policies", "list"]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def get_policy(self, policy: str, catalog: str | None = None) -> PolarisResult:
+        args = ["policies", "get", policy]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        return self.run_readonly(args)
+
+    def list_applicable_policies(
+        self,
+        resource: str,
+        catalog: str | None = None,
+        namespace: str | None = None,
+    ) -> PolarisResult:
+        args = ["applicable-policies", "list", "--resource", resource]
+        if catalog:
+            args.extend(["--catalog", catalog])
+        if namespace:
+            args.extend(["--namespace", namespace])
+        return self.run_readonly(args)
+
     def _validate_readonly(self, args: list[str]) -> None:
         if len(args) < 2:
             raise ValueError("Polaris read-only operations require a resource and action.")

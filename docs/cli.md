@@ -75,9 +75,14 @@ loro data catalogs
 loro data namespaces --catalog prod
 loro data tables --catalog prod --namespace analytics
 loro data views --catalog prod --namespace analytics
+loro data principal-roles
+loro data catalog-roles --catalog prod
+loro data privileges --catalog prod --catalog-role reader
+loro data policies --catalog prod
+loro data applicable-policies events --catalog prod --namespace analytics
 loro data polaris catalogs list
 ```
 
 Polaris commands require `[polaris].enabled = true`. Typed commands cover common catalog,
-namespace, table, and view discovery. The lower-level `data polaris` escape hatch is
-restricted to read-only operation families.
+namespace, table, view, role, privilege, and policy discovery. The lower-level
+`data polaris` escape hatch is restricted to read-only operation families.

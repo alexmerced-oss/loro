@@ -746,6 +746,85 @@ def data_view(
     _run_polaris_result(_polaris_client().get_view(view, namespace=namespace, catalog=catalog))
 
 
+@data_app.command("principal-roles")
+def data_principal_roles() -> None:
+    """List Polaris principal roles through the typed client."""
+    _run_polaris_result(_polaris_client().list_principal_roles())
+
+
+@data_app.command("principal-role")
+def data_principal_role(role: Annotated[str, typer.Argument(help="Principal role name.")]) -> None:
+    """Describe one Polaris principal role through the typed client."""
+    _run_polaris_result(_polaris_client().get_principal_role(role))
+
+
+@data_app.command("catalog-roles")
+def data_catalog_roles(
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris catalog roles through the typed client."""
+    _run_polaris_result(_polaris_client().list_catalog_roles(catalog=catalog))
+
+
+@data_app.command("catalog-role")
+def data_catalog_role(
+    role: Annotated[str, typer.Argument(help="Catalog role name.")],
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Describe one Polaris catalog role through the typed client."""
+    _run_polaris_result(_polaris_client().get_catalog_role(role, catalog=catalog))
+
+
+@data_app.command("privileges")
+def data_privileges(
+    catalog_role: Annotated[
+        str | None,
+        typer.Option("--catalog-role", help="Catalog role name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris privileges through the typed client."""
+    _run_polaris_result(
+        _polaris_client().list_privileges(catalog_role=catalog_role, catalog=catalog)
+    )
+
+
+@data_app.command("policies")
+def data_policies(
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """List Polaris policies through the typed client."""
+    _run_polaris_result(_polaris_client().list_policies(catalog=catalog))
+
+
+@data_app.command("policy")
+def data_policy(
+    policy: Annotated[str, typer.Argument(help="Policy name.")],
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Describe one Polaris policy through the typed client."""
+    _run_polaris_result(_polaris_client().get_policy(policy, catalog=catalog))
+
+
+@data_app.command("applicable-policies")
+def data_applicable_policies(
+    resource: Annotated[str, typer.Argument(help="Resource identifier.")],
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+) -> None:
+    """List Polaris policies applicable to a resource through the typed client."""
+    _run_polaris_result(
+        _polaris_client().list_applicable_policies(
+            resource,
+            catalog=catalog,
+            namespace=namespace,
+        )
+    )
+
+
 @data_app.command("polaris")
 def data_polaris(
     args: Annotated[list[str], typer.Argument(help="Read-only Polaris CLI arguments.")],

@@ -119,10 +119,10 @@ Each artifact write produces a `.provenance.json` sidecar with prompt preview, g
 The Polaris integration is intentionally controlled:
 
 - `loro data catalogs` calls `polaris catalogs list` only when Polaris is enabled.
-- Typed `loro data` commands cover catalog, namespace, table, and view discovery.
+- Typed `loro data` commands cover catalog, namespace, table, view, role, privilege, and policy discovery.
 - `loro data polaris ...` validates the resource/action pair against a read-only allowlist before executing.
 
-Future work should add typed methods for roles, privileges, policies, and applicable policies, then expose governed table context to the agent loop.
+Future work should expose governed table context to the agent loop and add higher-level access explanations.
 
 ## Persistence
 

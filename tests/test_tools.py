@@ -102,4 +102,65 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "--catalog",
         "prod",
     ]
-    assert len(calls) == 8
+    assert client.list_principal_roles().command == ["polaris", "principal-roles", "list"]
+    assert client.get_principal_role("analyst").command == [
+        "polaris",
+        "principal-roles",
+        "get",
+        "analyst",
+    ]
+    assert client.list_catalog_roles(catalog="prod").command == [
+        "polaris",
+        "catalog-roles",
+        "list",
+        "--catalog",
+        "prod",
+    ]
+    assert client.get_catalog_role("reader", catalog="prod").command == [
+        "polaris",
+        "catalog-roles",
+        "get",
+        "reader",
+        "--catalog",
+        "prod",
+    ]
+    assert client.list_privileges(catalog_role="reader", catalog="prod").command == [
+        "polaris",
+        "privileges",
+        "list",
+        "--catalog-role",
+        "reader",
+        "--catalog",
+        "prod",
+    ]
+    assert client.list_policies(catalog="prod").command == [
+        "polaris",
+        "policies",
+        "list",
+        "--catalog",
+        "prod",
+    ]
+    assert client.get_policy("pii-mask", catalog="prod").command == [
+        "polaris",
+        "policies",
+        "get",
+        "pii-mask",
+        "--catalog",
+        "prod",
+    ]
+    assert client.list_applicable_policies(
+        "events",
+        catalog="prod",
+        namespace="analytics",
+    ).command == [
+        "polaris",
+        "applicable-policies",
+        "list",
+        "--resource",
+        "events",
+        "--catalog",
+        "prod",
+        "--namespace",
+        "analytics",
+    ]
+    assert len(calls) == 16

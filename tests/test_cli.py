@@ -91,6 +91,50 @@ def test_data_tables_typed_command(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_data_applicable_policies_typed_command(monkeypatch, tmp_path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        commands.append(command)
+        return CompletedProcess(command, 0, stdout="pii-mask\n", stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[polaris]\n"
+        'enabled = true\n'
+        'cli_path = "polaris"\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "data",
+            "applicable-policies",
+            "events",
+            "--namespace",
+            "analytics",
+            "--catalog",
+            "prod",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "pii-mask" in result.stdout
+    assert commands == [
+        [
+            "polaris",
+            "applicable-policies",
+            "list",
+            "--resource",
+            "events",
+            "--catalog",
+            "prod",
+            "--namespace",
+            "analytics",
+        ]
+    ]
+
+
 def test_shell_run_requires_yes() -> None:
     result = CliRunner().invoke(app, ["shell", "run", "--", "python", "-c", "print('loro')"])
     assert result.exit_code != 0

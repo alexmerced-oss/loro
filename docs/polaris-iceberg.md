@@ -17,6 +17,14 @@ loro data tables --catalog prod --namespace analytics
 loro data table events --catalog prod --namespace analytics
 loro data views --catalog prod --namespace analytics
 loro data view daily_events --catalog prod --namespace analytics
+loro data principal-roles
+loro data principal-role analyst
+loro data catalog-roles --catalog prod
+loro data catalog-role reader --catalog prod
+loro data privileges --catalog prod --catalog-role reader
+loro data policies --catalog prod
+loro data policy pii-mask --catalog prod
+loro data applicable-policies events --catalog prod --namespace analytics
 loro data polaris catalogs list
 ```
 
@@ -36,7 +44,5 @@ Current MVP behavior:
 ## Future Typed Operations
 
 - Inspect schemas
-- Inspect principal roles and catalog roles
-- Inspect privileges and policies
 - Explain table accessibility
 - Draft safe SQL/Spark/PyIceberg snippets

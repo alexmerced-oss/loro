@@ -16,6 +16,7 @@
 - Postgres shared memory SQL adapter and backend check
 - Iceberg shared memory SQL adapter
 - Polaris typed catalog, namespace, table, and view commands
+- Polaris typed role, privilege, policy, and applicable-policy commands
 
 ## Next MVP Work
 
@@ -24,7 +25,6 @@
 - Complete model provider adapters, including Bedrock and streaming
 - Typed tool-calling runtime loop
 - Richer permission policy matching
-- Polaris typed roles, privileges, and policy inspection
 - Secret scanning before memory and artifact writes
 
 ## Enterprise Hardening
