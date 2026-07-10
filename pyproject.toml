@@ -34,6 +34,10 @@ data = [
   "psycopg[binary]>=3.2.0",
   "pyiceberg>=0.8.0",
 ]
+integration = [
+  "psycopg[binary]>=3.2.0",
+  "testcontainers[postgres]>=4.8.0",
+]
 dev = [
   "coverage[toml]>=7.6.0",
   "pytest>=8.3.0",
@@ -57,6 +61,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "integration: tests that require local containers or external services",
+]
 
 [tool.coverage.run]
 branch = true
