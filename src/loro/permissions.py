@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from typing import Literal
 
 from loro.config import PermissionsConfig
@@ -24,6 +25,12 @@ class PermissionEngine:
         self.config = config
 
     def evaluate(self, request: PermissionRequest) -> PermissionResult:
+        for rule in self.config.rules:
+            if _matches(rule.tool, request.tool) and _matches(rule.action, request.action):
+                target = request.target or ""
+                if _matches(rule.target, target):
+                    reason = rule.reason or "matched configured permission rule"
+                    return PermissionResult(decision=rule.decision, reason=reason)
         decision = getattr(self.config, request.tool, self.config.default)
         return PermissionResult(decision=decision, reason=f"{request.tool} uses configured policy")
 
@@ -40,3 +47,7 @@ class PermissionEngine:
                 f"{request.tool} requires approval. Re-run with an explicit approval flag."
             )
         return result
+
+
+def _matches(pattern: str, value: str) -> bool:
+    return fnmatchcase(value.casefold(), pattern.casefold())

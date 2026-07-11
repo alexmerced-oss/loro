@@ -25,6 +25,20 @@ shell = "ask"
 edit = "ask"
 web = "deny"
 
+[[permissions.rules]]
+tool = "edit"
+action = "read*"
+target = "docs/*"
+decision = "allow"
+reason = "Project docs are readable."
+
+[[permissions.rules]]
+tool = "shell"
+action = "run*"
+target = "rm *"
+decision = "deny"
+reason = "Destructive delete commands are blocked."
+
 [memory.local]
 enabled = true
 path = ".loro/memory"
@@ -62,6 +76,13 @@ LORO_CONFIG_CONTENT='[permissions]\nshell = "allow"\n' loro doctor
 ```
 
 Future managed enterprise policy should be non-overridable. The current MVP uses deep-merge precedence.
+
+## Permission Rules
+
+Rules are evaluated before the per-tool defaults. They use simple case-insensitive glob
+matching over `tool`, `action`, and `target`; the first matching rule wins.
+
+Common tool names today are `edit`, `shell`, and `web`.
 
 ## Provider Wizard
 

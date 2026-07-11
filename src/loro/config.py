@@ -29,6 +29,15 @@ class PermissionsConfig(BaseModel):
     shell: PermissionDecision = "ask"
     edit: PermissionDecision = "ask"
     web: PermissionDecision = "deny"
+    rules: list["PermissionRuleConfig"] = Field(default_factory=list)
+
+
+class PermissionRuleConfig(BaseModel):
+    tool: str = "*"
+    action: str = "*"
+    target: str = "*"
+    decision: PermissionDecision
+    reason: str | None = None
 
 
 class LocalMemoryConfig(BaseModel):

@@ -72,12 +72,15 @@ The permission engine evaluates requests as:
 - `ask`: tool requires an explicit CLI approval flag or future interactive approval.
 - `deny`: tool is blocked.
 
+Ordered permission rules can override per-tool defaults with case-insensitive glob matches
+on tool, action, and target. The first matching rule wins.
+
 Current examples:
 
 - `loro shell run --yes -- python -c "print('ok')"` requires `--yes` when shell policy is `ask`.
 - `loro file read` and `loro file search` are read-only and internally approved for the current CLI command.
 
-Future work should add command/path/network/data-scope matchers and managed enterprise denies.
+Future work should add managed enterprise denies and richer data-scope matchers.
 
 ## AI Providers
 

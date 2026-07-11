@@ -294,6 +294,7 @@ def doctor() -> None:
     if config.model.base_url:
         console.print(f"Base URL: {config.model.base_url}")
     console.print(f"Default permission: {config.permissions.default}")
+    console.print(f"Permission rules: {len(config.permissions.rules)}")
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")

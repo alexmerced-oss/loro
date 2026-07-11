@@ -18,13 +18,13 @@
 - Polaris typed catalog, namespace, table, and view commands
 - Polaris typed role, privilege, policy, and applicable-policy commands
 - Explicit typed runtime tool loop for file read/search
+- Glob-based permission policy rules
 
 ## Next MVP Work
 
 - Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
 - Model-directed tool-calling runtime loop
-- Richer permission policy matching
 - Secret scanning before memory and artifact writes
 
 ## Enterprise Hardening

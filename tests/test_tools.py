@@ -3,7 +3,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from loro.config import PermissionsConfig, PolarisConfig
+from loro.config import PermissionRuleConfig, PermissionsConfig, PolarisConfig
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.tools.files import FileTools
@@ -21,6 +21,49 @@ def test_permission_denies_policy() -> None:
     engine = PermissionEngine(PermissionsConfig(shell="deny"))
     with pytest.raises(PermissionError, match="denied by policy"):
         engine.require_allowed(PermissionRequest(tool="shell", action="run"), approved=True)
+
+
+def test_permission_rule_allows_specific_target_without_approval() -> None:
+    engine = PermissionEngine(
+        PermissionsConfig(
+            edit="ask",
+            rules=[
+                PermissionRuleConfig(
+                    tool="edit",
+                    action="read*",
+                    target="docs/*",
+                    decision="allow",
+                    reason="docs are readable",
+                )
+            ],
+        )
+    )
+    result = engine.require_allowed(
+        PermissionRequest(tool="edit", action="read file", target="docs/README.md")
+    )
+    assert result.decision == "allow"
+    assert result.reason == "docs are readable"
+
+
+def test_permission_rule_denies_specific_shell_target() -> None:
+    engine = PermissionEngine(
+        PermissionsConfig(
+            shell="allow",
+            rules=[
+                PermissionRuleConfig(
+                    tool="shell",
+                    action="run*",
+                    target="rm *",
+                    decision="deny",
+                )
+            ],
+        )
+    )
+    with pytest.raises(PermissionError, match="denied by policy"):
+        engine.require_allowed(
+            PermissionRequest(tool="shell", action="run command", target="rm -rf tmp"),
+            approved=True,
+        )
 
 
 def test_file_search(tmp_path: Path) -> None:

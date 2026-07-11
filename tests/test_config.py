@@ -24,3 +24,21 @@ def test_loro_config_file_override(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("LORO_CONFIG_CONTENT", raising=False)
     config = load_config(Path.cwd())
     assert config.model.provider == "file-provider"
+
+
+def test_permission_rules_load_from_config_content(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        """
+        [[permissions.rules]]
+        tool = "edit"
+        action = "read*"
+        target = "docs/*"
+        decision = "allow"
+        reason = "docs are readable"
+        """,
+    )
+    config = load_config(Path.cwd())
+    assert len(config.permissions.rules) == 1
+    assert config.permissions.rules[0].tool == "edit"
+    assert config.permissions.rules[0].decision == "allow"
