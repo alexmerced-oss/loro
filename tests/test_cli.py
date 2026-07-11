@@ -185,6 +185,24 @@ def test_shared_memory_schema_command_uses_iceberg_config(monkeypatch) -> None:
     assert "enterprise_memory.agent_facts" in result.stdout
 
 
+def test_shared_memory_apply_schema_dry_run(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[memory.shared]\npostgres_schema = "agent_memory"\n',
+    )
+    result = CliRunner().invoke(app, ["memory", "apply-schema"])
+    assert result.exit_code == 0
+    assert "CREATE SCHEMA IF NOT EXISTS agent_memory" in result.stdout
+    assert "agent_memory.shared_memories" in result.stdout
+
+
+def test_shared_memory_apply_schema_execute_requires_dsn(monkeypatch) -> None:
+    monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
+    result = CliRunner().invoke(app, ["memory", "apply-schema", "--execute"])
+    assert result.exit_code != 0
+    assert "Missing DSN env var" in result.stderr
+
+
 def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
     monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
     result = CliRunner().invoke(app, ["memory", "backend-check"])

@@ -5,7 +5,6 @@ import pytest
 from loro.config import SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft
 from loro.memory.postgres import PostgresSharedMemoryStore
-from loro.memory.schemas import shared_memory_schema
 
 pytestmark = pytest.mark.integration
 
@@ -23,19 +22,16 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
     container.start()
     try:
         dsn = _psycopg_dsn(container.get_connection_url())
-        with psycopg.connect(dsn) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(shared_memory_schema("postgres"))
-            connection.commit()
-
         monkeypatch.setenv("LORO_POSTGRES_DSN", dsn)
+        store = PostgresSharedMemoryStore(SharedMemoryConfig())
+        store.apply_schema()
         draft = SharedMemoryDraft(
             content="Use the launch readiness template",
             summary="Launch readiness template",
             tenant_id="acme",
             created_by="integration-test",
         )
-        PostgresSharedMemoryStore(SharedMemoryConfig()).commit_draft(draft)
+        store.commit_draft(draft)
 
         with psycopg.connect(dsn) as connection:
             with connection.cursor() as cursor:

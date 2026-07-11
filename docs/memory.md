@@ -31,6 +31,8 @@ loro memory drafts
 loro memory commit-draft <draft-id>
 loro memory commit-draft <draft-id> --execute
 loro memory schema --backend postgres
+loro memory apply-schema
+loro memory apply-schema --execute
 loro memory schema --backend iceberg
 loro memory backend-check
 ```
@@ -38,6 +40,8 @@ loro memory backend-check
 `loro memory commit-draft <draft-id>` is a dry run by default. It renders the SQL and
 bound parameters that would be used for the configured backend. `--execute` is currently
 supported only for Postgres and still requires a configured DSN plus `psycopg`.
+`loro memory apply-schema` is also a dry run by default. `--execute` applies the Postgres
+shared-memory schema to the configured DSN.
 
 ## Postgres Backend
 
@@ -58,6 +62,8 @@ shared memory drafts.
 Postgres draft commits are explicit:
 
 ```bash
+loro memory apply-schema
+loro memory apply-schema --execute
 loro memory commit-draft <draft-id>
 loro memory commit-draft <draft-id> --execute
 ```

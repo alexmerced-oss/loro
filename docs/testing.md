@@ -25,7 +25,8 @@ LORO_INTEGRATION_POSTGRES=1 python -m pytest -m integration tests/integration
 ```
 
 These tests require Docker or a Docker-compatible runtime. They create a temporary
-Postgres container, apply the shared-memory schema, commit a real shared-memory draft,
+Postgres container, apply the shared-memory schema through `PostgresSharedMemoryStore`,
+commit a real shared-memory draft,
 verify rows, and tear the container down.
 
 Run normal tests without integrations:

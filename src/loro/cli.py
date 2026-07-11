@@ -20,6 +20,7 @@ from loro.memory.operations import (
     create_shared_memory_draft,
     render_or_commit_shared_draft,
 )
+from loro.memory.postgres import PostgresSharedMemoryStore
 from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -374,9 +375,42 @@ def memory_schema(
     """Print shared memory backend schema SQL."""
     config = load_config()
     try:
+        if backend == "postgres":
+            console.print(PostgresSharedMemoryStore(config.memory.shared).render_schema())
+            return
         console.print(shared_memory_schema(backend, config.memory.shared))  # type: ignore[arg-type]
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
+
+
+@memory_app.command("apply-schema")
+def memory_apply_schema(
+    execute: Annotated[
+        bool,
+        typer.Option(
+            "--execute",
+            help="Apply schema to the configured backend. Without this flag Loro only renders SQL.",
+        ),
+    ] = False,
+) -> None:
+    """Render or apply the configured shared memory backend schema."""
+    config = load_config()
+    backend = config.memory.shared.backend
+    if backend == "postgres":
+        store = PostgresSharedMemoryStore(config.memory.shared)
+        if execute:
+            try:
+                store.apply_schema()
+            except RuntimeError as error:
+                raise typer.BadParameter(str(error)) from error
+            _audit().write("memory.shared_schema_applied", backend=backend)
+            console.print("Applied Postgres shared memory schema.")
+            return
+        console.print(store.render_schema())
+        return
+    if execute:
+        raise typer.BadParameter("Live Iceberg schema application is not enabled in this MVP.")
+    console.print(shared_memory_schema(backend, config.memory.shared))
 
 
 @memory_app.command("backend-check")

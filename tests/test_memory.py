@@ -81,6 +81,22 @@ def test_postgres_shared_memory_search_sql() -> None:
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 5}
 
 
+def test_postgres_shared_memory_schema_uses_configured_schema() -> None:
+    schema = PostgresSharedMemoryStore(
+        SharedMemoryConfig(postgres_schema="agent_memory")
+    ).render_schema()
+    assert "CREATE SCHEMA IF NOT EXISTS agent_memory" in schema
+    assert "CREATE TABLE IF NOT EXISTS agent_memory.shared_memories" in schema
+    assert "CREATE TABLE IF NOT EXISTS agent_memory.memory_events" in schema
+    assert "idx_agent_memory_shared_memories_scope" in schema
+
+
+def test_postgres_apply_schema_missing_dsn(monkeypatch) -> None:
+    monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
+    with pytest.raises(RuntimeError, match="Missing DSN env var"):
+        PostgresSharedMemoryStore(SharedMemoryConfig()).apply_schema()
+
+
 def test_postgres_backend_check_missing_dsn(monkeypatch) -> None:
     monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
     check = PostgresSharedMemoryStore(SharedMemoryConfig()).check()

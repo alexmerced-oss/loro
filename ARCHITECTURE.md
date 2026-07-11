@@ -102,7 +102,7 @@ Loro has two memory planes:
 - Local memory: JSONL-backed today, private to the current environment, searchable by substring.
 - Shared memory: schema-first scaffolding for explicit user-approved enterprise memory.
 
-Shared memory writes must stay explicit. The agent can propose a memory, but only user-approved text should be staged or committed. Current code supports shared memory schema generation, draft records, `memory commit-draft` SQL dry runs, Postgres readiness diagnostics, a Postgres adapter that renders insert/search SQL and can execute explicit draft commits when `psycopg` plus a DSN are available, and an Iceberg adapter that renders configured DDL plus append/search SQL for future governed execution.
+Shared memory writes must stay explicit. The agent can propose a memory, but only user-approved text should be staged or committed. Current code supports shared memory schema generation, draft records, `memory apply-schema` SQL dry runs, `memory commit-draft` SQL dry runs, Postgres readiness diagnostics, a Postgres adapter that can apply schema and execute explicit draft commits when `psycopg` plus a DSN are available, and an Iceberg adapter that renders configured DDL plus append/search SQL for future governed execution.
 
 ## Artifact Generation
 

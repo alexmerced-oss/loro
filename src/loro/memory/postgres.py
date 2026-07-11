@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
 from loro.memory.base import SharedMemoryBackendCheck, SharedMemoryDraft, SharedMemoryStatement
+from loro.memory.schemas import POSTGRES_SHARED_MEMORY_SCHEMA
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -23,6 +24,34 @@ class PostgresSharedMemoryStore:
 
     def _table(self, name: str) -> str:
         return f"{self.config.postgres_schema}.{name}"
+
+    def render_schema(self) -> str:
+        if self.config.postgres_schema == "public":
+            return POSTGRES_SHARED_MEMORY_SCHEMA
+        schema = self.config.postgres_schema
+        schema_sql = (
+            POSTGRES_SHARED_MEMORY_SCHEMA.replace(
+                "idx_shared_memories_scope",
+                f"idx_{schema}_shared_memories_scope",
+            )
+            .replace(
+                "idx_shared_memories_type",
+                f"idx_{schema}_shared_memories_type",
+            )
+            .replace(
+                "CREATE TABLE IF NOT EXISTS shared_memories",
+                f"CREATE TABLE IF NOT EXISTS {self._table('shared_memories')}",
+            )
+            .replace(
+                "CREATE TABLE IF NOT EXISTS memory_events",
+                f"CREATE TABLE IF NOT EXISTS {self._table('memory_events')}",
+            )
+            .replace("ON shared_memories", f"ON {self._table('shared_memories')}")
+        )
+        return (
+            f"CREATE SCHEMA IF NOT EXISTS {schema};\n\n"
+            + schema_sql
+        )
 
     def check(self) -> SharedMemoryBackendCheck:
         messages: list[str] = []
@@ -160,4 +189,17 @@ LIMIT %(limit)s;
         with psycopg.connect(dsn) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(statement.sql, statement.params)
+            connection.commit()
+
+    def apply_schema(self) -> None:
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for Postgres schema application.") from error
+        with psycopg.connect(dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(self.render_schema())
             connection.commit()
