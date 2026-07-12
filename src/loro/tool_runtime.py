@@ -20,6 +20,14 @@ class ToolExecution:
     ok: bool
     output: str
 
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "tool": self.call.name,
+            "args": self.call.args,
+            "ok": self.ok,
+            "output": self.output,
+        }
+
 
 class ToolRegistry:
     """Executes explicit, typed tool calls for the runtime loop."""
@@ -73,7 +81,11 @@ def parse_tool_calls(prompt: str) -> list[ToolCall]:
         stripped = line.strip()
         if not stripped.startswith("@tool "):
             continue
-        name, _, raw_args = stripped.removeprefix("@tool ").partition(" ")
+        directive = stripped.removeprefix("@tool ").strip()
+        if directive.startswith("{"):
+            calls.append(_parse_json_tool_call(directive))
+            continue
+        name, _, raw_args = directive.partition(" ")
         if not name or not raw_args.strip():
             calls.append(ToolCall(name=name or "unknown", args={}))
             continue
@@ -82,3 +94,16 @@ def parse_tool_calls(prompt: str) -> list[ToolCall]:
             raise ValueError("Tool call arguments must be a JSON object.")
         calls.append(ToolCall(name=name, args=data))
     return calls
+
+
+def _parse_json_tool_call(raw: str) -> ToolCall:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("Tool directive must be a JSON object.")
+    name = data.get("name")
+    args = data.get("args", {})
+    if not isinstance(name, str) or not name:
+        raise ValueError("Tool directive requires a non-empty string name.")
+    if not isinstance(args, dict):
+        raise ValueError("Tool directive args must be a JSON object.")
+    return ToolCall(name=name, args=args)

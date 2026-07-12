@@ -24,6 +24,10 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = None
 
 
+class RuntimeConfig(BaseModel):
+    max_steps: int = 5
+
+
 class PermissionsConfig(BaseModel):
     default: PermissionDecision = "ask"
     shell: PermissionDecision = "ask"
@@ -87,6 +91,7 @@ class SafetyConfig(BaseModel):
 
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)

@@ -45,11 +45,20 @@ flowchart LR
 1. The CLI resolves config from managed, user, project, local, `LORO_CONFIG`, and `LORO_CONFIG_CONTENT`.
 2. The runtime loads local memory and searches for memories relevant to the prompt.
 3. The runtime emits `runtime.task_started`.
-4. The runtime creates a session summary and persists it to the configured session store.
-5. The runtime emits `runtime.task_completed`.
-6. Artifact and tool commands emit their own audit events with previews and metadata, not full sensitive payloads.
+4. Explicit prompt tool directives are executed before the first model call.
+5. The runtime calls the configured model and parses provider-neutral tool directives from
+   the response.
+6. Approved tool calls are executed, audited, and sent back to the model as structured text.
+7. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
+   is reached.
+8. The runtime creates a session summary, including tool execution payloads and stop reason,
+   and persists it to the configured session store.
+9. The runtime emits `runtime.task_completed`.
+10. Artifact and tool commands emit their own audit events with previews and metadata, not full sensitive payloads.
 
-The current runtime can execute explicit typed tool directives before producing the model response. The intended next layer is model-directed tool calling that uses the same config, permission, audit, memory, and session services.
+The current model-directed loop uses text directives such as
+`@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
+can map into the same internal `ToolCall` type as provider adapters mature.
 
 ## Configuration
 

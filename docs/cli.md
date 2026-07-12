@@ -15,10 +15,14 @@ loro run "Summarize the project"
 
 ```bash
 loro plan '@tool file.read {"path": "README.md", "limit": 1000}'
+loro plan '@tool {"name": "file.read", "args": {"path": "README.md", "limit": 1000}}'
 loro plan '@tool file.search {"query": "Polaris", "root": ".", "limit": 5}'
 ```
 
-The initial runtime loop supports explicit `file.read` and `file.search` calls.
+The runtime loop also lets model responses request tools with the JSON directive form.
+Loro executes approved tool calls, returns tool results to the model, and stops when the
+model responds without tool directives or `[runtime].max_steps` is reached. The initial
+tool registry supports `file.read` and `file.search`.
 
 ## Providers
 

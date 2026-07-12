@@ -14,6 +14,8 @@ class SessionRecord:
     mode: str
     summary: str
     recalled_memories: list[str] = field(default_factory=list)
+    tool_executions: list[dict[str, Any]] = field(default_factory=list)
+    stop_reason: str = "completed"
     session_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -25,6 +27,8 @@ class SessionRecord:
             "prompt": self.prompt,
             "summary": self.summary,
             "recalled_memories": self.recalled_memories,
+            "tool_executions": self.tool_executions,
+            "stop_reason": self.stop_reason,
         }
 
 

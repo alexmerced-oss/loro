@@ -19,13 +19,82 @@
 - Polaris typed role, privilege, policy, and applicable-policy commands
 - Explicit typed runtime tool loop for file read/search
 - Glob-based permission policy rules
+- Bounded model-directed runtime loop with provider-neutral JSON tool directives
 
 ## Next MVP Work
 
+- Expand runtime tool registry beyond file read/search
+- Shared memory retrieval and governance integration
 - Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
-- Model-directed tool-calling runtime loop
-- Secret scanning before memory and artifact writes
+- CI, coverage reporting, and integration-test scaffolding
+
+## Prioritized Work Batches
+
+### Batch 1: Agent Loop Core
+
+Goal: make `loro run` and `loro plan` behave like an actual model-directed
+agent loop instead of a one-shot scaffold.
+
+Acceptance criteria:
+
+- Runtime supports iterative model response -> tool call -> tool execution -> model response.
+- Loop has max-step protection and a clear stop reason.
+- Tool calls use a provider-neutral textual JSON directive while native provider tool-calling
+  is still being built.
+- Tool executions are audited and included in saved sessions.
+- Existing explicit `@tool ...` prompt directives continue to work for deterministic testing.
+
+Status: core loop complete. Follow-on work should expand the registry with edit, shell,
+artifact, memory, Polaris, and Git tools plus interactive approval prompts.
+
+### Batch 2: Shared Memory Retrieval And Governance
+
+Goal: bring Loro's enterprise memory differentiator into the runtime context path.
+
+Acceptance criteria:
+
+- Add shared memory search commands and a backend-neutral search result type.
+- Add Postgres shared-memory retrieval and dry-run SQL rendering.
+- Wire shared memory recall into `AgentRuntime` with citations and provenance.
+- Add first-class local/shared memory proposal records without allowing autonomous shared writes.
+- Document explicit-only shared-memory write guarantees.
+
+### Batch 3: Polaris And Iceberg Local Integration
+
+Goal: turn governed data from CLI wrapper scaffolding into a repeatable local integration path.
+
+Acceptance criteria:
+
+- Add a local Polaris/Iceberg testing guide and compose or fixture scaffolding.
+- Add Iceberg REST/PyIceberg readiness checks where available.
+- Add higher-level `data schema` and `data explain-access` commands.
+- Keep all Polaris passthrough operations constrained by read-only validation.
+
+### Batch 4: Provider And Streaming Hardening
+
+Goal: make provider integrations reliable enough for real agent sessions.
+
+Acceptance criteria:
+
+- Add streaming model response interface.
+- Add real provider smoke-test command behind explicit user opt-in.
+- Implement Bedrock behind optional AWS dependencies.
+- Improve provider error messages for auth, rate limits, unsupported models, and malformed
+  responses.
+- Normalize tool-call response parsing across OpenAI-compatible, Anthropic, Gemini, and local
+  providers.
+
+### Batch 5: Testing, CI, And Release Discipline
+
+Goal: keep the expanding harness safe to change.
+
+Acceptance criteria:
+
+- Add GitHub Actions for ruff, pytest, compileall, and coverage.
+- Establish a coverage baseline and threshold.
+- Add optional integration jobs for Postgres, Polaris, Iceberg, and live model providers.
+- Add release checklist docs for packaging, smoke tests, and provider validation.
 
 ## Enterprise Hardening
 

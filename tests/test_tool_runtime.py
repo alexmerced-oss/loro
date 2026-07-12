@@ -13,6 +13,15 @@ def test_parse_tool_calls() -> None:
     assert calls[0].args == {"path": "README.md", "limit": 20}
 
 
+def test_parse_json_tool_directive() -> None:
+    calls = parse_tool_calls(
+        '@tool {"name": "file.search", "args": {"query": "Loro", "root": "."}}'
+    )
+    assert len(calls) == 1
+    assert calls[0].name == "file.search"
+    assert calls[0].args == {"query": "Loro", "root": "."}
+
+
 def test_parse_tool_calls_rejects_non_object_args() -> None:
     with pytest.raises(ValueError, match="JSON object"):
         parse_tool_calls('@tool file.read ["README.md"]')

@@ -14,7 +14,7 @@ def test_version() -> None:
 def test_plan_scaffold() -> None:
     result = CliRunner().invoke(app, ["plan", "Draft a rollout plan"])
     assert result.exit_code == 0
-    assert "Loro plan mode is scaffolded" in result.stdout
+    assert "Loro plan mode completed" in result.stdout
 
 
 def test_plan_with_explicit_tool_call(tmp_path, monkeypatch) -> None:

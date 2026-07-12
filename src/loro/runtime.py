@@ -5,7 +5,7 @@ from loro.config import LoroConfig
 from loro.memory.local import LocalMemoryStore
 from loro.models import ModelMessage, create_model_client
 from loro.sessions import SessionRecord, SessionStore
-from loro.tool_runtime import ToolExecution, ToolRegistry, parse_tool_calls
+from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
 
 
 @dataclass(frozen=True)
@@ -15,10 +15,12 @@ class AgentResult:
     session_id: str
     recalled_memories: list[str]
     tool_executions: list[ToolExecution]
+    stop_reason: str
+    steps: int
 
 
 class AgentRuntime:
-    """Small runtime placeholder for the scaffolded agent loop."""
+    """Bounded model-directed runtime loop for Loro agent tasks."""
 
     def __init__(self, config: LoroConfig) -> None:
         self.config = config
@@ -39,35 +41,63 @@ class AgentRuntime:
             if self.config.audit.include_prompt_preview
             else None,
         )
-        memory_section = ""
-        if recalled_memories:
-            memory_section = "\n\nRecalled local memories:\n" + "\n".join(
-                f"- {memory}" for memory in recalled_memories
+        memory_section = _format_memory_section(recalled_memories)
+        tool_executions: list[ToolExecution] = []
+        tool_executions.extend(self._execute_tool_calls(parse_tool_calls(prompt), step=0))
+
+        messages = [
+            ModelMessage(
+                role="user",
+                content=_initial_model_prompt(
+                    prompt=prompt,
+                    mode=mode,
+                    memory_section=memory_section,
+                    tool_executions=tool_executions,
+                ),
             )
-        tool_executions = [self.tools.execute(call) for call in parse_tool_calls(prompt)]
-        for execution in tool_executions:
-            self.audit.write(
-                "runtime.tool_executed",
-                tool=execution.call.name,
-                ok=execution.ok,
+        ]
+        client = create_model_client(self.config.model)
+        model_response_content = ""
+        stop_reason = "completed"
+        steps = 0
+
+        for step in range(1, self.config.runtime.max_steps + 1):
+            steps = step
+            model_response = client.complete(messages)
+            model_response_content = model_response.content
+            self.audit.write("runtime.model_completed", mode=mode, step=step)
+            tool_calls = parse_tool_calls(model_response_content)
+            if not tool_calls:
+                stop_reason = "completed"
+                break
+            step_executions = self._execute_tool_calls(tool_calls, step=step)
+            tool_executions.extend(step_executions)
+            messages.append(ModelMessage(role="assistant", content=model_response_content))
+            messages.append(
+                ModelMessage(
+                    role="user",
+                    content=(
+                        "Tool results:\n"
+                        + "\n\n".join(
+                            _format_tool_execution(execution) for execution in step_executions
+                        )
+                        + "\n\nContinue the task. If you are done, respond without tool directives."
+                    ),
+                )
             )
-        tool_section = ""
-        if tool_executions:
-            tool_section = "\n\nTool results:\n" + "\n\n".join(
-                _format_tool_execution(execution) for execution in tool_executions
-            )
-        model_response = create_model_client(self.config.model).complete(
-            [ModelMessage(role="user", content=prompt)]
-        )
+        else:
+            stop_reason = "max_steps"
+
+        tool_section = _format_tool_section(tool_executions)
         summary = (
-            f"Loro {mode} mode is scaffolded.\n\n"
+            f"Loro {mode} mode completed.\n\n"
             f"Provider: {self.config.model.provider} / {self.config.model.model}\n\n"
+            f"Stop reason: {stop_reason}\n"
+            f"Steps: {steps}\n\n"
             f"Prompt: {prompt}"
             f"{memory_section}"
             f"{tool_section}\n\n"
-            f"Model response: {model_response.content}\n\n"
-            "Next implementation step: connect model-directed tool calls and governed "
-            "shared memory retrieval."
+            f"Model response: {model_response_content}"
         )
         record = self.sessions.save(
             SessionRecord(
@@ -75,6 +105,8 @@ class AgentRuntime:
                 mode=mode,
                 summary=summary,
                 recalled_memories=recalled_memories,
+                tool_executions=[execution.to_payload() for execution in tool_executions],
+                stop_reason=stop_reason,
             )
         )
         self.audit.write(
@@ -83,6 +115,8 @@ class AgentRuntime:
             session_id=record.session_id,
             recalled_memory_count=len(recalled_memories),
             tool_execution_count=len(tool_executions),
+            stop_reason=stop_reason,
+            steps=steps,
         )
         return AgentResult(
             summary=summary,
@@ -90,7 +124,62 @@ class AgentRuntime:
             session_id=record.session_id,
             recalled_memories=recalled_memories,
             tool_executions=tool_executions,
+            stop_reason=stop_reason,
+            steps=steps,
         )
+
+    def _execute_tool_calls(self, calls: list[ToolCall], *, step: int) -> list[ToolExecution]:
+        executions = [self.tools.execute(call) for call in calls]
+        for execution in executions:
+            self.audit.write(
+                "runtime.tool_executed",
+                tool=execution.call.name,
+                ok=execution.ok,
+                step=step,
+            )
+        return executions
+
+
+def _initial_model_prompt(
+    *,
+    prompt: str,
+    mode: str,
+    memory_section: str,
+    tool_executions: list[ToolExecution],
+) -> str:
+    instructions = (
+        "You are Loro, a CLI agent harness. "
+        "Use tool directives only when you need tool results. "
+        'Tool directive format: @tool {"name": "file.read", "args": {"path": "README.md"}}. '
+        "When the task is complete, respond without tool directives."
+    )
+    tool_section = _format_tool_section(tool_executions)
+    return (
+        f"{instructions}\n\n"
+        f"Mode: {mode}\n\n"
+        f"User task: {_strip_tool_directives(prompt)}{memory_section}{tool_section}"
+    )
+
+
+def _strip_tool_directives(prompt: str) -> str:
+    lines = [line for line in prompt.splitlines() if not line.strip().startswith("@tool ")]
+    return "\n".join(lines).strip()
+
+
+def _format_memory_section(recalled_memories: list[str]) -> str:
+    if not recalled_memories:
+        return ""
+    return "\n\nRecalled local memories:\n" + "\n".join(
+        f"- {memory}" for memory in recalled_memories
+    )
+
+
+def _format_tool_section(tool_executions: list[ToolExecution]) -> str:
+    if not tool_executions:
+        return ""
+    return "\n\nTool results:\n" + "\n\n".join(
+        _format_tool_execution(execution) for execution in tool_executions
+    )
 
 
 def _format_tool_execution(execution: ToolExecution) -> str:

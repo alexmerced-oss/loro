@@ -19,6 +19,9 @@ small_model = "mock-small"
 timeout_seconds = 120
 temperature = 0.2
 
+[runtime]
+max_steps = 5
+
 [permissions]
 default = "ask"
 shell = "ask"
