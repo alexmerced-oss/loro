@@ -22,7 +22,17 @@ loro plan '@tool file.search {"query": "Polaris", "root": ".", "limit": 5}'
 The runtime loop also lets model responses request tools with the JSON directive form.
 Loro executes approved tool calls, returns tool results to the model, and stops when the
 model responds without tool directives or `[runtime].max_steps` is reached. The initial
-tool registry supports `file.read` and `file.search`.
+tool registry supports:
+
+- `file.read`: `{"path": "README.md", "limit": 1000}`
+- `file.search`: `{"query": "Polaris", "root": ".", "limit": 5}`
+- `memory.search`: `{"query": "launch template", "limit": 10}`
+- `shell.run`: `{"args": ["python", "-c", "print(123)"], "approved": true}`
+- `polaris.readonly`: `{"args": ["catalogs", "list"]}`
+
+Runtime shell calls still obey configured permissions. When shell policy is `ask`, the
+tool call must include `"approved": true`; `deny` always blocks execution. Polaris runtime
+calls require `[polaris].enabled = true` and are constrained to read-only operations.
 
 ## Providers
 
