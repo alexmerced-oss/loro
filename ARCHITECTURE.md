@@ -60,7 +60,7 @@ The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
 can map into the same internal `ToolCall` type as provider adapters mature. The runtime
 registry currently exposes file read/search, local memory search, permission-gated shell
-execution, and read-only Polaris passthrough.
+execution, read-only Polaris passthrough, and artifact generation with provenance.
 
 ## Configuration
 

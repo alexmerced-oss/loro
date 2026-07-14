@@ -29,10 +29,13 @@ tool registry supports:
 - `memory.search`: `{"query": "launch template", "limit": 10}`
 - `shell.run`: `{"args": ["python", "-c", "print(123)"], "approved": true}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
+- `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
 
 Runtime shell calls still obey configured permissions. When shell policy is `ask`, the
 tool call must include `"approved": true`; `deny` always blocks execution. Polaris runtime
 calls require `[polaris].enabled = true` and are constrained to read-only operations.
+Artifact runtime calls support `document`, `presentation`, `spreadsheet`, and `brief`;
+they write provenance sidecars and use the same safety scanner as CLI artifact commands.
 
 ## Providers
 

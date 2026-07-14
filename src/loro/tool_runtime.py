@@ -1,12 +1,20 @@
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from loro.artifacts.briefs import create_brief_artifact
+from loro.artifacts.common import ArtifactResult, write_provenance
+from loro.artifacts.documents import create_document_artifact
+from loro.artifacts.presentations import create_presentation_artifact
+from loro.artifacts.spreadsheets import create_spreadsheet_artifact
+from loro.audit import prompt_preview
 from loro.config import LoroConfig
 from loro.memory.local import LocalMemoryStore
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
+from loro.safety import SafetyScanner
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
 
@@ -40,6 +48,7 @@ class ToolRegistry:
         self.permissions = PermissionEngine(config.permissions)
         self.files = FileTools()
         self.shell = ShellTools()
+        self.safety = SafetyScanner(config.safety)
 
     def execute(self, call: ToolCall) -> ToolExecution:
         try:
@@ -53,6 +62,8 @@ class ToolRegistry:
                 return self._search_memory(call)
             if call.name == "polaris.readonly":
                 return self._run_polaris_readonly(call)
+            if call.name == "artifact.create":
+                return self._create_artifact(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
@@ -101,6 +112,35 @@ class ToolRegistry:
             stderr=result.stderr,
         )
         return ToolExecution(call=call, ok=result.returncode == 0, output=output)
+
+    def _create_artifact(self, call: ToolCall) -> ToolExecution:
+        kind = str(call.args.get("kind", "document"))
+        prompt = str(call.args["prompt"])
+        output_dir = Path(str(call.args.get("output_dir", "artifacts")))
+        allow_sensitive = bool(call.args.get("allow_sensitive", False))
+        findings = self.safety.scan(prompt)
+        if findings and self.config.safety.block_on_findings and not allow_sensitive:
+            kinds = ", ".join(sorted({finding.kind for finding in findings}))
+            return ToolExecution(
+                call=call,
+                ok=False,
+                output=(
+                    f"Sensitive content detected ({kinds}). "
+                    "Set allow_sensitive only if policy allows persistence."
+                ),
+            )
+        if kind == "brief":
+            brief_type = str(call.args.get("brief_type", "meeting"))
+            result = create_brief_artifact(prompt, output_dir, brief_type=brief_type)
+        else:
+            factory = _artifact_factory(kind)
+            result = factory(prompt, output_dir)
+        provenance_path = write_provenance(result=result, prompt_preview=prompt_preview(prompt))
+        return ToolExecution(
+            call=call,
+            ok=True,
+            output=_format_artifact_output(result, provenance_path),
+        )
 
     def _search_memory(self, call: ToolCall) -> ToolExecution:
         query = str(call.args["query"])
@@ -170,3 +210,28 @@ def _format_process_output(*, returncode: int, stdout: str, stderr: str) -> str:
     if stderr:
         sections.append(f"stderr:\n{stderr.rstrip()}")
     return "\n".join(sections)
+
+
+def _artifact_factory(kind: str) -> Callable[[str, Path], ArtifactResult]:
+    factories: dict[str, Callable[[str, Path], ArtifactResult]] = {
+        "document": create_document_artifact,
+        "presentation": create_presentation_artifact,
+        "spreadsheet": create_spreadsheet_artifact,
+    }
+    try:
+        return factories[kind]
+    except KeyError as error:
+        raise ValueError(
+            "artifact.create kind must be one of: document, presentation, spreadsheet, brief."
+        ) from error
+
+
+def _format_artifact_output(result: ArtifactResult, provenance_path: Path) -> str:
+    return "\n".join(
+        [
+            result.summary,
+            "paths:",
+            *[f"- {path}" for path in result.paths],
+            f"provenance: {provenance_path}",
+        ]
+    )

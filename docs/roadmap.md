@@ -21,10 +21,11 @@
 - Glob-based permission policy rules
 - Bounded model-directed runtime loop with provider-neutral JSON tool directives
 - Runtime tools for shell execution, local memory search, and read-only Polaris passthrough
+- Runtime artifact generation tool with provenance sidecars
 
 ## Next MVP Work
 
-- Expand runtime tool registry with artifact, Git, and edit tools
+- Expand runtime tool registry with Git and edit tools
 - Shared memory retrieval and governance integration
 - Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
@@ -47,8 +48,9 @@ Acceptance criteria:
 - Existing explicit `@tool ...` prompt directives continue to work for deterministic testing.
 
 Status: core loop complete. Runtime has file read/search, local memory search,
-permission-gated shell execution, and read-only Polaris passthrough. Follow-on work should
-expand the registry with edit, artifact, and Git tools plus interactive approval prompts.
+permission-gated shell execution, read-only Polaris passthrough, and artifact generation.
+Follow-on work should expand the registry with edit and Git tools plus interactive approval
+prompts.
 
 ### Batch 2: Shared Memory Retrieval And Governance
 
