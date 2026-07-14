@@ -34,6 +34,7 @@ tool registry supports:
 - `git.add`: `{"cwd": ".", "paths": ["notes.md"], "approved": true}`
 - `git.commit`: `{"cwd": ".", "message": "Update notes", "approved": true}`
 - `memory.search`: `{"query": "launch template", "limit": 10}`
+- `memory.shared_search`: `{"query": "launch template", "tenant_id": "acme"}`
 - `shell.run`: `{"args": ["python", "-c", "print(123)"], "approved": true}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
 - `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
@@ -61,9 +62,18 @@ loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro remember --local "Status briefs should include risks and next steps."
 loro memory list
 loro memory search "status briefs"
+loro memory shared-search "launch readiness" --tenant-id acme
+loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory propose "Use concise status summaries" --target local
+loro memory propose "Use the enterprise launch readiness template" --target shared
+loro memory proposals
+loro memory accept-proposal <proposal-id>
 ```
 
-Shared memory is explicit-only. Current MVP support stages shared memory drafts and generates backend schemas rather than writing to a live enterprise backend by default.
+Shared memory is explicit-only. Loro can search configured shared memory, stage shared-memory
+drafts, and render or execute supported backend SQL, but it never autonomously commits shared
+memory. Accepting a shared proposal creates a draft that still requires an explicit
+`commit-draft` step.
 
 ## Artifacts
 

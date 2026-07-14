@@ -4,7 +4,12 @@ import re
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
-from loro.memory.base import SharedMemoryBackendCheck, SharedMemoryDraft, SharedMemoryStatement
+from loro.memory.base import (
+    SharedMemoryBackendCheck,
+    SharedMemoryDraft,
+    SharedMemorySearchRecord,
+    SharedMemoryStatement,
+)
 from loro.memory.schemas import POSTGRES_SHARED_MEMORY_SCHEMA
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -190,6 +195,44 @@ LIMIT %(limit)s;
             with connection.cursor() as cursor:
                 cursor.execute(statement.sql, statement.params)
             connection.commit()
+
+    def search(
+        self,
+        *,
+        tenant_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[SharedMemorySearchRecord]:
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for Postgres shared memory search.") from error
+        statement = self.render_search(tenant_id=tenant_id, query=query, limit=limit)
+        with psycopg.connect(dsn, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(statement.sql, statement.params)
+                rows = cursor.fetchall()
+        return [
+            SharedMemorySearchRecord(
+                memory_id=str(row["memory_id"]),
+                tenant_id=str(row["tenant_id"]),
+                scope_type=str(row["scope_type"]),
+                scope_key=str(row["scope_key"]),
+                memory_type=str(row["memory_type"]),
+                content=str(row["content"]),
+                summary=str(row["summary"]),
+                classification=str(row["classification"]),
+                created_by=str(row["created_by"]),
+                created_at=str(row["created_at"]),
+                status=str(row["status"]),
+                backend="postgres",
+            )
+            for row in rows
+        ]
 
     def apply_schema(self) -> None:
         dsn = os.environ.get(self.config.postgres_dsn_env)

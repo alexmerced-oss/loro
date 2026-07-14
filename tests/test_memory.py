@@ -1,11 +1,13 @@
 import pytest
 
-from loro.config import SharedMemoryConfig
+from loro.config import LoroConfig, MemoryConfig, SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
+from loro.memory.operations import search_shared_memories
 from loro.memory.postgres import PostgresSharedMemoryStore
+from loro.memory.proposals import MemoryProposal, MemoryProposalStore
 from loro.memory.schemas import shared_memory_schema
 from loro.memory.shared import SharedMemoryDraftStore as CompatDraftStore
 
@@ -51,6 +53,22 @@ def test_shared_memory_draft_store(tmp_path) -> None:
     assert store.get("missing") is None
 
 
+def test_memory_proposal_store_roundtrip(tmp_path) -> None:
+    store = MemoryProposalStore(tmp_path)
+    proposal = store.propose(
+        MemoryProposal(
+            content="Use launch readiness template",
+            target="shared",
+            rationale="Repeated launch work",
+        )
+    )
+    assert store.get(proposal.proposal_id) == proposal
+    updated = store.update_status(proposal.proposal_id, "accepted_as_shared_draft")
+    assert updated is not None
+    assert updated.status == "accepted_as_shared_draft"
+    assert store.list()[0].status == "accepted_as_shared_draft"
+
+
 def test_shared_memory_compat_imports() -> None:
     assert CompatDraftStore is SharedMemoryDraftStore
 
@@ -79,6 +97,21 @@ def test_postgres_shared_memory_search_sql() -> None:
     assert "FROM public.shared_memories" in statement.sql
     assert "ILIKE %(query)s" in statement.sql
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 5}
+
+
+def test_search_shared_memories_renders_postgres_without_dsn(monkeypatch) -> None:
+    monkeypatch.delenv("LORO_POSTGRES_DSN", raising=False)
+    result = search_shared_memories(
+        LoroConfig(),
+        query="launch",
+        tenant_id="acme",
+        limit=5,
+    )
+    assert result.backend == "postgres"
+    assert result.executed is False
+    assert result.statement is not None
+    assert "FROM public.shared_memories" in result.statement.sql
+    assert any("Rendered SQL" in message for message in result.messages)
 
 
 def test_postgres_shared_memory_schema_uses_configured_schema() -> None:
@@ -130,6 +163,26 @@ def test_iceberg_shared_memory_search_sql() -> None:
     assert "FROM enterprise_memory.agent_facts" in statement.sql
     assert "LOWER(content) LIKE LOWER(:query)" in statement.sql
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 10}
+
+
+def test_search_shared_memories_renders_iceberg() -> None:
+    result = search_shared_memories(
+        LoroConfig(
+            memory=MemoryConfig(
+                shared=SharedMemoryConfig(
+                    backend="iceberg",
+                    iceberg_namespace="enterprise_memory",
+                    iceberg_table="agent_facts",
+                )
+            )
+        ),
+        query="launch",
+        tenant_id="acme",
+    )
+    assert result.backend == "iceberg"
+    assert result.executed is False
+    assert result.statement is not None
+    assert "FROM enterprise_memory.agent_facts" in result.statement.sql
 
 
 def test_iceberg_rejects_invalid_identifier() -> None:

@@ -1,4 +1,5 @@
 from loro.config import AuditConfig, LocalMemoryConfig, LoroConfig, MemoryConfig, RuntimeConfig
+from loro.memory.base import SharedMemorySearchRecord, SharedMemorySearchResult
 from loro.models import ModelMessage, ModelResponse
 from loro.runtime import AgentRuntime
 from loro.sessions import SessionConfig
@@ -52,6 +53,45 @@ def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:
     assert result.stop_reason == "max_steps"
     assert result.steps == 2
     assert len(result.tool_executions) == 2
+
+
+def test_runtime_recalls_shared_memory_with_citation(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["Final answer with memory."])
+    shared_record = SharedMemorySearchRecord(
+        memory_id="mem-1",
+        tenant_id="default",
+        scope_type="team",
+        scope_key="platform",
+        memory_type="fact",
+        content="Use the enterprise launch readiness template.",
+        summary="Launch readiness template",
+        classification="public-internal",
+        created_by="alex",
+        created_at="2026-07-14T00:00:00+00:00",
+        status="active",
+        backend="postgres",
+    )
+
+    def fake_search(config, *, query, tenant_id, limit, execute):
+        return SharedMemorySearchResult(
+            backend="postgres",
+            query=query,
+            tenant_id=tenant_id,
+            executed=True,
+            records=[shared_record],
+        )
+
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
+    config = _runtime_config(tmp_path, max_steps=3)
+    config.memory.shared.enabled = True
+    runtime = AgentRuntime(config)
+
+    result = runtime.run("Prepare launch checklist", mode="run")
+
+    assert result.recalled_shared_memories == [shared_record]
+    assert "postgres:default/team/platform/mem-1" in result.summary
+    assert "Use the enterprise launch readiness template" in client.messages[0][0].content
 
 
 def _runtime_config(tmp_path, *, max_steps: int) -> LoroConfig:

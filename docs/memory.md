@@ -10,6 +10,9 @@ Local memory is private to the current environment. It is currently stored as JS
 loro remember --local "Use the product team's status update format."
 loro memory list
 loro memory search "status"
+loro memory propose "Status briefs should include risks and next steps." --target local
+loro memory proposals
+loro memory accept-proposal <proposal-id>
 ```
 
 ## Shared Memory
@@ -35,6 +38,10 @@ loro memory apply-schema
 loro memory apply-schema --execute
 loro memory schema --backend iceberg
 loro memory backend-check
+loro memory shared-search "launch readiness" --tenant-id acme
+loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory propose "Use the enterprise launch readiness template" --target shared
+loro memory accept-proposal <proposal-id> --tenant-id acme --scope-type team --scope-key platform
 ```
 
 `loro memory commit-draft <draft-id>` is a dry run by default. It renders the SQL and
@@ -42,6 +49,29 @@ bound parameters that would be used for the configured backend. `--execute` is c
 supported only for Postgres and still requires a configured DSN plus `psycopg`.
 `loro memory apply-schema` is also a dry run by default. `--execute` applies the Postgres
 shared-memory schema to the configured DSN.
+
+`loro memory shared-search` returns active shared memories when the configured backend can
+execute the search. If the backend is not ready, Loro returns the backend-neutral SQL and
+bound parameters instead of failing silently. Runtime tasks also recall shared memories when
+`[memory.shared].enabled = true`; recalled memories are injected with citations such as
+`postgres:acme/team/platform/<memory-id>`.
+
+## Memory Proposals
+
+Memory proposals are local review records. They let Loro or the user capture candidate
+learnings without committing memory immediately.
+
+```bash
+loro memory propose "Use concise incident summaries" --target local
+loro memory propose "Use the enterprise incident template" --target shared
+loro memory proposals
+loro memory accept-proposal <proposal-id>
+```
+
+Accepting a local proposal writes local memory. Accepting a shared proposal stages a shared
+memory draft only; it does not commit to Postgres or Iceberg. Shared memory still requires
+the explicit `loro memory commit-draft <draft-id> --execute` step where that backend supports
+execution.
 
 ## Postgres Backend
 
@@ -84,7 +114,7 @@ iceberg_table = "shared_memories"
 The current MVP emits configured Iceberg DDL through `loro memory schema --backend iceberg`
 and provides SQL rendering for future append/search execution.
 Polaris catalog access is handled by the governed data commands documented in
-`docs/polaris.md`.
+`docs/polaris-iceberg.md`.
 
 ## Logical Shared Memory Fields
 

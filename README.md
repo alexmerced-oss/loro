@@ -44,6 +44,10 @@ loro remember --local "Status briefs should include risks, blockers, next steps,
 loro remember --shared "Use the enterprise launch readiness template for launches."
 loro memory drafts
 loro memory commit-draft <draft-id>
+loro memory shared-search "launch readiness" --tenant-id acme
+loro memory propose "Use concise launch summaries" --target local
+loro memory propose "Use the enterprise launch readiness template" --target shared
+loro memory accept-proposal <proposal-id>
 loro memory schema --backend postgres
 loro memory backend-check
 loro docs create "Draft a project kickoff document"

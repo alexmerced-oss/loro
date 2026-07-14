@@ -8,6 +8,7 @@ from loro.config import (
     MemoryConfig,
     PermissionsConfig,
     PolarisConfig,
+    SharedMemoryConfig,
 )
 from loro.memory.local import LocalMemoryStore
 from loro.tool_runtime import ToolRegistry, parse_tool_calls
@@ -185,6 +186,15 @@ def test_tool_registry_memory_search(tmp_path) -> None:
     ).execute(call)
     assert result.ok is True
     assert "Launch briefs include risks." in result.output
+
+
+def test_tool_registry_shared_memory_search_renders_sql() -> None:
+    call = parse_tool_calls('@tool memory.shared_search {"query": "launch", "execute": false}')[0]
+    result = ToolRegistry(
+        LoroConfig(memory=MemoryConfig(shared=SharedMemoryConfig(enabled=True)))
+    ).execute(call)
+    assert result.ok is False
+    assert "FROM public.shared_memories" in result.output
 
 
 def test_tool_registry_polaris_readonly(monkeypatch) -> None:

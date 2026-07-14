@@ -280,6 +280,61 @@ def test_shared_memory_commit_draft_rejects_iceberg_execute(tmp_path, monkeypatc
     assert "Live Iceberg commits are not enabled" in commit_result.stderr
 
 
+def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["memory", "shared-search", "launch", "--tenant-id", "acme", "--dry-run"],
+    )
+    assert result.exit_code == 0
+    assert '"backend": "postgres"' in result.stdout
+    assert "FROM public.shared_memories" in result.stdout
+
+
+def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    runner = CliRunner()
+    propose_result = runner.invoke(
+        app,
+        ["memory", "propose", "Use concise launch summaries", "--target", "local"],
+    )
+    assert propose_result.exit_code == 0
+    proposal_id = propose_result.stdout.strip().split(": ", maxsplit=1)[1]
+    accept_result = runner.invoke(app, ["memory", "accept-proposal", proposal_id])
+    assert accept_result.exit_code == 0
+    assert "Accepted proposal as local memory" in accept_result.stdout
+    list_result = runner.invoke(app, ["memory", "proposals"])
+    assert "accepted" in list_result.stdout
+
+
+def test_memory_proposal_accepts_shared_as_draft(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    runner = CliRunner()
+    propose_result = runner.invoke(
+        app,
+        ["memory", "propose", "Use shared launch template", "--target", "shared"],
+    )
+    assert propose_result.exit_code == 0
+    proposal_id = propose_result.stdout.strip().split(": ", maxsplit=1)[1]
+    accept_result = runner.invoke(app, ["memory", "accept-proposal", proposal_id])
+    assert accept_result.exit_code == 0
+    assert "Accepted proposal as shared memory draft" in accept_result.stdout
+    drafts_result = runner.invoke(app, ["memory", "drafts"])
+    assert "Use shared launch" in drafts_result.stdout
+    assert "template" in drafts_result.stdout
+
+
 def test_safety_scan_detects_secret() -> None:
     result = CliRunner().invoke(app, ["safety", "scan", "api_key = 'abc123456789'"])
     assert result.exit_code == 1

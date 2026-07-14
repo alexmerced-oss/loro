@@ -19,8 +19,10 @@ from loro.memory.operations import (
     check_shared_memory_backend,
     create_shared_memory_draft,
     render_or_commit_shared_draft,
+    search_shared_memories,
 )
 from loro.memory.postgres import PostgresSharedMemoryStore
+from loro.memory.proposals import MemoryProposal, MemoryProposalStore
 from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -328,6 +330,158 @@ def memory_search(query: Annotated[str, typer.Argument(help="Search query.")]) -
         return
     for memory in memories:
         console.print(f"- [bold]{memory.memory_id}[/bold]: {memory.content}")
+
+
+@memory_app.command("shared-search")
+def memory_shared_search(
+    query: Annotated[str, typer.Argument(help="Search query.")],
+    tenant_id: Annotated[
+        str,
+        typer.Option("--tenant-id", help="Shared memory tenant."),
+    ] = "default",
+    limit: Annotated[int, typer.Option("--limit", help="Maximum memories to return.")] = 20,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Render backend search SQL without executing."),
+    ] = False,
+) -> None:
+    """Search shared enterprise memory or render the backend search statement."""
+    config = load_config()
+    result = search_shared_memories(
+        config,
+        query=query,
+        tenant_id=tenant_id,
+        limit=limit,
+        execute=not dry_run,
+    )
+    _audit().write(
+        "memory.shared_search",
+        backend=result.backend,
+        query=prompt_preview(query),
+        tenant_id=tenant_id,
+        executed=result.executed,
+        record_count=len(result.records),
+    )
+    if result.executed:
+        if not result.records:
+            console.print("No matching shared memories.")
+            return
+        for record in result.records:
+            console.print(f"- [bold]{record.citation}[/bold]: {record.summary}")
+        return
+    console.print_json(
+        data={
+            "backend": result.backend,
+            "query": result.query,
+            "tenant_id": result.tenant_id,
+            "executed": result.executed,
+            "messages": result.messages,
+            "sql": result.statement.sql if result.statement else None,
+            "params": jsonable_mapping(result.statement.params) if result.statement else None,
+        }
+    )
+
+
+@memory_app.command("propose")
+def memory_propose(
+    content: Annotated[str, typer.Argument(help="Proposed memory content.")],
+    target: Annotated[
+        str,
+        typer.Option("--target", help="Proposal target: local or shared."),
+    ] = "local",
+    rationale: Annotated[
+        str,
+        typer.Option("--rationale", help="Why this should be remembered."),
+    ] = "",
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
+) -> None:
+    """Create a local memory proposal record without committing memory."""
+    if target not in {"local", "shared"}:
+        raise typer.BadParameter("target must be local or shared.")
+    _enforce_safe_content(
+        content,
+        context=f"memory.proposal.{target}",
+        allow_sensitive=allow_sensitive,
+    )
+    proposal = MemoryProposal(content=content, target=target, rationale=rationale)
+    MemoryProposalStore(Path(load_config().memory.local.path)).propose(proposal)
+    _audit().write(
+        "memory.proposal_created",
+        proposal_id=proposal.proposal_id,
+        target=proposal.target,
+        content_preview=prompt_preview(content),
+    )
+    console.print(f"Created memory proposal: {proposal.proposal_id}")
+
+
+@memory_app.command("proposals")
+def memory_proposals() -> None:
+    """List local memory proposal records."""
+    proposals = MemoryProposalStore(Path(load_config().memory.local.path)).list()
+    if not proposals:
+        console.print("No memory proposals yet.")
+        return
+    for proposal in proposals:
+        console.print(
+            f"- [bold]{proposal.proposal_id}[/bold] "
+            f"({proposal.target}, {proposal.status}): {proposal.content}"
+        )
+
+
+@memory_app.command("accept-proposal")
+def memory_accept_proposal(
+    proposal_id: Annotated[str, typer.Argument(help="Memory proposal id.")],
+    tenant_id: Annotated[
+        str, typer.Option("--tenant-id", help="Shared memory tenant.")
+    ] = "default",
+    scope_type: Annotated[
+        str, typer.Option("--scope-type", help="Shared memory scope type.")
+    ] = "org",
+    scope_key: Annotated[
+        str, typer.Option("--scope-key", help="Shared memory scope key.")
+    ] = "default",
+    created_by: Annotated[
+        str, typer.Option("--created-by", help="Shared memory author.")
+    ] = "local-user",
+) -> None:
+    """Accept a proposal into local memory or a shared-memory draft."""
+    config = load_config()
+    store = MemoryProposalStore(Path(config.memory.local.path))
+    proposal = store.get(proposal_id)
+    if proposal is None:
+        raise typer.BadParameter(f"Unknown memory proposal id: {proposal_id}")
+    if proposal.target == "shared":
+        draft = create_shared_memory_draft(
+            content=proposal.content,
+            tenant_id=tenant_id,
+            scope_type=scope_type,
+            scope_key=scope_key,
+            memory_type="fact",
+            classification="public-internal",
+            created_by=created_by,
+        )
+        SharedMemoryDraftStore(Path(config.memory.local.path)).stage(draft)
+        store.update_status(proposal_id, "accepted_as_shared_draft")
+        _audit().write(
+            "memory.proposal_accepted",
+            proposal_id=proposal_id,
+            target=proposal.target,
+            draft_id=draft.draft_id,
+        )
+        console.print(f"Accepted proposal as shared memory draft: {draft.draft_id}")
+        return
+    memory = LocalMemoryStore.from_config(config.memory.local).remember(proposal.content)
+    store.update_status(proposal_id, "accepted")
+    _audit().write(
+        "memory.proposal_accepted",
+        proposal_id=proposal_id,
+        target=proposal.target,
+        memory_id=memory.memory_id,
+    )
+    console.print(f"Accepted proposal as local memory: {memory.memory_id}")
 
 
 @memory_app.command("remember")

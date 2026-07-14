@@ -32,6 +32,7 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
             created_by="integration-test",
         )
         store.commit_draft(draft)
+        search_results = store.search(tenant_id="acme", query="launch", limit=5)
 
         with psycopg.connect(dsn) as connection:
             with connection.cursor() as cursor:
@@ -56,6 +57,9 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
 
         assert memory_row == ("Use the launch readiness template", "integration-test")
         assert event_row == ("memory.created", "integration-test")
+        assert len(search_results) == 1
+        assert search_results[0].content == "Use the launch readiness template"
+        assert search_results[0].citation.startswith("postgres:acme/")
     finally:
         container.stop()
 

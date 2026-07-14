@@ -34,6 +34,40 @@ class SharedMemoryStatement:
 
 
 @dataclass(frozen=True)
+class SharedMemorySearchRecord:
+    memory_id: str
+    tenant_id: str
+    scope_type: str
+    scope_key: str
+    memory_type: str
+    content: str
+    summary: str
+    classification: str
+    created_by: str
+    created_at: str
+    status: str
+    backend: str
+
+    @property
+    def citation(self) -> str:
+        return (
+            f"{self.backend}:{self.tenant_id}/{self.scope_type}/{self.scope_key}/"
+            f"{self.memory_id}"
+        )
+
+
+@dataclass(frozen=True)
+class SharedMemorySearchResult:
+    backend: str
+    query: str
+    tenant_id: str
+    executed: bool
+    records: list[SharedMemorySearchRecord] = field(default_factory=list)
+    statement: SharedMemoryStatement | None = None
+    messages: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class SharedMemoryBackendCheck:
     backend: str
     ok: bool

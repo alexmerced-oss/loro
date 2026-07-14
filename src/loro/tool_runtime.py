@@ -12,6 +12,7 @@ from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import prompt_preview
 from loro.config import LoroConfig
 from loro.memory.local import LocalMemoryStore
+from loro.memory.operations import search_shared_memories
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.safety import SafetyScanner
@@ -68,6 +69,8 @@ class ToolRegistry:
                 return self._run_shell(call)
             if call.name == "memory.search":
                 return self._search_memory(call)
+            if call.name == "memory.shared_search":
+                return self._search_shared_memory(call)
             if call.name == "polaris.readonly":
                 return self._run_polaris_readonly(call)
             if call.name == "artifact.create":
@@ -243,6 +246,38 @@ class ToolRegistry:
             f"{memory.memory_id}: {memory.content}" for memory in memories
         )
         return ToolExecution(call=call, ok=True, output=output or "No matching local memories.")
+
+    def _search_shared_memory(self, call: ToolCall) -> ToolExecution:
+        query = str(call.args["query"])
+        tenant_id = str(call.args.get("tenant_id", "default"))
+        limit = int(call.args.get("limit", 10))
+        execute = bool(call.args.get("execute", True))
+        if not self.config.memory.shared.enabled:
+            return ToolExecution(call=call, ok=False, output="Shared memory is disabled.")
+        result = search_shared_memories(
+            self.config,
+            query=query,
+            tenant_id=tenant_id,
+            limit=limit,
+            execute=execute,
+        )
+        if result.records:
+            output = "\n".join(
+                f"{record.citation}: {record.summary} | {record.content}"
+                for record in result.records
+            )
+            return ToolExecution(call=call, ok=True, output=output)
+        if result.statement:
+            output = "\n".join(
+                [
+                    *result.messages,
+                    "sql:",
+                    result.statement.sql,
+                    f"params: {result.statement.params}",
+                ]
+            )
+            return ToolExecution(call=call, ok=False, output=output)
+        return ToolExecution(call=call, ok=True, output="No matching shared memories.")
 
     def _run_polaris_readonly(self, call: ToolCall) -> ToolExecution:
         if not self.config.polaris.enabled:

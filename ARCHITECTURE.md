@@ -44,7 +44,8 @@ flowchart LR
 ## Runtime Flow
 
 1. The CLI resolves config from managed, user, project, local, `LORO_CONFIG`, and `LORO_CONFIG_CONTENT`.
-2. The runtime loads local memory and searches for memories relevant to the prompt.
+2. The runtime loads local memory and, when enabled, searches shared enterprise memory for
+   relevant cited records.
 3. The runtime emits `runtime.task_started`.
 4. Explicit prompt tool directives are executed before the first model call.
 5. The runtime calls the configured model and parses provider-neutral tool directives from
@@ -120,7 +121,14 @@ Loro has two memory planes:
 - Local memory: JSONL-backed today, private to the current environment, searchable by substring.
 - Shared memory: schema-first scaffolding for explicit user-approved enterprise memory.
 
-Shared memory writes must stay explicit. The agent can propose a memory, but only user-approved text should be staged or committed. Current code supports shared memory schema generation, draft records, `memory apply-schema` SQL dry runs, `memory commit-draft` SQL dry runs, Postgres readiness diagnostics, a Postgres adapter that can apply schema and execute explicit draft commits when `psycopg` plus a DSN are available, and an Iceberg adapter that renders configured DDL plus append/search SQL for future governed execution.
+Shared memory writes must stay explicit. The agent can propose a memory, but only
+user-approved text should be staged or committed. Current code supports shared memory schema
+generation, draft records, proposal records, `memory shared-search`, `memory apply-schema`
+SQL dry runs, `memory commit-draft` SQL dry runs, Postgres readiness diagnostics, a Postgres
+adapter that can apply schema, execute explicit draft commits, and execute search when
+`psycopg` plus a DSN are available, and an Iceberg adapter that renders configured DDL plus
+append/search SQL for future governed execution. Runtime shared-memory recall includes
+citations so responses can identify the backend, tenant, scope, and memory id.
 
 ## Artifact Generation
 

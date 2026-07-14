@@ -24,10 +24,13 @@
 - Runtime artifact generation tool with provenance sidecars
 - Runtime edit tools for approved file writes and replacements
 - Runtime Git helpers for status, diff, show, approved add, and approved commit
+- Backend-neutral shared memory search result type
+- Postgres shared-memory search execution and SQL dry-run fallback
+- Shared-memory runtime recall with citations
+- Local/shared memory proposal records and accept workflow
 
 ## Next MVP Work
 
-- Shared memory retrieval and governance integration
 - Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
 - CI, coverage reporting, and integration-test scaffolding
@@ -65,6 +68,12 @@ Acceptance criteria:
 - Wire shared memory recall into `AgentRuntime` with citations and provenance.
 - Add first-class local/shared memory proposal records without allowing autonomous shared writes.
 - Document explicit-only shared-memory write guarantees.
+
+Status: complete. Loro can search shared memory through a backend-neutral result shape,
+execute Postgres shared-memory retrieval when configured, render Postgres/Iceberg search SQL
+when execution is unavailable, recall cited shared memories in `AgentRuntime`, and manage
+local/shared memory proposals. Accepting a shared proposal creates a draft only; explicit
+draft commit remains required.
 
 ### Batch 3: Polaris And Iceberg Local Integration
 

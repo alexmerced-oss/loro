@@ -5,6 +5,7 @@ from loro.config import LoroConfig, SharedMemoryConfig
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
+    SharedMemorySearchResult,
     SharedMemoryStatement,
 )
 from loro.memory.iceberg import IcebergSharedMemoryStore
@@ -17,6 +18,63 @@ class SharedMemoryCommitResult:
     draft: SharedMemoryDraft
     executed: bool
     statement: SharedMemoryStatement | None = None
+
+
+def search_shared_memories(
+    config: LoroConfig,
+    *,
+    query: str,
+    tenant_id: str = "default",
+    limit: int = 20,
+    execute: bool = True,
+) -> SharedMemorySearchResult:
+    backend = config.memory.shared.backend
+    if backend == "postgres":
+        store = PostgresSharedMemoryStore(config.memory.shared)
+        statement = store.render_search(tenant_id=tenant_id, query=query, limit=limit)
+        if not execute:
+            return SharedMemorySearchResult(
+                backend=backend,
+                query=query,
+                tenant_id=tenant_id,
+                executed=False,
+                statement=statement,
+                messages=["Rendered Postgres shared-memory search SQL."],
+            )
+        try:
+            records = store.search(tenant_id=tenant_id, query=query, limit=limit)
+        except RuntimeError as error:
+            return SharedMemorySearchResult(
+                backend=backend,
+                query=query,
+                tenant_id=tenant_id,
+                executed=False,
+                statement=statement,
+                messages=[str(error), "Rendered SQL instead of executing search."],
+            )
+        return SharedMemorySearchResult(
+            backend=backend,
+            query=query,
+            tenant_id=tenant_id,
+            executed=True,
+            records=records,
+            messages=[f"Found {len(records)} shared memories."],
+        )
+    if backend == "iceberg":
+        statement = IcebergSharedMemoryStore(config.memory.shared).render_search(
+            tenant_id=tenant_id,
+            query=query,
+            limit=limit,
+        )
+        return SharedMemorySearchResult(
+            backend=backend,
+            query=query,
+            tenant_id=tenant_id,
+            executed=False,
+            statement=statement,
+            messages=["Live Iceberg shared-memory search is not enabled in this MVP."],
+        )
+    raise ValueError(f"Unsupported shared memory backend: {backend}")
 
 
 def create_shared_memory_draft(

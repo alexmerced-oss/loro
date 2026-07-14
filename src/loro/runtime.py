@@ -2,7 +2,9 @@ from dataclasses import dataclass
 
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import LoroConfig
+from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
+from loro.memory.operations import search_shared_memories
 from loro.models import ModelMessage, create_model_client
 from loro.sessions import SessionRecord, SessionStore
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
@@ -14,6 +16,7 @@ class AgentResult:
     mode: str
     session_id: str
     recalled_memories: list[str]
+    recalled_shared_memories: list[SharedMemorySearchRecord]
     tool_executions: list[ToolExecution]
     stop_reason: str
     steps: int
@@ -33,6 +36,7 @@ class AgentRuntime:
         if self.config.memory.local.enabled:
             store = LocalMemoryStore.from_config(self.config.memory.local)
             recalled_memories = [memory.content for memory in store.search(prompt)]
+        recalled_shared_memories = self._recall_shared_memories(prompt)
         self.audit.write(
             "runtime.task_started",
             mode=mode,
@@ -41,7 +45,7 @@ class AgentRuntime:
             if self.config.audit.include_prompt_preview
             else None,
         )
-        memory_section = _format_memory_section(recalled_memories)
+        memory_section = _format_memory_section(recalled_memories, recalled_shared_memories)
         tool_executions: list[ToolExecution] = []
         tool_executions.extend(self._execute_tool_calls(parse_tool_calls(prompt), step=0))
 
@@ -105,6 +109,9 @@ class AgentRuntime:
                 mode=mode,
                 summary=summary,
                 recalled_memories=recalled_memories,
+                recalled_shared_memories=[
+                    _shared_memory_payload(memory) for memory in recalled_shared_memories
+                ],
                 tool_executions=[execution.to_payload() for execution in tool_executions],
                 stop_reason=stop_reason,
             )
@@ -114,6 +121,7 @@ class AgentRuntime:
             mode=mode,
             session_id=record.session_id,
             recalled_memory_count=len(recalled_memories),
+            recalled_shared_memory_count=len(recalled_shared_memories),
             tool_execution_count=len(tool_executions),
             stop_reason=stop_reason,
             steps=steps,
@@ -123,10 +131,30 @@ class AgentRuntime:
             mode=mode,
             session_id=record.session_id,
             recalled_memories=recalled_memories,
+            recalled_shared_memories=recalled_shared_memories,
             tool_executions=tool_executions,
             stop_reason=stop_reason,
             steps=steps,
         )
+
+    def _recall_shared_memories(self, prompt: str) -> list[SharedMemorySearchRecord]:
+        if not self.config.memory.shared.enabled:
+            return []
+        result = search_shared_memories(
+            self.config,
+            query=prompt,
+            tenant_id="default",
+            limit=5,
+            execute=True,
+        )
+        self.audit.write(
+            "runtime.shared_memory_recalled",
+            backend=result.backend,
+            executed=result.executed,
+            record_count=len(result.records),
+            messages=result.messages,
+        )
+        return result.records
 
     def _execute_tool_calls(self, calls: list[ToolCall], *, step: int) -> list[ToolExecution]:
         executions = [self.tools.execute(call) for call in calls]
@@ -166,12 +194,26 @@ def _strip_tool_directives(prompt: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _format_memory_section(recalled_memories: list[str]) -> str:
-    if not recalled_memories:
+def _format_memory_section(
+    recalled_memories: list[str],
+    recalled_shared_memories: list[SharedMemorySearchRecord],
+) -> str:
+    if not recalled_memories and not recalled_shared_memories:
         return ""
-    return "\n\nRecalled local memories:\n" + "\n".join(
-        f"- {memory}" for memory in recalled_memories
-    )
+    sections: list[str] = []
+    if recalled_memories:
+        sections.append(
+            "Recalled local memories:\n" + "\n".join(f"- {memory}" for memory in recalled_memories)
+        )
+    if recalled_shared_memories:
+        sections.append(
+            "Recalled shared memories:\n"
+            + "\n".join(
+                f"- [{memory.citation}] {memory.summary}: {memory.content}"
+                for memory in recalled_shared_memories
+            )
+        )
+    return "\n\n" + "\n\n".join(sections)
 
 
 def _format_tool_section(tool_executions: list[ToolExecution]) -> str:
@@ -185,3 +227,19 @@ def _format_tool_section(tool_executions: list[ToolExecution]) -> str:
 def _format_tool_execution(execution: ToolExecution) -> str:
     status = "ok" if execution.ok else "error"
     return f"[{status}] {execution.call.name}\n{execution.output}"
+
+
+def _shared_memory_payload(memory: SharedMemorySearchRecord) -> dict[str, str]:
+    return {
+        "memory_id": memory.memory_id,
+        "citation": memory.citation,
+        "tenant_id": memory.tenant_id,
+        "scope_type": memory.scope_type,
+        "scope_key": memory.scope_key,
+        "memory_type": memory.memory_type,
+        "summary": memory.summary,
+        "classification": memory.classification,
+        "created_by": memory.created_by,
+        "created_at": memory.created_at,
+        "backend": memory.backend,
+    }
