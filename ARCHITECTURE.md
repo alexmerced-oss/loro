@@ -15,6 +15,7 @@ flowchart LR
   Runtime --> Audit["Audit log"]
   Tools --> Files["File tools"]
   Tools --> Shell["Shell tools"]
+  Tools --> Git["Git tools"]
   Tools --> Polaris["Polaris wrapper"]
   Memory --> Local["Local memory"]
   Memory --> Shared["Shared enterprise memory"]
@@ -31,7 +32,7 @@ flowchart LR
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
 - `loro.provider_profiles`: built-in AI provider profile registry.
 - `loro.providers`: provider lookup, validation, and local configuration writer.
-- `loro.tools`: local file and shell tools, with more tools expected behind typed interfaces.
+- `loro.tools`: local file, shell, and Git tools, with more tools expected behind typed interfaces.
 - `loro.tool_runtime`: explicit typed runtime tool-call parsing and execution.
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
 - `loro.memory`: local memory, shared-memory draft storage, schema generation, backend adapters, and shared-memory operations.
@@ -60,7 +61,8 @@ The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
 can map into the same internal `ToolCall` type as provider adapters mature. The runtime
 registry currently exposes file read/search, local memory search, permission-gated shell
-execution, read-only Polaris passthrough, and artifact generation with provenance.
+execution, read-only Polaris passthrough, artifact generation with provenance, approved file
+writes/replacements, and Git status/diff/show/add/commit helpers.
 
 ## Configuration
 
@@ -90,6 +92,8 @@ Current examples:
 
 - `loro shell run --yes -- python -c "print('ok')"` requires `--yes` when shell policy is `ask`.
 - `loro file read` and `loro file search` are read-only and internally approved for the current CLI command.
+- Runtime file writes, Git mutations, and shell execution require explicit approval unless
+  policy sets the relevant action to `allow`.
 
 Future work should add managed enterprise denies and richer data-scope matchers.
 

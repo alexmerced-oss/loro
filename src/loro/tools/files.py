@@ -14,6 +14,24 @@ class FileTools:
         text = path.expanduser().read_text(encoding="utf-8")
         return text[:limit]
 
+    def write_text(self, path: Path, content: str, *, append: bool = False) -> Path:
+        path = path.expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = "a" if append else "w"
+        with path.open(mode, encoding="utf-8") as file:
+            file.write(content)
+        return path
+
+    def replace_text(self, path: Path, old: str, new: str, *, count: int = -1) -> int:
+        path = path.expanduser()
+        text = path.read_text(encoding="utf-8")
+        occurrences = text.count(old)
+        if occurrences == 0:
+            return 0
+        updated = text.replace(old, new, count)
+        path.write_text(updated, encoding="utf-8")
+        return occurrences if count < 0 else min(occurrences, count)
+
     def search(self, root: Path, query: str, limit: int = 50) -> list[FileSearchMatch]:
         root = root.expanduser()
         matches: list[FileSearchMatch] = []

@@ -26,16 +26,24 @@ tool registry supports:
 
 - `file.read`: `{"path": "README.md", "limit": 1000}`
 - `file.search`: `{"query": "Polaris", "root": ".", "limit": 5}`
+- `file.write`: `{"path": "notes.md", "content": "Hello", "approved": true}`
+- `file.replace`: `{"path": "notes.md", "old": "Hello", "new": "Hi", "approved": true}`
+- `git.status`: `{"cwd": "."}`
+- `git.diff`: `{"cwd": "."}`
+- `git.show`: `{"cwd": ".", "revision": "HEAD"}`
+- `git.add`: `{"cwd": ".", "paths": ["notes.md"], "approved": true}`
+- `git.commit`: `{"cwd": ".", "message": "Update notes", "approved": true}`
 - `memory.search`: `{"query": "launch template", "limit": 10}`
 - `shell.run`: `{"args": ["python", "-c", "print(123)"], "approved": true}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
 - `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
 
-Runtime shell calls still obey configured permissions. When shell policy is `ask`, the
-tool call must include `"approved": true`; `deny` always blocks execution. Polaris runtime
-calls require `[polaris].enabled = true` and are constrained to read-only operations.
-Artifact runtime calls support `document`, `presentation`, `spreadsheet`, and `brief`;
-they write provenance sidecars and use the same safety scanner as CLI artifact commands.
+Runtime write-like calls still obey configured permissions. When policy is `ask`, `file.write`,
+`file.replace`, `git.add`, `git.commit`, and `shell.run` must include `"approved": true`;
+`deny` always blocks execution. File writes/replacements and artifact creation use the same
+safety scanner as CLI write commands. Polaris runtime calls require `[polaris].enabled = true`
+and are constrained to read-only operations. Artifact runtime calls support `document`,
+`presentation`, `spreadsheet`, and `brief`; they write provenance sidecars.
 
 ## Providers
 

@@ -85,7 +85,7 @@ Future managed enterprise policy should be non-overridable. The current MVP uses
 Rules are evaluated before the per-tool defaults. They use simple case-insensitive glob
 matching over `tool`, `action`, and `target`; the first matching rule wins.
 
-Common tool names today are `edit`, `shell`, and `web`.
+Common tool names today are `edit`, `git`, `shell`, and `web`.
 
 ## Provider Wizard
 

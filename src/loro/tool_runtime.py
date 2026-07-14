@@ -16,6 +16,7 @@ from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
 from loro.safety import SafetyScanner
 from loro.tools.files import FileTools
+from loro.tools.git import GitTools
 from loro.tools.shell import ShellTools
 
 
@@ -47,6 +48,7 @@ class ToolRegistry:
         self.config = config
         self.permissions = PermissionEngine(config.permissions)
         self.files = FileTools()
+        self.git = GitTools()
         self.shell = ShellTools()
         self.safety = SafetyScanner(config.safety)
 
@@ -56,6 +58,12 @@ class ToolRegistry:
                 return self._read_file(call)
             if call.name == "file.search":
                 return self._search_files(call)
+            if call.name == "file.write":
+                return self._write_file(call)
+            if call.name == "file.replace":
+                return self._replace_file(call)
+            if call.name.startswith("git."):
+                return self._run_git(call)
             if call.name == "shell.run":
                 return self._run_shell(call)
             if call.name == "memory.search":
@@ -95,6 +103,36 @@ class ToolRegistry:
         )
         return ToolExecution(call=call, ok=True, output=output or "No matches.")
 
+    def _write_file(self, call: ToolCall) -> ToolExecution:
+        path = Path(str(call.args["path"]))
+        content = str(call.args["content"])
+        append = bool(call.args.get("append", False))
+        allow_sensitive = bool(call.args.get("allow_sensitive", False))
+        approved = bool(call.args.get("approved", False))
+        self.permissions.require_allowed(
+            PermissionRequest(tool="edit", action="write file", target=str(path)),
+            approved=approved,
+        )
+        self._assert_safe_write(content, allow_sensitive=allow_sensitive)
+        written = self.files.write_text(path, content, append=append)
+        action = "appended" if append else "wrote"
+        return ToolExecution(call=call, ok=True, output=f"{action}: {written}")
+
+    def _replace_file(self, call: ToolCall) -> ToolExecution:
+        path = Path(str(call.args["path"]))
+        old = str(call.args["old"])
+        new = str(call.args["new"])
+        count = int(call.args.get("count", -1))
+        allow_sensitive = bool(call.args.get("allow_sensitive", False))
+        approved = bool(call.args.get("approved", False))
+        self.permissions.require_allowed(
+            PermissionRequest(tool="edit", action="replace file", target=str(path)),
+            approved=approved,
+        )
+        self._assert_safe_write(new, allow_sensitive=allow_sensitive)
+        replacements = self.files.replace_text(path, old, new, count=count)
+        return ToolExecution(call=call, ok=True, output=f"replacements: {replacements}")
+
     def _run_shell(self, call: ToolCall) -> ToolExecution:
         args = call.args.get("args")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
@@ -112,6 +150,58 @@ class ToolRegistry:
             stderr=result.stderr,
         )
         return ToolExecution(call=call, ok=result.returncode == 0, output=output)
+
+    def _run_git(self, call: ToolCall) -> ToolExecution:
+        cwd = Path(str(call.args.get("cwd", ".")))
+        timeout = int(call.args.get("timeout", 120))
+        approved = bool(call.args.get("approved", False))
+        action = call.name.removeprefix("git.")
+        if action == "status":
+            self.permissions.require_allowed(
+                PermissionRequest(tool="git", action="status", target=str(cwd)),
+                approved=True,
+            )
+            result = self.git.status(cwd=cwd, timeout=timeout)
+        elif action == "diff":
+            self.permissions.require_allowed(
+                PermissionRequest(tool="git", action="diff", target=str(cwd)),
+                approved=True,
+            )
+            result = self.git.diff(cwd=cwd, timeout=timeout)
+        elif action == "show":
+            revision = str(call.args.get("revision", "HEAD"))
+            self.permissions.require_allowed(
+                PermissionRequest(tool="git", action="show", target=revision),
+                approved=True,
+            )
+            result = self.git.show(revision, cwd=cwd, timeout=timeout)
+        elif action == "add":
+            paths = _string_list(call.args.get("paths"), "git.add requires paths.")
+            self.permissions.require_allowed(
+                PermissionRequest(tool="git", action="add", target=" ".join(paths)),
+                approved=approved,
+            )
+            result = self.git.add(paths, cwd=cwd, timeout=timeout)
+        elif action == "commit":
+            message = str(call.args["message"])
+            self.permissions.require_allowed(
+                PermissionRequest(tool="git", action="commit", target=message),
+                approved=approved,
+            )
+            result = self.git.commit(message, cwd=cwd, timeout=timeout)
+        else:
+            raise ValueError(
+                "Git tool must be one of: git.status, git.diff, git.show, git.add, git.commit."
+            )
+        return ToolExecution(
+            call=call,
+            ok=result.returncode == 0,
+            output=_format_process_output(
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            ),
+        )
 
     def _create_artifact(self, call: ToolCall) -> ToolExecution:
         kind = str(call.args.get("kind", "document"))
@@ -168,6 +258,15 @@ class ToolRegistry:
         )
         return ToolExecution(call=call, ok=result.returncode == 0, output=output)
 
+    def _assert_safe_write(self, content: str, *, allow_sensitive: bool) -> None:
+        findings = self.safety.scan(content)
+        if findings and self.config.safety.block_on_findings and not allow_sensitive:
+            kinds = ", ".join(sorted({finding.kind for finding in findings}))
+            raise ValueError(
+                f"Sensitive content detected ({kinds}). "
+                "Set allow_sensitive only if policy allows persistence."
+            )
+
 
 def parse_tool_calls(prompt: str) -> list[ToolCall]:
     calls: list[ToolCall] = []
@@ -201,6 +300,12 @@ def _parse_json_tool_call(raw: str) -> ToolCall:
     if not isinstance(args, dict):
         raise ValueError("Tool directive args must be a JSON object.")
     return ToolCall(name=name, args=args)
+
+
+def _string_list(value: Any, message: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(message)
+    return value
 
 
 def _format_process_output(*, returncode: int, stdout: str, stderr: str) -> str:

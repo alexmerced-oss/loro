@@ -1,3 +1,5 @@
+from subprocess import run
+
 import pytest
 
 from loro.config import (
@@ -54,6 +56,52 @@ def test_tool_registry_file_search(tmp_path) -> None:
     assert "note.txt:1: hello loro" in result.output
 
 
+def test_tool_registry_file_write_requires_approval(tmp_path) -> None:
+    target = tmp_path / "note.txt"
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "hello"}}'
+    )[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is False
+    assert "requires approval" in result.output
+    assert not target.exists()
+
+
+def test_tool_registry_file_write_with_approval(tmp_path) -> None:
+    target = tmp_path / "note.txt"
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "hello", "approved": true}}'
+    )[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is True
+    assert target.read_text(encoding="utf-8") == "hello"
+
+
+def test_tool_registry_file_replace_with_approval(tmp_path) -> None:
+    target = tmp_path / "note.txt"
+    target.write_text("hello loro\n", encoding="utf-8")
+    call = parse_tool_calls(
+        f'@tool file.replace {{"path": "{target}", "old": "loro", '
+        '"new": "team", "approved": true}'
+    )[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is True
+    assert "replacements: 1" in result.output
+    assert target.read_text(encoding="utf-8") == "hello team\n"
+
+
+def test_tool_registry_file_write_blocks_sensitive_content(tmp_path) -> None:
+    target = tmp_path / "secret.txt"
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", '
+        '"content": "api_key = abcdefghijklmnop", "approved": true}'
+    )[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is False
+    assert "Sensitive content detected" in result.output
+    assert not target.exists()
+
+
 def test_tool_registry_unknown_tool() -> None:
     result = ToolRegistry(LoroConfig()).execute(parse_tool_calls("@tool nope {}")[0])
     assert result.ok is False
@@ -84,6 +132,48 @@ def test_tool_registry_shell_run_respects_deny() -> None:
     result = ToolRegistry(LoroConfig(permissions=PermissionsConfig(shell="deny"))).execute(call)
     assert result.ok is False
     assert "denied by policy" in result.output
+
+
+def test_tool_registry_git_status(tmp_path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "note.txt").write_text("hello\n", encoding="utf-8")
+    call = parse_tool_calls(f'@tool git.status {{"cwd": "{tmp_path}"}}')[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is True
+    assert "?? note.txt" in result.output
+
+
+def test_tool_registry_git_add_requires_approval(tmp_path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "note.txt").write_text("hello\n", encoding="utf-8")
+    call = parse_tool_calls(f'@tool git.add {{"cwd": "{tmp_path}", "paths": ["note.txt"]}}')[0]
+    result = ToolRegistry(LoroConfig()).execute(call)
+    assert result.ok is False
+    assert "requires approval" in result.output
+
+
+def test_tool_registry_git_add_and_commit_with_approval(tmp_path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "note.txt").write_text("hello\n", encoding="utf-8")
+    registry = ToolRegistry(LoroConfig())
+
+    add_call = parse_tool_calls(
+        f'@tool git.add {{"cwd": "{tmp_path}", "paths": ["note.txt"], "approved": true}}'
+    )[0]
+    add_result = registry.execute(add_call)
+    assert add_result.ok is True
+
+    commit_call = parse_tool_calls(
+        f'@tool git.commit {{"cwd": "{tmp_path}", "message": "Add note", "approved": true}}'
+    )[0]
+    commit_result = registry.execute(commit_call)
+    assert commit_result.ok is True
+    assert "Add note" in commit_result.output
+
+    show_call = parse_tool_calls(f'@tool git.show {{"cwd": "{tmp_path}"}}')[0]
+    show_result = registry.execute(show_call)
+    assert show_result.ok is True
+    assert "Add note" in show_result.output
 
 
 def test_tool_registry_memory_search(tmp_path) -> None:
@@ -171,3 +261,8 @@ def test_tool_registry_artifact_create_blocks_sensitive_prompt(tmp_path) -> None
     assert result.ok is False
     assert "Sensitive content detected" in result.output
     assert not any(tmp_path.iterdir())
+
+
+def _init_repo(path) -> None:
+    result = run(["git", "init"], cwd=path, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr

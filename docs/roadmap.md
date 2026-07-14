@@ -22,10 +22,11 @@
 - Bounded model-directed runtime loop with provider-neutral JSON tool directives
 - Runtime tools for shell execution, local memory search, and read-only Polaris passthrough
 - Runtime artifact generation tool with provenance sidecars
+- Runtime edit tools for approved file writes and replacements
+- Runtime Git helpers for status, diff, show, approved add, and approved commit
 
 ## Next MVP Work
 
-- Expand runtime tool registry with Git and edit tools
 - Shared memory retrieval and governance integration
 - Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
@@ -48,9 +49,10 @@ Acceptance criteria:
 - Existing explicit `@tool ...` prompt directives continue to work for deterministic testing.
 
 Status: core loop complete. Runtime has file read/search, local memory search,
-permission-gated shell execution, read-only Polaris passthrough, and artifact generation.
-Follow-on work should expand the registry with edit and Git tools plus interactive approval
-prompts.
+permission-gated shell execution, read-only Polaris passthrough, artifact generation, approved
+file write/replace, and Git status/diff/show/add/commit helpers. Interactive TUI approval
+prompts remain in Enterprise Hardening; current runtime approvals are explicit tool arguments
+plus policy evaluation.
 
 ### Batch 2: Shared Memory Retrieval And Governance
 
