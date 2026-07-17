@@ -103,16 +103,7 @@ def check_shared_memory_backend(config: SharedMemoryConfig) -> SharedMemoryBacke
     if config.backend == "postgres":
         return PostgresSharedMemoryStore(config).check()
     if config.backend == "iceberg":
-        store = IcebergSharedMemoryStore(config)
-        return SharedMemoryBackendCheck(
-            backend="iceberg",
-            ok=False,
-            messages=[
-                f"Iceberg memory table: {store.memory_table}",
-                f"Iceberg event table: {store.events_table}",
-                "Live Iceberg commits are not enabled in this MVP.",
-            ],
-        )
+        return IcebergSharedMemoryStore(config).check()
     return SharedMemoryBackendCheck(
         backend=config.backend,
         ok=False,

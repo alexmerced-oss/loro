@@ -1,3 +1,7 @@
+import builtins
+import sys
+import types
+
 import pytest
 
 from loro.config import LoroConfig, MemoryConfig, SharedMemoryConfig
@@ -188,3 +192,25 @@ def test_search_shared_memories_renders_iceberg() -> None:
 def test_iceberg_rejects_invalid_identifier() -> None:
     with pytest.raises(ValueError, match="iceberg_namespace"):
         IcebergSharedMemoryStore(SharedMemoryConfig(iceberg_namespace="bad-name"))
+
+
+def test_iceberg_backend_check_reports_missing_pyiceberg(monkeypatch) -> None:
+    original_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pyiceberg":
+            raise ModuleNotFoundError(name)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    check = IcebergSharedMemoryStore(SharedMemoryConfig()).check()
+    assert check.backend == "iceberg"
+    assert check.ok is False
+    assert any("pyiceberg is not installed" in message for message in check.messages)
+
+
+def test_iceberg_backend_check_accepts_importable_pyiceberg(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "pyiceberg", types.ModuleType("pyiceberg"))
+    check = IcebergSharedMemoryStore(SharedMemoryConfig()).check()
+    assert check.ok is True
+    assert any("pyiceberg is importable" in message for message in check.messages)

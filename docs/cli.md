@@ -118,6 +118,8 @@ Memory and artifact commands scan for obvious secrets before writing files or me
 loro data catalogs
 loro data namespaces --catalog prod
 loro data tables --catalog prod --namespace analytics
+loro data schema events --catalog prod --namespace analytics
+loro data explain-access events --catalog prod --namespace analytics --catalog-role reader
 loro data views --catalog prod --namespace analytics
 loro data principal-roles
 loro data catalog-roles --catalog prod
@@ -130,3 +132,5 @@ loro data polaris catalogs list
 Polaris commands require `[polaris].enabled = true`. Typed commands cover common catalog,
 namespace, table, view, role, privilege, and policy discovery. The lower-level
 `data polaris` escape hatch is restricted to read-only operation families.
+Use `data schema` and `data explain-access` for higher-level governed metadata summaries
+without querying table data.

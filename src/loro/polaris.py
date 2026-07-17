@@ -13,12 +13,7 @@ class PolarisResult:
 
 
 class PolarisClient:
-    """Typed wrapper around the Polaris CLI.
-
-    This scaffold intentionally exposes only a small read-only command helper.
-    Future work should add typed methods for catalogs, namespaces, tables,
-    roles, privileges, and policies.
-    """
+    """Typed read-only wrapper around the Polaris CLI."""
 
     def __init__(self, config: PolarisConfig) -> None:
         self.config = config

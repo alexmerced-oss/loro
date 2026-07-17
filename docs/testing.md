@@ -43,12 +43,12 @@ Current high-value gaps that need external services or credentials:
 
 ## Polaris Local Testing
 
-Polaris should also be tested with an ephemeral local stack, but it is heavier than
-Postgres because it needs a Polaris server, catalog bootstrap, roles/policies, and often
-an Iceberg-facing catalog configuration. The recommended next step is a dedicated
-`docker-compose.polaris.yml` plus pytest fixtures that:
+Polaris can be tested against the local quickstart stack documented in
+`docs/local-polaris-iceberg.md`. It is heavier than Postgres because it needs a Polaris
+server, catalog bootstrap, roles/policies, and an Iceberg-facing catalog configuration.
 
-- wait for Polaris readiness,
-- bootstrap a catalog and namespace,
-- create or load test roles/policies,
-- run Loro's typed `data` commands against the local CLI/server.
+```bash
+LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/test_polaris_cli_integration.py
+```
+
+The test expects a working Polaris CLI and at least one catalog available to list.

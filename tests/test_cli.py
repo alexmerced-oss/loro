@@ -152,6 +152,106 @@ def test_data_applicable_policies_typed_command(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_data_schema_command(monkeypatch, tmp_path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        commands.append(command)
+        return CompletedProcess(command, 0, stdout='{"columns": []}\n', stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[polaris]\n"
+        'enabled = true\n'
+        'cli_path = "polaris"\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["data", "schema", "events", "--namespace", "analytics", "--catalog", "prod"],
+    )
+    assert result.exit_code == 0
+    assert '"table": "events"' in result.stdout
+    assert commands == [
+        [
+            "polaris",
+            "tables",
+            "get",
+            "events",
+            "--namespace",
+            "analytics",
+            "--catalog",
+            "prod",
+        ]
+    ]
+
+
+def test_data_explain_access_command(monkeypatch, tmp_path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        commands.append(command)
+        return CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[polaris]\n"
+        'enabled = true\n'
+        'cli_path = "polaris"\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "data",
+            "explain-access",
+            "events",
+            "--namespace",
+            "analytics",
+            "--catalog",
+            "prod",
+            "--catalog-role",
+            "reader",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "read-only discovery" in result.stdout
+    assert commands == [
+        [
+            "polaris",
+            "tables",
+            "get",
+            "events",
+            "--namespace",
+            "analytics",
+            "--catalog",
+            "prod",
+        ],
+        [
+            "polaris",
+            "applicable-policies",
+            "list",
+            "--resource",
+            "events",
+            "--catalog",
+            "prod",
+            "--namespace",
+            "analytics",
+        ],
+        [
+            "polaris",
+            "privileges",
+            "list",
+            "--catalog-role",
+            "reader",
+            "--catalog",
+            "prod",
+        ],
+    ]
+
+
 def test_shell_run_requires_yes() -> None:
     result = CliRunner().invoke(app, ["shell", "run", "--", "python", "-c", "print('loro')"])
     assert result.exit_code != 0
@@ -219,7 +319,7 @@ def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
     result = CliRunner().invoke(app, ["memory", "backend-check"])
     assert result.exit_code == 1
     assert "agent_memory.agent_facts" in result.stdout
-    assert "Live Iceberg commits" in result.stdout
+    assert "Live governed execution" in result.stdout
 
 
 def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:

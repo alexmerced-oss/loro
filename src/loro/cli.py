@@ -13,6 +13,7 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config
+from loro.governed_data import explain_access, inspect_table_schema
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import (
@@ -908,6 +909,66 @@ def data_table(
 ) -> None:
     """Describe one Polaris table through the typed client."""
     _run_polaris_result(_polaris_client().get_table(table, namespace=namespace, catalog=catalog))
+
+
+@data_app.command("schema")
+def data_schema(
+    table: Annotated[str, typer.Argument(help="Table name.")],
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+) -> None:
+    """Inspect a governed table schema through Polaris metadata."""
+    result = inspect_table_schema(
+        _polaris_client(),
+        table=table,
+        namespace=namespace,
+        catalog=catalog,
+    )
+    _audit().write(
+        "data.schema_inspected",
+        table=table,
+        namespace=namespace,
+        catalog=catalog,
+        ok=result.ok,
+    )
+    console.print_json(data=result.to_payload())
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@data_app.command("explain-access")
+def data_explain_access(
+    resource: Annotated[str, typer.Argument(help="Table or resource identifier.")],
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Namespace name."),
+    ] = None,
+    catalog: Annotated[str | None, typer.Option("--catalog", help="Catalog name.")] = None,
+    catalog_role: Annotated[
+        str | None,
+        typer.Option("--catalog-role", help="Catalog role to inspect privileges for."),
+    ] = None,
+) -> None:
+    """Explain read-only Polaris discovery results for a governed resource."""
+    result = explain_access(
+        _polaris_client(),
+        resource=resource,
+        namespace=namespace,
+        catalog=catalog,
+        catalog_role=catalog_role,
+    )
+    _audit().write(
+        "data.access_explained",
+        resource=resource,
+        namespace=namespace,
+        catalog=catalog,
+        catalog_role=catalog_role,
+        ok=result.ok,
+    )
+    console.print_json(data=result.to_payload())
+    raise typer.Exit(code=0 if result.ok else 1)
 
 
 @data_app.command("views")

@@ -28,10 +28,12 @@
 - Postgres shared-memory search execution and SQL dry-run fallback
 - Shared-memory runtime recall with citations
 - Local/shared memory proposal records and accept workflow
+- Iceberg readiness checks with optional PyIceberg detection
+- Higher-level governed data schema and access explanation commands
+- Local Polaris/Iceberg testing guide and optional Polaris CLI integration test
 
 ## Next MVP Work
 
-- Iceberg governed execution integration
 - Complete model provider adapters, including Bedrock and streaming
 - CI, coverage reporting, and integration-test scaffolding
 
@@ -85,6 +87,12 @@ Acceptance criteria:
 - Add Iceberg REST/PyIceberg readiness checks where available.
 - Add higher-level `data schema` and `data explain-access` commands.
 - Keep all Polaris passthrough operations constrained by read-only validation.
+
+Status: complete. Loro has a local Polaris/Iceberg testing guide, optional Polaris CLI
+integration test scaffolding, Iceberg backend readiness checks with optional PyIceberg
+detection, `data schema`, and `data explain-access`. Live Iceberg writes/queries remain
+future governed execution work that should route through Polaris-aware engines or REST catalog
+clients.
 
 ### Batch 4: Provider And Streaming Hardening
 

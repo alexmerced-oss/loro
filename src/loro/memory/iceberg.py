@@ -3,7 +3,11 @@ import re
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
-from loro.memory.base import SharedMemoryDraft, SharedMemoryStatement
+from loro.memory.base import (
+    SharedMemoryBackendCheck,
+    SharedMemoryDraft,
+    SharedMemoryStatement,
+)
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -187,4 +191,28 @@ LIMIT :limit;
         return SharedMemoryStatement(
             sql=sql,
             params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
+        )
+
+    def check(self) -> SharedMemoryBackendCheck:
+        messages = [
+            f"Iceberg memory table: {self.memory_table}",
+            f"Iceberg event table: {self.events_table}",
+            "Configured Iceberg identifiers are valid.",
+        ]
+        try:
+            import pyiceberg  # noqa: F401
+
+            messages.append("pyiceberg is importable.")
+            pyiceberg_available = True
+        except ModuleNotFoundError:
+            messages.append("pyiceberg is not installed. Install the data extra.")
+            pyiceberg_available = False
+        messages.append(
+            "Live governed execution requires a configured Polaris/Iceberg REST catalog "
+            "or enterprise query engine."
+        )
+        return SharedMemoryBackendCheck(
+            backend="iceberg",
+            ok=pyiceberg_available,
+            messages=messages,
         )

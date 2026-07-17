@@ -65,6 +65,8 @@ loro providers show nous-portal
 loro providers check nous
 loro providers request "hello" --provider nous --model hermes-3-405b
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
+loro data schema events --catalog prod --namespace analytics
+loro data explain-access events --catalog prod --namespace analytics --catalog-role reader
 ```
 
 Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location. Each generated artifact also gets a `.provenance.json` sidecar.
