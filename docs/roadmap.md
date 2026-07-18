@@ -35,10 +35,14 @@
 - Provider smoke command with explicit execution opt-in
 - Normalized provider error handling
 - Optional AWS Bedrock adapter guardrails
+- GitHub Actions CI for lint, coverage, tests, and compile checks
+- Manual integration workflow for Postgres and Polaris CLI tests
+- Release checklist documentation
 
 ## Next MVP Work
 
-- CI, coverage reporting, and integration-test scaffolding
+- Native provider tool-call parsing for OpenAI-compatible, Anthropic, Gemini, and Bedrock
+- Live governed Iceberg execution through Polaris-aware engines
 
 ## Prioritized Work Batches
 
@@ -126,6 +130,11 @@ Acceptance criteria:
 - Establish a coverage baseline and threshold.
 - Add optional integration jobs for Postgres, Polaris, Iceberg, and live model providers.
 - Add release checklist docs for packaging, smoke tests, and provider validation.
+
+Status: complete. Main CI installs dev dependencies, runs ruff, coverage-backed pytest, and
+compileall. A manual integration workflow gates Postgres and Polaris CLI integration tests.
+Coverage has an initial threshold in `pyproject.toml`, and `docs/release.md` captures release
+verification, smoke checks, and packaging steps.
 
 ## Enterprise Hardening
 
