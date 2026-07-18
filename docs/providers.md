@@ -9,6 +9,9 @@ loro providers list
 loro providers show openai
 loro providers check openai
 loro providers request "hello" --provider openai --model gpt-4.1
+loro providers smoke "hello" --provider openai --model gpt-4.1
+loro providers smoke "hello" --provider openai --model gpt-4.1 --execute
+loro providers smoke "hello" --provider openai --model gpt-4.1 --execute --stream
 loro configure
 ```
 
@@ -24,7 +27,7 @@ loro configure \
 
 By default, `loro configure` writes `.loro/config.local.toml`, which is ignored by Git.
 
-`loro providers check` validates the configured provider profile and reports missing API key environment variables. `loro providers request` builds and prints a redacted request payload without sending it over the network.
+`loro providers check` validates the configured provider profile and reports missing API key environment variables. `loro providers request` builds and prints a redacted request payload without sending it over the network. `loro providers smoke` is also dry-run by default and only calls the provider when `--execute` is passed.
 
 ## Built-In Profiles
 
@@ -64,10 +67,25 @@ The MVP stores provider configuration, exposes provider metadata, and includes r
 - Gemini
 - Ollama
 - Mock local provider
+- AWS Bedrock through optional `boto3` / `botocore` dependencies
 
 OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
 
-AWS Bedrock is configured as a profile but intentionally raises `NotImplementedError` until AWS SDK integration is added.
+Model clients expose both `complete()` and `stream()`. Providers that do not yet have native
+streaming support use a safe fallback that yields the completed response as one chunk.
+
+Provider/network errors are normalized into Loro provider errors so CLI and runtime output can
+show clear messages for timeouts, HTTP status failures, malformed JSON, missing response
+content, and optional SDK issues.
+
+AWS Bedrock requires optional dependencies:
+
+```bash
+python -m pip install -e ".[aws]"
+```
+
+Bedrock uses AWS environment/profile credentials through `boto3`; Loro does not store AWS
+credentials in config.
 
 ## Notes From Hermes And OpenCode
 

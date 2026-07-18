@@ -1,15 +1,19 @@
+import httpx
 import pytest
 
 from loro.config import ModelConfig
 from loro.models import (
     AnthropicClient,
+    BedrockClient,
     GeminiClient,
     MockModelClient,
     ModelMessage,
+    ModelProviderError,
     OllamaClient,
     OpenAICompatibleClient,
     create_model_client,
     redact_model_request,
+    smoke_model_client,
 )
 
 
@@ -44,10 +48,34 @@ class FakeHttpClient:
         return FakeResponse(self.__class__.payload)
 
 
+class FakeStatusResponse:
+    status_code = 401
+    text = "unauthorized"
+
+    def raise_for_status(self) -> None:
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(401, text=self.text, request=request)
+        raise httpx.HTTPStatusError("bad", request=request, response=response)
+
+    def json(self):
+        return {"error": "nope"}
+
+
+class FakeErrorHttpClient(FakeHttpClient):
+    def request(self, method, url, headers, json):
+        return FakeStatusResponse()
+
+
 def test_mock_model_client_complete() -> None:
     client = MockModelClient(ModelConfig())
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "Mock response for: hello"
+
+
+def test_mock_model_client_stream() -> None:
+    client = MockModelClient(ModelConfig())
+    chunks = list(client.stream([ModelMessage(role="user", content="hello")]))
+    assert "".join(chunks).strip() == "Mock response for: hello"
 
 
 def test_openai_compatible_complete(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,6 +89,26 @@ def test_openai_compatible_complete(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.content == "done"
     assert response.raw == FakeHttpClient.payload
     assert FakeHttpClient.calls[0]["url"] == "https://example.com/v1/chat/completions"
+
+
+def test_openai_compatible_normalizes_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("loro.models.httpx.Client", FakeErrorHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
+    )
+    with pytest.raises(ModelProviderError, match="HTTP 401"):
+        client.complete([ModelMessage(role="user", content="hello")])
+
+
+def test_openai_compatible_normalizes_missing_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {"choices": []}
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
+    )
+    with pytest.raises(ModelProviderError, match="choices"):
+        client.complete([ModelMessage(role="user", content="hello")])
 
 
 def test_anthropic_complete(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,9 +191,45 @@ def test_create_model_client_for_nous_is_openai_compatible() -> None:
     assert isinstance(client, OpenAICompatibleClient)
 
 
-def test_create_model_client_rejects_bedrock_until_sdk_exists() -> None:
-    with pytest.raises(NotImplementedError):
-        create_model_client(ModelConfig(provider="bedrock"))
+def test_create_model_client_for_bedrock() -> None:
+    client = create_model_client(ModelConfig(provider="bedrock"))
+    assert isinstance(client, BedrockClient)
+
+
+def test_bedrock_missing_boto3_is_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+
+    original_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "boto3":
+            raise ModuleNotFoundError(name)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    client = BedrockClient(ModelConfig(provider="bedrock"))
+    with pytest.raises(ModelProviderError, match="boto3"):
+        client.complete([ModelMessage(role="user", content="hello")])
+
+
+def test_smoke_model_client_dry_run_redacts_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    result = smoke_model_client(
+        ModelConfig(
+            provider="openai",
+            model="gpt-test",
+            api_key_env="OPENAI_API_KEY",
+            base_url="https://example.com/v1",
+        )
+    )
+    assert result["execute"] is False
+    assert result["request"]["headers"]["Authorization"] == "[redacted]"
+
+
+def test_smoke_model_client_execute_stream_mock() -> None:
+    result = smoke_model_client(ModelConfig(), execute=True, stream=True, prompt="hello")
+    assert result["ok"] is True
+    assert "Mock response for: hello" in result["content"]
 
 
 def test_no_api_key_header_when_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:

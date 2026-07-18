@@ -5,7 +5,7 @@ from loro.config import LoroConfig
 from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
-from loro.models import ModelMessage, create_model_client
+from loro.models import ModelMessage, ModelProviderError, create_model_client
 from loro.sessions import SessionRecord, SessionStore
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
 
@@ -67,8 +67,19 @@ class AgentRuntime:
 
         for step in range(1, self.config.runtime.max_steps + 1):
             steps = step
-            model_response = client.complete(messages)
-            model_response_content = model_response.content
+            try:
+                model_response = client.complete(messages)
+                model_response_content = model_response.content
+            except ModelProviderError as error:
+                model_response_content = f"Provider error: {error}"
+                stop_reason = "provider_error"
+                self.audit.write(
+                    "runtime.model_failed",
+                    mode=mode,
+                    step=step,
+                    error=str(error),
+                )
+                break
             self.audit.write("runtime.model_completed", mode=mode, step=step)
             tool_calls = parse_tool_calls(model_response_content)
             if not tool_calls:

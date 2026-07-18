@@ -25,7 +25,7 @@ from loro.memory.operations import (
 from loro.memory.postgres import PostgresSharedMemoryStore
 from loro.memory.proposals import MemoryProposal, MemoryProposalStore
 from loro.memory.schemas import shared_memory_schema
-from loro.models import ModelMessage, create_model_client, redact_model_request
+from loro.models import ModelMessage, create_model_client, redact_model_request, smoke_model_client
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient, PolarisResult
 from loro.providers import (
@@ -1262,6 +1262,55 @@ def providers_request(
     client = create_model_client(model_config)
     request = client.build_request([ModelMessage(role="user", content=prompt)])
     console.print_json(data=redact_model_request(request))
+
+
+@providers_app.command("smoke")
+def providers_smoke(
+    prompt: Annotated[
+        str,
+        typer.Argument(help="Prompt for the smoke request."),
+    ] = "Reply with ok.",
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Provider name. Defaults to configured provider."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model override.")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url", help="Base URL override.")] = None,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Actually send the request. Default is dry-run."),
+    ] = False,
+    stream: Annotated[
+        bool,
+        typer.Option("--stream", help="Use the streaming interface when executing."),
+    ] = False,
+) -> None:
+    """Build or execute a provider smoke request."""
+    config = load_config()
+    model_config = config.model
+    if provider:
+        profile = get_provider_profile(provider)
+        model_config = model_config_from_profile(
+            profile.name,
+            model=model or profile.default_model,
+            small_model=profile.small_model,
+            base_url=base_url,
+        )
+    elif model or base_url:
+        model_config.model = model or model_config.model
+        model_config.base_url = base_url or model_config.base_url
+    result = smoke_model_client(model_config, prompt=prompt, execute=execute, stream=stream)
+    _audit().write(
+        "provider.smoke",
+        provider=model_config.provider,
+        model=model_config.model,
+        execute=execute,
+        stream=stream,
+        ok=result.get("ok") if execute else None,
+    )
+    console.print_json(data=result)
+    if execute and not result.get("ok", False):
+        raise typer.Exit(code=1)
 
 
 @sessions_app.command("list")

@@ -53,6 +53,8 @@ loro providers list
 loro providers show openai
 loro providers check openai
 loro providers request "hello" --provider openai --model gpt-4.1
+loro providers smoke "hello" --provider openai --model gpt-4.1
+loro providers smoke "hello" --provider openai --model gpt-4.1 --execute --stream
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
 

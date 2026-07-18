@@ -1,6 +1,6 @@
 from loro.config import AuditConfig, LocalMemoryConfig, LoroConfig, MemoryConfig, RuntimeConfig
 from loro.memory.base import SharedMemorySearchRecord, SharedMemorySearchResult
-from loro.models import ModelMessage, ModelResponse
+from loro.models import ModelMessage, ModelProviderError, ModelResponse
 from loro.runtime import AgentRuntime
 from loro.sessions import SessionConfig
 
@@ -15,6 +15,11 @@ class SequencedModelClient:
         if len(self.messages) <= len(self.responses):
             return ModelResponse(content=self.responses[len(self.messages) - 1])
         return ModelResponse(content=self.responses[-1])
+
+
+class FailingModelClient:
+    def complete(self, messages: list[ModelMessage]) -> ModelResponse:
+        raise ModelProviderError("provider unavailable")
 
 
 def test_runtime_executes_model_requested_tool(tmp_path, monkeypatch) -> None:
@@ -92,6 +97,14 @@ def test_runtime_recalls_shared_memory_with_citation(tmp_path, monkeypatch) -> N
     assert result.recalled_shared_memories == [shared_record]
     assert "postgres:default/team/platform/mem-1" in result.summary
     assert "Use the enterprise launch readiness template" in client.messages[0][0].content
+
+
+def test_runtime_returns_provider_error_stop_reason(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: FailingModelClient())
+    runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=3))
+    result = runtime.run("hello", mode="run")
+    assert result.stop_reason == "provider_error"
+    assert "provider unavailable" in result.summary
 
 
 def _runtime_config(tmp_path, *, max_steps: int) -> LoroConfig:

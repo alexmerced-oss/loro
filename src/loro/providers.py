@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from importlib.util import find_spec
 from pathlib import Path
 
 import tomli_w
@@ -77,8 +78,15 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
     else:
         messages.append("No base URL configured.")
     if profile.protocol == "bedrock":
-        messages.append("Bedrock profile exists, but runtime adapter is not implemented yet.")
-    ok = api_key_present and profile.protocol != "bedrock"
+        if find_spec("boto3") and find_spec("botocore"):
+            messages.append("boto3 and botocore are importable for Bedrock.")
+            bedrock_ready = True
+        else:
+            messages.append("Bedrock requires boto3 and botocore. Install the aws extra.")
+            bedrock_ready = False
+    else:
+        bedrock_ready = True
+    ok = api_key_present and bedrock_ready
     return ProviderCheck(
         provider=profile.name,
         ok=ok,

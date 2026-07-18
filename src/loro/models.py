@@ -1,4 +1,5 @@
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -29,10 +30,16 @@ class ModelResponse:
     raw: dict[str, Any] | None = None
 
 
+class ModelProviderError(RuntimeError):
+    """Normalized provider error suitable for CLI display."""
+
+
 class ModelClient(Protocol):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest: ...
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse: ...
+
+    def stream(self, messages: list[ModelMessage]) -> Iterator[str]: ...
 
 
 class BaseModelClient:
@@ -48,15 +55,39 @@ class BaseModelClient:
         return [message.__dict__ for message in messages]
 
     def _send(self, request: ModelRequest) -> dict[str, Any]:
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.request(
-                request.method,
-                request.url,
-                headers=request.headers,
-                json=request.json,
-            )
-        response.raise_for_status()
-        return response.json()
+        try:
+            with httpx.Client(timeout=self.config.timeout_seconds) as client:
+                response = client.request(
+                    request.method,
+                    request.url,
+                    headers=request.headers,
+                    json=request.json,
+                )
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.TimeoutException as error:
+            raise ModelProviderError(
+                f"{self.config.provider} request timed out after "
+                f"{self.config.timeout_seconds} seconds."
+            ) from error
+        except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            raise ModelProviderError(
+                f"{self.config.provider} returned HTTP {status}: "
+                f"{_response_preview(error.response.text)}"
+            ) from error
+        except httpx.RequestError as error:
+            raise ModelProviderError(f"{self.config.provider} request failed: {error}") from error
+        except ValueError as error:
+            raise ModelProviderError(
+                f"{self.config.provider} returned malformed JSON."
+            ) from error
+        if not isinstance(payload, dict):
+            raise ModelProviderError(f"{self.config.provider} returned a non-object JSON payload.")
+        return payload
+
+    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
+        yield self.complete(messages).content
 
 
 class MockModelClient(BaseModelClient):
@@ -71,6 +102,11 @@ class MockModelClient(BaseModelClient):
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         user_text = "\n".join(message.content for message in messages if message.role == "user")
         return ModelResponse(content=f"Mock response for: {user_text}".strip())
+
+    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
+        response = self.complete(messages).content
+        for chunk in response.split(" "):
+            yield chunk + " "
 
 
 class OpenAICompatibleClient(BaseModelClient):
@@ -97,7 +133,12 @@ class OpenAICompatibleClient(BaseModelClient):
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
         payload = self._send(request)
-        content = payload["choices"][0]["message"]["content"]
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as error:
+            raise ModelProviderError(
+                f"{self.config.provider} response did not include choices[0].message.content."
+            ) from error
         return ModelResponse(content=content, raw=payload)
 
 
@@ -127,10 +168,13 @@ class AnthropicClient(BaseModelClient):
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
         payload = self._send(request)
+        blocks = payload.get("content", [])
+        if not isinstance(blocks, list):
+            raise ModelProviderError("anthropic response did not include a content list.")
         content = "".join(
             block.get("text", "")
-            for block in payload.get("content", [])
-            if block.get("type") == "text"
+            for block in blocks
+            if isinstance(block, dict) and block.get("type") == "text"
         )
         return ModelResponse(content=content, raw=payload)
 
@@ -162,7 +206,12 @@ class GeminiClient(BaseModelClient):
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
         payload = self._send(request)
-        content = payload["candidates"][0]["content"]["parts"][0]["text"]
+        try:
+            content = payload["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as error:
+            raise ModelProviderError(
+                "gemini response did not include candidates[0].content.parts[0].text."
+            ) from error
         return ModelResponse(content=content, raw=payload)
 
 
@@ -184,7 +233,60 @@ class OllamaClient(BaseModelClient):
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
         request = self.build_request(messages)
         payload = self._send(request)
-        return ModelResponse(content=payload["message"]["content"], raw=payload)
+        try:
+            content = payload["message"]["content"]
+        except (KeyError, TypeError) as error:
+            raise ModelProviderError("ollama response did not include message.content.") from error
+        return ModelResponse(content=content, raw=payload)
+
+
+class BedrockClient(BaseModelClient):
+    def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
+        return ModelRequest(
+            method="AWS_BEDROCK",
+            url=f"bedrock://runtime/{self.config.model}",
+            headers={},
+            json={
+                "modelId": self.config.model,
+                "messages": self._message_payload(messages),
+                "temperature": self.config.temperature,
+            },
+        )
+
+    def complete(self, messages: list[ModelMessage]) -> ModelResponse:
+        try:
+            import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+        except ModuleNotFoundError as error:
+            raise ModelProviderError(
+                "Bedrock adapter requires boto3 and botocore. Install the aws extra or boto3."
+            ) from error
+        try:
+            client = boto3.client("bedrock-runtime")
+            response = client.converse(
+                modelId=self.config.model,
+                messages=[
+                    {
+                        "role": "assistant" if message.role == "assistant" else "user",
+                        "content": [{"text": message.content}],
+                    }
+                    for message in messages
+                ],
+                inferenceConfig={"temperature": self.config.temperature},
+            )
+        except (BotoCoreError, ClientError) as error:
+            raise ModelProviderError(f"bedrock request failed: {error}") from error
+        try:
+            content = "".join(
+                item.get("text", "")
+                for item in response["output"]["message"]["content"]
+                if isinstance(item, dict)
+            )
+        except (KeyError, TypeError) as error:
+            raise ModelProviderError(
+                "bedrock response did not include output.message.content."
+            ) from error
+        return ModelResponse(content=content, raw=response)
 
 
 def create_model_client(config: ModelConfig) -> ModelClient:
@@ -198,8 +300,43 @@ def create_model_client(config: ModelConfig) -> ModelClient:
     if profile.protocol == "ollama":
         return OllamaClient(config)
     if profile.protocol == "bedrock":
-        raise NotImplementedError("Bedrock adapter requires AWS SDK integration.")
+        return BedrockClient(config)
     return OpenAICompatibleClient(config)
+
+
+def smoke_model_client(
+    config: ModelConfig,
+    *,
+    prompt: str = "Reply with ok.",
+    execute: bool = False,
+    stream: bool = False,
+) -> dict[str, Any]:
+    client = create_model_client(config)
+    messages = [ModelMessage(role="user", content=prompt)]
+    request = client.build_request(messages)
+    payload: dict[str, Any] = {
+        "provider": config.provider,
+        "model": config.model,
+        "execute": execute,
+        "stream": stream,
+        "request": redact_model_request(request),
+    }
+    if not execute:
+        return payload
+    try:
+        if stream:
+            chunks = list(client.stream(messages))
+            payload["content"] = "".join(chunks)
+            payload["chunks"] = chunks
+        else:
+            response = client.complete(messages)
+            payload["content"] = response.content
+    except ModelProviderError as error:
+        payload["ok"] = False
+        payload["error"] = str(error)
+        return payload
+    payload["ok"] = True
+    return payload
 
 
 def redact_model_request(request: ModelRequest) -> dict[str, Any]:
@@ -223,3 +360,8 @@ def redact_model_request(request: ModelRequest) -> dict[str, Any]:
         "headers": headers,
         "json": request.json,
     }
+
+
+def _response_preview(text: str, limit: int = 500) -> str:
+    cleaned = " ".join(text.split())
+    return cleaned[:limit]

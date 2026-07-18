@@ -31,10 +31,13 @@
 - Iceberg readiness checks with optional PyIceberg detection
 - Higher-level governed data schema and access explanation commands
 - Local Polaris/Iceberg testing guide and optional Polaris CLI integration test
+- Streaming model client interface with fallback behavior
+- Provider smoke command with explicit execution opt-in
+- Normalized provider error handling
+- Optional AWS Bedrock adapter guardrails
 
 ## Next MVP Work
 
-- Complete model provider adapters, including Bedrock and streaming
 - CI, coverage reporting, and integration-test scaffolding
 
 ## Prioritized Work Batches
@@ -107,6 +110,11 @@ Acceptance criteria:
   responses.
 - Normalize tool-call response parsing across OpenAI-compatible, Anthropic, Gemini, and local
   providers.
+
+Status: complete. Model clients expose `stream()`, `loro providers smoke` performs redacted
+dry-runs by default and real calls only with `--execute`, provider/network/response errors are
+normalized for CLI/runtime display, and Bedrock is available behind optional AWS SDK
+dependencies.
 
 ### Batch 5: Testing, CI, And Release Discipline
 

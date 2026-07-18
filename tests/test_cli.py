@@ -563,3 +563,20 @@ def test_providers_request_openai_compatible(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "chat/completions" in result.stdout
     assert "[redacted]" in result.stdout
+
+
+def test_providers_smoke_dry_run() -> None:
+    result = CliRunner().invoke(app, ["providers", "smoke", "hello", "--provider", "mock"])
+    assert result.exit_code == 0
+    assert '"execute": false' in result.stdout
+    assert "mock://local" in result.stdout
+
+
+def test_providers_smoke_execute_mock() -> None:
+    result = CliRunner().invoke(
+        app,
+        ["providers", "smoke", "hello", "--provider", "mock", "--execute", "--stream"],
+    )
+    assert result.exit_code == 0
+    assert '"ok": true' in result.stdout
+    assert "Mock response for" in result.stdout
