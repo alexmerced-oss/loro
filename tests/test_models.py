@@ -88,7 +88,43 @@ def test_openai_compatible_complete(monkeypatch: pytest.MonkeyPatch) -> None:
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "done"
     assert response.raw == FakeHttpClient.payload
+    assert response.tool_calls == []
     assert FakeHttpClient.calls[0]["url"] == "https://example.com/v1/chat/completions"
+
+
+def test_openai_compatible_complete_with_native_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeHttpClient.payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "file.read",
+                                "arguments": '{"path": "README.md", "limit": 100}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
+    )
+
+    response = client.complete([ModelMessage(role="user", content="hello")])
+
+    assert response.content == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "file.read"
+    assert response.tool_calls[0].args == {"path": "README.md", "limit": 100}
 
 
 def test_openai_compatible_normalizes_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,15 +147,62 @@ def test_openai_compatible_normalizes_missing_content(monkeypatch: pytest.Monkey
         client.complete([ModelMessage(role="user", content="hello")])
 
 
-def test_anthropic_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_openai_compatible_rejects_malformed_native_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     FakeHttpClient.payload = {
-        "content": [{"type": "text", "text": "hello"}, {"type": "tool_use", "name": "noop"}]
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "file.read",
+                                "arguments": "{not-json",
+                            }
+                        }
+                    ],
+                }
+            }
+        ]
     }
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
+    )
+
+    with pytest.raises(ModelProviderError, match="malformed tool calls"):
+        client.complete([ModelMessage(role="user", content="hello")])
+
+
+def test_anthropic_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {"content": [{"type": "text", "text": "hello"}]}
     FakeHttpClient.calls = []
     monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
     client = AnthropicClient(ModelConfig(provider="anthropic", model="claude-test"))
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "hello"
+
+
+def test_anthropic_complete_with_native_tool_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {
+        "content": [
+            {"type": "text", "text": "checking"},
+            {"type": "tool_use", "name": "memory.search", "input": {"query": "launch"}},
+        ]
+    }
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = AnthropicClient(ModelConfig(provider="anthropic", model="claude-test"))
+
+    response = client.complete([ModelMessage(role="user", content="hello")])
+
+    assert response.content == "checking"
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "memory.search"
+    assert response.tool_calls[0].args == {"query": "launch"}
 
 
 def test_gemini_complete(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,6 +212,30 @@ def test_gemini_complete(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GeminiClient(ModelConfig(provider="gemini", model="gemini-test"))
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "gemini"
+
+
+def test_gemini_complete_with_native_tool_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeHttpClient.payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"functionCall": {"name": "file.search", "args": {"query": "TODO"}}}
+                    ]
+                }
+            }
+        ]
+    }
+    FakeHttpClient.calls = []
+    monkeypatch.setattr("loro.models.httpx.Client", FakeHttpClient)
+    client = GeminiClient(ModelConfig(provider="gemini", model="gemini-test"))
+
+    response = client.complete([ModelMessage(role="user", content="hello")])
+
+    assert response.content == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "file.search"
+    assert response.tool_calls[0].args == {"query": "TODO"}
 
 
 def test_ollama_complete(monkeypatch: pytest.MonkeyPatch) -> None:

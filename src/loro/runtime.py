@@ -5,6 +5,7 @@ from loro.config import LoroConfig
 from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
+from loro.model_tools import ModelToolCall
 from loro.models import ModelMessage, ModelProviderError, create_model_client
 from loro.sessions import SessionRecord, SessionStore
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
@@ -81,7 +82,10 @@ class AgentRuntime:
                 )
                 break
             self.audit.write("runtime.model_completed", mode=mode, step=step)
-            tool_calls = parse_tool_calls(model_response_content)
+            tool_calls = [
+                *_tool_calls_from_model_response(model_response.tool_calls),
+                *parse_tool_calls(model_response_content),
+            ]
             if not tool_calls:
                 stop_reason = "completed"
                 break
@@ -254,3 +258,7 @@ def _shared_memory_payload(memory: SharedMemorySearchRecord) -> dict[str, str]:
         "created_at": memory.created_at,
         "backend": memory.backend,
     }
+
+
+def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall]:
+    return [ToolCall(name=call.name, args=call.args) for call in calls]

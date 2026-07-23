@@ -35,13 +35,13 @@
 - Provider smoke command with explicit execution opt-in
 - Normalized provider error handling
 - Optional AWS Bedrock adapter guardrails
+- Native provider tool-call parsing for OpenAI-compatible, Anthropic, Gemini, and Bedrock
 - GitHub Actions CI for lint, coverage, tests, and compile checks
 - Manual integration workflow for Postgres and Polaris CLI tests
 - Release checklist documentation
 
 ## Next MVP Work
 
-- Native provider tool-call parsing for OpenAI-compatible, Anthropic, Gemini, and Bedrock
 - Live governed Iceberg execution through Polaris-aware engines
 
 ## Prioritized Work Batches
@@ -112,13 +112,15 @@ Acceptance criteria:
 - Implement Bedrock behind optional AWS dependencies.
 - Improve provider error messages for auth, rate limits, unsupported models, and malformed
   responses.
-- Normalize tool-call response parsing across OpenAI-compatible, Anthropic, Gemini, and local
-  providers.
+- Normalize tool-call response parsing across OpenAI-compatible, Anthropic, Gemini, and
+  Bedrock providers.
 
 Status: complete. Model clients expose `stream()`, `loro providers smoke` performs redacted
 dry-runs by default and real calls only with `--execute`, provider/network/response errors are
 normalized for CLI/runtime display, and Bedrock is available behind optional AWS SDK
-dependencies.
+dependencies. Native OpenAI-compatible `tool_calls`, Anthropic `tool_use`, Gemini
+`functionCall`, and Bedrock `toolUse` payloads are normalized into runtime tool calls while
+the textual `@tool` directive remains available as a compatibility path.
 
 ### Batch 5: Testing, CI, And Release Discipline
 

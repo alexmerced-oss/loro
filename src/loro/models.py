@@ -1,12 +1,17 @@
 import os
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
 from loro.config import ModelConfig
+from loro.model_tools import (
+    ModelToolCall,
+    ModelToolCallParseError,
+    parse_provider_tool_calls,
+)
 from loro.providers import get_provider_profile
 
 
@@ -28,6 +33,7 @@ class ModelRequest:
 class ModelResponse:
     content: str
     raw: dict[str, Any] | None = None
+    tool_calls: list[ModelToolCall] = field(default_factory=list)
 
 
 class ModelProviderError(RuntimeError):
@@ -134,12 +140,19 @@ class OpenAICompatibleClient(BaseModelClient):
         request = self.build_request(messages)
         payload = self._send(request)
         try:
-            content = payload["choices"][0]["message"]["content"]
+            message = payload["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise TypeError
+            content = message.get("content") or ""
         except (KeyError, IndexError, TypeError) as error:
             raise ModelProviderError(
                 f"{self.config.provider} response did not include choices[0].message.content."
             ) from error
-        return ModelResponse(content=content, raw=payload)
+        return ModelResponse(
+            content=content,
+            raw=payload,
+            tool_calls=_provider_tool_calls(self.config.provider, payload),
+        )
 
 
 class AnthropicClient(BaseModelClient):
@@ -176,7 +189,11 @@ class AnthropicClient(BaseModelClient):
             for block in blocks
             if isinstance(block, dict) and block.get("type") == "text"
         )
-        return ModelResponse(content=content, raw=payload)
+        return ModelResponse(
+            content=content,
+            raw=payload,
+            tool_calls=_provider_tool_calls(self.config.provider, payload),
+        )
 
 
 class GeminiClient(BaseModelClient):
@@ -207,12 +224,27 @@ class GeminiClient(BaseModelClient):
         request = self.build_request(messages)
         payload = self._send(request)
         try:
-            content = payload["candidates"][0]["content"]["parts"][0]["text"]
+            parts = payload["candidates"][0]["content"]["parts"]
         except (KeyError, IndexError, TypeError) as error:
             raise ModelProviderError(
                 "gemini response did not include candidates[0].content.parts[0].text."
             ) from error
-        return ModelResponse(content=content, raw=payload)
+        if not isinstance(parts, list):
+            raise ModelProviderError("gemini response did not include a parts list.")
+        content = "".join(
+            part.get("text", "") for part in parts if isinstance(part, dict)
+        )
+        if not content and not any(
+            isinstance(part, dict) and "functionCall" in part for part in parts
+        ):
+            raise ModelProviderError(
+                "gemini response did not include candidates[0].content.parts[0].text."
+            )
+        return ModelResponse(
+            content=content,
+            raw=payload,
+            tool_calls=_provider_tool_calls(self.config.provider, payload),
+        )
 
 
 class OllamaClient(BaseModelClient):
@@ -286,7 +318,11 @@ class BedrockClient(BaseModelClient):
             raise ModelProviderError(
                 "bedrock response did not include output.message.content."
             ) from error
-        return ModelResponse(content=content, raw=response)
+        return ModelResponse(
+            content=content,
+            raw=response,
+            tool_calls=_provider_tool_calls(self.config.provider, response),
+        )
 
 
 def create_model_client(config: ModelConfig) -> ModelClient:
@@ -365,3 +401,11 @@ def redact_model_request(request: ModelRequest) -> dict[str, Any]:
 def _response_preview(text: str, limit: int = 500) -> str:
     cleaned = " ".join(text.split())
     return cleaned[:limit]
+
+
+def _provider_tool_calls(provider: str, payload: dict[str, Any]) -> list[ModelToolCall]:
+    protocol = get_provider_profile(provider).protocol
+    try:
+        return parse_provider_tool_calls(protocol, payload)
+    except ModelToolCallParseError as error:
+        raise ModelProviderError(f"{provider} returned malformed tool calls: {error}") from error

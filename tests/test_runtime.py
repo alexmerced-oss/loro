@@ -1,5 +1,6 @@
 from loro.config import AuditConfig, LocalMemoryConfig, LoroConfig, MemoryConfig, RuntimeConfig
 from loro.memory.base import SharedMemorySearchRecord, SharedMemorySearchResult
+from loro.model_tools import ModelToolCall
 from loro.models import ModelMessage, ModelProviderError, ModelResponse
 from loro.runtime import AgentRuntime
 from loro.sessions import SessionConfig
@@ -42,6 +43,41 @@ def test_runtime_executes_model_requested_tool(tmp_path, monkeypatch) -> None:
     assert result.tool_executions[0].output == "hello from runtime\n"
     assert "Final answer after reading the file." in result.summary
     assert "Tool results" in client.messages[1][-1].content
+
+
+def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
+    note = tmp_path / "native-note.txt"
+    note.write_text("hello from a native tool call\n", encoding="utf-8")
+
+    class NativeToolModelClient:
+        def __init__(self) -> None:
+            self.messages: list[list[ModelMessage]] = []
+
+        def complete(self, messages: list[ModelMessage]) -> ModelResponse:
+            self.messages.append(messages)
+            if len(self.messages) == 1:
+                return ModelResponse(
+                    content="",
+                    tool_calls=[
+                        ModelToolCall(
+                            name="file.read",
+                            args={"path": str(note), "limit": 100},
+                        )
+                    ],
+                )
+            return ModelResponse(content="Final answer from native path.")
+
+    client = NativeToolModelClient()
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=3))
+
+    result = runtime.run("Read the native note.", mode="run")
+
+    assert result.stop_reason == "completed"
+    assert result.steps == 2
+    assert len(result.tool_executions) == 1
+    assert result.tool_executions[0].output == "hello from a native tool call\n"
+    assert "Final answer from native path." in result.summary
 
 
 def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:

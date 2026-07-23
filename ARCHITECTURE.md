@@ -112,7 +112,7 @@ Provider profiles are stored in `loro.providers`. Profiles capture:
 
 Current profiles cover OpenAI, Anthropic, Gemini, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, AWS Bedrock, Ollama, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
 
-`loro configure` writes `.loro/config.local.toml`, keeping user-specific provider choices and endpoint details out of source control. `loro providers check` validates required environment variables. `loro providers request` prints a redacted request payload without performing network I/O. `loro.models` contains the request-building adapter layer for mock, OpenAI-compatible, Anthropic, Gemini, and Ollama protocols. Bedrock remains profile-only until AWS SDK integration is added.
+`loro configure` writes `.loro/config.local.toml`, keeping user-specific provider choices and endpoint details out of source control. `loro providers check` validates required environment variables. `loro providers request` prints a redacted request payload without performing network I/O. `loro.models` contains the request-building adapter layer for mock, OpenAI-compatible, Anthropic, Gemini, Ollama, and optional AWS Bedrock protocols. `loro.model_tools` normalizes native OpenAI-compatible `tool_calls`, Anthropic `tool_use`, Gemini `functionCall`, and Bedrock `toolUse` response payloads into the runtime's provider-neutral tool-call shape. Textual `@tool` directives remain supported for deterministic tests and providers without native tool calling.
 
 ## Memory
 

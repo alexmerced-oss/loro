@@ -74,9 +74,16 @@ OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI,
 Model clients expose both `complete()` and `stream()`. Providers that do not yet have native
 streaming support use a safe fallback that yields the completed response as one chunk.
 
+Provider clients also normalize native tool-call response payloads into Loro's internal
+tool-call shape. The runtime can execute tool calls returned through OpenAI-compatible
+`tool_calls`, Anthropic `tool_use` blocks, Gemini `functionCall` parts, and Bedrock
+`toolUse` blocks. The provider-neutral `@tool {"name": "...", "args": {...}}` text
+directive remains supported for deterministic testing, local models, and providers that do
+not expose native tool calling.
+
 Provider/network errors are normalized into Loro provider errors so CLI and runtime output can
 show clear messages for timeouts, HTTP status failures, malformed JSON, missing response
-content, and optional SDK issues.
+content, malformed tool calls, and optional SDK issues.
 
 AWS Bedrock requires optional dependencies:
 
