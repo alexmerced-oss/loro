@@ -535,7 +535,7 @@ def memory_schema(
             console.print(PostgresSharedMemoryStore(config.memory.shared).render_schema())
             return
         console.print(shared_memory_schema(backend, config.memory.shared))  # type: ignore[arg-type]
-    except ValueError as error:
+    except (RuntimeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
 
@@ -598,7 +598,7 @@ def memory_commit_draft(
 
     try:
         result = render_or_commit_shared_draft(config, draft, execute=execute)
-    except ValueError as error:
+    except (RuntimeError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
 
     if result.executed:

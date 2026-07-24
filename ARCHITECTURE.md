@@ -127,8 +127,10 @@ generation, draft records, proposal records, `memory shared-search`, `memory app
 SQL dry runs, `memory commit-draft` SQL dry runs, Postgres readiness diagnostics, a Postgres
 adapter that can apply schema, execute explicit draft commits, and execute search when
 `psycopg` plus a DSN are available, and an Iceberg adapter that renders configured DDL plus
-append/search SQL for future governed execution. Runtime shared-memory recall includes
-citations so responses can identify the backend, tenant, scope, and memory id.
+append/search SQL. The Iceberg adapter can also execute search and explicit draft commits
+through a configured PyIceberg catalog, typically a Polaris-governed REST catalog. Runtime
+shared-memory recall includes citations so responses can identify the backend, tenant, scope,
+and memory id.
 
 ## Artifact Generation
 

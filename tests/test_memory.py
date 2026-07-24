@@ -182,11 +182,92 @@ def test_search_shared_memories_renders_iceberg() -> None:
         ),
         query="launch",
         tenant_id="acme",
+        execute=False,
     )
     assert result.backend == "iceberg"
     assert result.executed is False
     assert result.statement is not None
     assert "FROM enterprise_memory.agent_facts" in result.statement.sql
+    assert any("Rendered Iceberg" in message for message in result.messages)
+
+
+def test_search_shared_memories_executes_iceberg(monkeypatch) -> None:
+    install_fake_iceberg_modules(
+        monkeypatch,
+        rows=[
+            {
+                "memory_id": "old",
+                "tenant_id": "acme",
+                "scope_type": "team",
+                "scope_key": "platform",
+                "memory_type": "fact",
+                "content": "Unrelated item",
+                "summary": "Other",
+                "classification": "public-internal",
+                "created_by": "alex",
+                "created_at": "2026-07-01T00:00:00",
+                "status": "active",
+            },
+            {
+                "memory_id": "mem-1",
+                "tenant_id": "acme",
+                "scope_type": "team",
+                "scope_key": "platform",
+                "memory_type": "fact",
+                "content": "Use the launch readiness template",
+                "summary": "Launch template",
+                "classification": "public-internal",
+                "created_by": "alex",
+                "created_at": "2026-07-02T00:00:00",
+                "status": "active",
+            },
+        ],
+    )
+    result = search_shared_memories(
+        LoroConfig(
+            memory=MemoryConfig(
+                shared=SharedMemoryConfig(
+                    backend="iceberg",
+                    iceberg_namespace="enterprise_memory",
+                    iceberg_table="agent_facts",
+                )
+            )
+        ),
+        query="launch",
+        tenant_id="acme",
+        execute=True,
+    )
+
+    assert result.executed is True
+    assert len(result.records) == 1
+    assert result.records[0].memory_id == "mem-1"
+    assert result.records[0].citation == "iceberg:acme/team/platform/mem-1"
+
+
+def test_iceberg_commit_draft_appends_memory_and_event(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[])
+    draft = SharedMemoryDraft(
+        content="Use the enterprise launch template",
+        summary="Launch template",
+        tenant_id="acme",
+        scope_type="team",
+        scope_key="platform",
+        created_by="alex",
+    )
+    IcebergSharedMemoryStore(
+        SharedMemoryConfig(
+            iceberg_namespace="enterprise_memory",
+            iceberg_table="agent_facts",
+        )
+    ).commit_draft(draft)
+
+    memory_rows = fake_catalog.tables["enterprise_memory.agent_facts"].appended[0].to_pylist()
+    event_rows = fake_catalog.tables["enterprise_memory.memory_events"].appended[0].to_pylist()
+    assert memory_rows[0]["tenant_id"] == "acme"
+    assert memory_rows[0]["status"] == "active"
+    assert memory_rows[0]["source"] == '{"source": "loro.shared_memory_draft"}'
+    assert event_rows[0]["event_type"] == "memory.created"
+    assert event_rows[0]["payload"] == f'{{"draft_id": "{draft.draft_id}"}}'
 
 
 def test_iceberg_rejects_invalid_identifier() -> None:
@@ -214,3 +295,72 @@ def test_iceberg_backend_check_accepts_importable_pyiceberg(monkeypatch) -> None
     check = IcebergSharedMemoryStore(SharedMemoryConfig()).check()
     assert check.ok is True
     assert any("pyiceberg is importable" in message for message in check.messages)
+
+
+class FakeArrowTable:
+    def __init__(self, rows, schema=None) -> None:
+        self.rows = rows
+        self.arrow_schema = schema
+
+    @classmethod
+    def from_pylist(cls, rows, schema=None):
+        return cls(rows, schema=schema)
+
+    def to_pylist(self):
+        return self.rows
+
+
+class FakeIcebergSchema:
+    def as_arrow(self):
+        return "fake-arrow-schema"
+
+
+class FakeIcebergScan:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+
+    def to_arrow(self):
+        return FakeArrowTable(self.rows)
+
+
+class FakeIcebergTable:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+        self.appended = []
+
+    def schema(self):
+        return FakeIcebergSchema()
+
+    def append(self, table):
+        self.appended.append(table)
+
+    def scan(self, selected_fields=None):
+        return FakeIcebergScan(self.rows)
+
+
+class FakeIcebergCatalog:
+    def __init__(self, rows) -> None:
+        self.tables = {
+            "enterprise_memory.agent_facts": FakeIcebergTable(rows),
+            "enterprise_memory.memory_events": FakeIcebergTable([]),
+        }
+
+    def load_table(self, identifier):
+        return self.tables[identifier]
+
+
+def install_fake_iceberg_modules(monkeypatch, *, rows):
+    fake_catalog = FakeIcebergCatalog(rows)
+    pyiceberg_module = types.ModuleType("pyiceberg")
+    catalog_module = types.ModuleType("pyiceberg.catalog")
+    pyarrow_module = types.ModuleType("pyarrow")
+    pyarrow_module.Table = FakeArrowTable
+
+    def fake_load_catalog(name, **properties):
+        return fake_catalog
+
+    catalog_module.load_catalog = fake_load_catalog
+    monkeypatch.setitem(sys.modules, "pyiceberg", pyiceberg_module)
+    monkeypatch.setitem(sys.modules, "pyiceberg.catalog", catalog_module)
+    monkeypatch.setitem(sys.modules, "pyarrow", pyarrow_module)
+    return fake_catalog

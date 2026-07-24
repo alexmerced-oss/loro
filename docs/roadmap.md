@@ -36,13 +36,15 @@
 - Normalized provider error handling
 - Optional AWS Bedrock adapter guardrails
 - Native provider tool-call parsing for OpenAI-compatible, Anthropic, Gemini, and Bedrock
+- Live Iceberg shared-memory search and explicit draft commit execution through PyIceberg
 - GitHub Actions CI for lint, coverage, tests, and compile checks
 - Manual integration workflow for Postgres and Polaris CLI tests
 - Release checklist documentation
 
 ## Next MVP Work
 
-- Live governed Iceberg execution through Polaris-aware engines
+- Managed enterprise configuration overlays
+- Interactive approval prompts for write, shell, Git mutation, and governed data actions
 
 ## Prioritized Work Batches
 
@@ -97,9 +99,9 @@ Acceptance criteria:
 
 Status: complete. Loro has a local Polaris/Iceberg testing guide, optional Polaris CLI
 integration test scaffolding, Iceberg backend readiness checks with optional PyIceberg
-detection, `data schema`, and `data explain-access`. Live Iceberg writes/queries remain
-future governed execution work that should route through Polaris-aware engines or REST catalog
-clients.
+detection, `data schema`, and `data explain-access`. Iceberg shared-memory search and
+explicit draft commits can execute through a configured PyIceberg catalog, which should point
+at a Polaris-governed REST catalog or another enterprise-governed Iceberg catalog.
 
 ### Batch 4: Provider And Streaming Hardening
 

@@ -39,6 +39,11 @@ require_role_inspection = true
 [memory.shared]
 enabled = true
 backend = "iceberg"
+iceberg_catalog_name = "polaris_catalog"
+iceberg_catalog_uri_env = "LORO_ICEBERG_CATALOG_URI"
+iceberg_credential_env = "LORO_ICEBERG_CREDENTIAL"
+iceberg_token_env = "LORO_ICEBERG_TOKEN"
+iceberg_warehouse = "quickstart_catalog"
 iceberg_namespace = "agent_memory"
 iceberg_table = "shared_memories"
 ```
@@ -49,11 +54,23 @@ Install optional data dependencies for Iceberg/PyIceberg checks:
 python -m pip install -e ".[data]"
 ```
 
+Configure the PyIceberg REST catalog connection with environment variables, keeping secrets
+out of checked-in config:
+
+```bash
+export LORO_ICEBERG_CATALOG_URI="http://localhost:8181/api/catalog"
+export LORO_ICEBERG_CREDENTIAL="<client-id>:<client-secret>"
+# Optional when using a pre-issued bearer token instead of credential auth:
+export LORO_ICEBERG_TOKEN="<token>"
+```
+
 ## Smoke Checks
 
 ```bash
 loro doctor
 loro memory backend-check
+loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory shared-search "launch readiness" --tenant-id acme
 loro data catalogs
 loro data namespaces --catalog quickstart_catalog
 loro data tables --catalog quickstart_catalog --namespace default
@@ -61,8 +78,11 @@ loro data schema <table> --catalog quickstart_catalog --namespace default
 loro data explain-access <table> --catalog quickstart_catalog --namespace default
 ```
 
-`loro memory backend-check` validates local Iceberg client readiness. Governed table
-discovery still flows through Polaris so Loro can preserve catalog policy boundaries.
+`loro memory backend-check` validates local Iceberg client readiness. `shared-search` is a
+dry run unless `--dry-run` is omitted and PyIceberg can load the configured catalog. Governed
+table discovery still flows through Polaris so Loro can preserve catalog policy boundaries.
+Explicit Iceberg draft commits use `loro memory commit-draft <draft-id> --execute` and
+append only user-approved draft content.
 
 ## Optional Integration Test Shape
 

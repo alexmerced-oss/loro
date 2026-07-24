@@ -61,18 +61,43 @@ def search_shared_memories(
             messages=[f"Found {len(records)} shared memories."],
         )
     if backend == "iceberg":
-        statement = IcebergSharedMemoryStore(config.memory.shared).render_search(
+        store = IcebergSharedMemoryStore(config.memory.shared)
+        statement = store.render_search(
             tenant_id=tenant_id,
             query=query,
             limit=limit,
         )
+        if not execute:
+            return SharedMemorySearchResult(
+                backend=backend,
+                query=query,
+                tenant_id=tenant_id,
+                executed=False,
+                statement=statement,
+                messages=["Rendered Iceberg shared-memory search SQL."],
+            )
+        try:
+            records = store.search(tenant_id=tenant_id, query=query, limit=limit)
+        except RuntimeError as error:
+            return SharedMemorySearchResult(
+                backend=backend,
+                query=query,
+                tenant_id=tenant_id,
+                executed=False,
+                statement=statement,
+                messages=[str(error), "Rendered SQL instead of executing search."],
+            )
         return SharedMemorySearchResult(
             backend=backend,
             query=query,
             tenant_id=tenant_id,
-            executed=False,
+            executed=True,
+            records=records,
             statement=statement,
-            messages=["Live Iceberg shared-memory search is not enabled in this MVP."],
+            messages=[
+                f"Found {len(records)} shared memories.",
+                "Executed through PyIceberg against the configured governed catalog.",
+            ],
         )
     raise ValueError(f"Unsupported shared memory backend: {backend}")
 
@@ -130,12 +155,14 @@ def render_or_commit_shared_draft(
             statement=store.render_insert(draft),
         )
     if backend == "iceberg":
+        store = IcebergSharedMemoryStore(config.memory.shared)
         if execute:
-            raise ValueError("Live Iceberg commits are not enabled in this MVP.")
+            store.commit_draft(draft)
+            return SharedMemoryCommitResult(backend=backend, draft=draft, executed=True)
         return SharedMemoryCommitResult(
             backend=backend,
             draft=draft,
             executed=False,
-            statement=IcebergSharedMemoryStore(config.memory.shared).render_insert(draft),
+            statement=store.render_insert(draft),
         )
     raise ValueError(f"Unsupported shared memory backend: {backend}")

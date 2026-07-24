@@ -49,7 +49,14 @@ Current MVP behavior:
 - Identifier validation for configured Iceberg namespace/table names.
 - Optional `pyiceberg` import readiness checks through `loro memory backend-check`.
 - SQL rendering for shared-memory append/search.
+- Optional PyIceberg execution for shared-memory search and explicit draft commits against an
+  existing governed Iceberg table.
 - Polaris-governed discovery commands for tables, policies, and privileges.
+
+For Polaris-backed execution, configure PyIceberg to use the Polaris REST catalog via
+environment-backed Loro settings or PyIceberg's own `.pyiceberg.yaml` / `PYICEBERG_...`
+configuration. Loro passes env-backed REST catalog properties when
+`LORO_ICEBERG_CATALOG_URI` is present and never stores Iceberg credentials in project config.
 
 ## Local Testing
 
@@ -58,5 +65,5 @@ quickstart, Loro configuration, smoke checks, and optional Polaris CLI integrati
 
 ## Future Typed Operations
 
-- Draft safe SQL/Spark/PyIceberg snippets
-- Execute Iceberg shared-memory operations through a governed catalog or enterprise query engine
+- Add server-side predicate pushdown helpers for large Iceberg memory tables.
+- Add typed governed data query summaries through approved enterprise engines.

@@ -23,9 +23,9 @@ Shared memory is intended for enterprise-wide reuse across users and agents. It 
 - The agent may suggest candidates, but cannot autonomously commit them.
 - Records need provenance, scope, classification, status, author, and audit metadata.
 
-The MVP includes backend schema generation, draft staging, Postgres readiness diagnostics,
-and Postgres/Iceberg SQL adapters that can render insert/search statements. Live Iceberg
-commits should be added behind the same logical schema through a governed execution engine.
+The MVP includes backend schema generation, draft staging, backend readiness diagnostics,
+Postgres execution, Iceberg SQL rendering, and optional PyIceberg execution for Iceberg
+searches and explicit draft commits through a configured governed catalog.
 
 ```bash
 loro remember --shared "Use the enterprise launch readiness template" \
@@ -45,10 +45,11 @@ loro memory accept-proposal <proposal-id> --tenant-id acme --scope-type team --s
 ```
 
 `loro memory commit-draft <draft-id>` is a dry run by default. It renders the SQL and
-bound parameters that would be used for the configured backend. `--execute` is currently
-supported only for Postgres and still requires a configured DSN plus `psycopg`.
-`loro memory apply-schema` is also a dry run by default. `--execute` applies the Postgres
-shared-memory schema to the configured DSN.
+bound parameters that would be used for the configured backend. `--execute` requires the
+configured backend client and never bypasses the explicit draft step. `loro memory
+apply-schema` is also a dry run by default. `--execute` applies the Postgres shared-memory
+schema to the configured DSN; Iceberg schema creation should be handled by the governed
+catalog or query engine after reviewing `loro memory schema --backend iceberg`.
 
 `loro memory shared-search` returns active shared memories when the configured backend can
 execute the search. If the backend is not ready, Loro returns the backend-neutral SQL and
@@ -107,14 +108,33 @@ analytics, governance, and retention workflows.
 [memory.shared]
 enabled = true
 backend = "iceberg"
+iceberg_catalog_name = "polaris_catalog"
+iceberg_catalog_uri_env = "LORO_ICEBERG_CATALOG_URI"
+iceberg_credential_env = "LORO_ICEBERG_CREDENTIAL"
+iceberg_token_env = "LORO_ICEBERG_TOKEN"
+iceberg_warehouse = "enterprise_catalog"
 iceberg_namespace = "agent_memory"
 iceberg_table = "shared_memories"
 ```
 
-The current MVP emits configured Iceberg DDL through `loro memory schema --backend iceberg`
-and provides SQL rendering for future append/search execution.
-Polaris catalog access is handled by the governed data commands documented in
-`docs/polaris-iceberg.md`.
+Loro can load the configured PyIceberg catalog by name. If `LORO_ICEBERG_CATALOG_URI` is
+present, Loro passes REST catalog properties including `type = rest`, `uri`, optional
+`warehouse`, optional `credential`, optional `token`, and the Iceberg access-delegation
+header used by governed catalogs such as Polaris. You can also rely on PyIceberg's own
+configuration files or `PYICEBERG_...` environment variables by leaving Loro's Iceberg env
+vars unset.
+
+Install optional data dependencies for execution:
+
+```bash
+python -m pip install -e ".[data]"
+```
+
+Iceberg `shared-search` uses PyIceberg scans and filters records locally against the logical
+shared-memory fields. Iceberg `commit-draft --execute` appends one memory row and one event
+row to existing governed tables. DDL still renders through `loro memory schema --backend
+iceberg`; table creation should happen through the governed catalog or enterprise query
+engine.
 
 ## Logical Shared Memory Fields
 

@@ -57,6 +57,11 @@ class SharedMemoryConfig(BaseModel):
     read_policy: str = "semantic_retrieval_with_citations"
     postgres_dsn_env: str = "LORO_POSTGRES_DSN"
     postgres_schema: str = "public"
+    iceberg_catalog_name: str = "default"
+    iceberg_catalog_uri_env: str = "LORO_ICEBERG_CATALOG_URI"
+    iceberg_credential_env: str = "LORO_ICEBERG_CREDENTIAL"
+    iceberg_token_env: str = "LORO_ICEBERG_TOKEN"
+    iceberg_warehouse: str | None = None
     iceberg_namespace: str = "agent_memory"
     iceberg_table: str = "shared_memories"
 

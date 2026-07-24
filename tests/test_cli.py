@@ -319,7 +319,7 @@ def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
     result = CliRunner().invoke(app, ["memory", "backend-check"])
     assert result.exit_code == 1
     assert "agent_memory.agent_facts" in result.stdout
-    assert "Live governed execution" in result.stdout
+    assert "pyiceberg is not installed" in result.stdout
 
 
 def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
@@ -361,7 +361,10 @@ def test_shared_memory_commit_draft_renders_postgres_sql(tmp_path, monkeypatch) 
     assert "enterprise launch readiness" in commit_result.stdout
 
 
-def test_shared_memory_commit_draft_rejects_iceberg_execute(tmp_path, monkeypatch) -> None:
+def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
+    tmp_path,
+    monkeypatch,
+) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
@@ -377,7 +380,7 @@ def test_shared_memory_commit_draft_rejects_iceberg_execute(tmp_path, monkeypatc
     draft_id = remember_result.stdout.splitlines()[0].split(": ", maxsplit=1)[1]
     commit_result = runner.invoke(app, ["memory", "commit-draft", draft_id, "--execute"])
     assert commit_result.exit_code != 0
-    assert "Live Iceberg commits are not enabled" in commit_result.stderr
+    assert "required for Iceberg shared memory" in commit_result.stderr
 
 
 def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:

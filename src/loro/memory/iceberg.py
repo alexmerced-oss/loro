@@ -1,11 +1,15 @@
 import json
+import os
 import re
+from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
+    SharedMemorySearchRecord,
     SharedMemoryStatement,
 )
 
@@ -15,9 +19,10 @@ IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 class IcebergSharedMemoryStore:
     """Iceberg shared memory backend.
 
-    This adapter renders SQL compatible with Spark/Trino-style Iceberg engines.
-    Live writes remain a future integration point because enterprises usually
-    route Iceberg access through Polaris-managed engines or governed catalogs.
+    This adapter renders SQL compatible with Spark/Trino-style Iceberg engines
+    and can execute search/append operations through a configured PyIceberg
+    catalog. In enterprise deployments, that PyIceberg catalog should point at
+    a Polaris-governed REST catalog or another governed Iceberg catalog.
     """
 
     def __init__(self, config: SharedMemoryConfig) -> None:
@@ -195,10 +200,22 @@ LIMIT :limit;
 
     def check(self) -> SharedMemoryBackendCheck:
         messages = [
+            f"Iceberg catalog: {self.config.iceberg_catalog_name}",
             f"Iceberg memory table: {self.memory_table}",
             f"Iceberg event table: {self.events_table}",
             "Configured Iceberg identifiers are valid.",
         ]
+        catalog_props = self._catalog_properties()
+        if catalog_props:
+            messages.append(
+                "Found env-backed Iceberg catalog properties: "
+                + ", ".join(sorted(catalog_props))
+            )
+        else:
+            messages.append(
+                "No Loro Iceberg catalog env vars found; "
+                "PyIceberg config files/env may still apply."
+            )
         try:
             import pyiceberg  # noqa: F401
 
@@ -207,12 +224,154 @@ LIMIT :limit;
         except ModuleNotFoundError:
             messages.append("pyiceberg is not installed. Install the data extra.")
             pyiceberg_available = False
-        messages.append(
-            "Live governed execution requires a configured Polaris/Iceberg REST catalog "
-            "or enterprise query engine."
-        )
         return SharedMemoryBackendCheck(
             backend="iceberg",
             ok=pyiceberg_available,
             messages=messages,
         )
+
+    def commit_draft(self, draft: SharedMemoryDraft) -> None:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as error:
+            raise RuntimeError("pyarrow is required for Iceberg shared memory writes.") from error
+        memory_statement = self.render_insert(draft)
+        memory_row = {
+            "memory_id": memory_statement.params["memory_id"],
+            "tenant_id": draft.tenant_id,
+            "scope_type": draft.scope_type,
+            "scope_key": draft.scope_key,
+            "memory_type": draft.memory_type,
+            "content": draft.content,
+            "summary": draft.summary,
+            "tags": [],
+            "classification": draft.classification,
+            "source": memory_statement.params["source"],
+            "created_by": draft.created_by,
+            "created_at": _iceberg_value(draft.created_at),
+            "updated_at": None,
+            "status": "active",
+            "confidence": None,
+            "review": None,
+            "embedding_ref": None,
+            "supersedes": [],
+            "expires_at": None,
+        }
+        event_row = {
+            "event_id": memory_statement.params["event_id"],
+            "memory_id": memory_statement.params["memory_id"],
+            "tenant_id": draft.tenant_id,
+            "event_type": "memory.created",
+            "actor": draft.created_by,
+            "event_at": _iceberg_value(draft.created_at),
+            "payload": memory_statement.params["event_payload"],
+        }
+        catalog = self._load_catalog()
+        memory_table = catalog.load_table(self.memory_table)
+        events_table = catalog.load_table(self.events_table)
+        memory_table.append(
+            pa.Table.from_pylist([memory_row], schema=memory_table.schema().as_arrow())
+        )
+        events_table.append(
+            pa.Table.from_pylist([event_row], schema=events_table.schema().as_arrow())
+        )
+
+    def search(
+        self,
+        *,
+        tenant_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[SharedMemorySearchRecord]:
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as error:
+            raise RuntimeError("pyarrow is required for Iceberg shared memory search.") from error
+        catalog = self._load_catalog()
+        table = catalog.load_table(self.memory_table)
+        arrow_table = table.scan(
+            selected_fields=(
+                "memory_id",
+                "tenant_id",
+                "scope_type",
+                "scope_key",
+                "memory_type",
+                "content",
+                "summary",
+                "classification",
+                "created_by",
+                "created_at",
+                "status",
+            )
+        ).to_arrow()
+        if not isinstance(arrow_table, pa.Table):
+            raise RuntimeError("PyIceberg search did not return a PyArrow table.")
+        needle = query.lower()
+        records: list[SharedMemorySearchRecord] = []
+        for row in arrow_table.to_pylist():
+            if len(records) >= limit:
+                break
+            if not isinstance(row, dict):
+                continue
+            if row.get("tenant_id") != tenant_id or row.get("status") != "active":
+                continue
+            content = str(row.get("content") or "")
+            summary = str(row.get("summary") or "")
+            if needle not in content.lower() and needle not in summary.lower():
+                continue
+            records.append(
+                SharedMemorySearchRecord(
+                    memory_id=str(row.get("memory_id") or ""),
+                    tenant_id=str(row.get("tenant_id") or ""),
+                    scope_type=str(row.get("scope_type") or ""),
+                    scope_key=str(row.get("scope_key") or ""),
+                    memory_type=str(row.get("memory_type") or ""),
+                    content=content,
+                    summary=summary,
+                    classification=str(row.get("classification") or ""),
+                    created_by=str(row.get("created_by") or ""),
+                    created_at=_created_at_text(row.get("created_at")),
+                    status=str(row.get("status") or ""),
+                    backend="iceberg",
+                )
+            )
+        return records
+
+    def _load_catalog(self) -> Any:
+        try:
+            from pyiceberg.catalog import load_catalog
+        except ModuleNotFoundError as error:
+            raise RuntimeError("pyiceberg is required for Iceberg shared memory access.") from error
+        try:
+            return load_catalog(self.config.iceberg_catalog_name, **self._catalog_properties())
+        except Exception as error:
+            raise RuntimeError(f"Failed to load Iceberg catalog: {error}") from error
+
+    def _catalog_properties(self) -> dict[str, str]:
+        properties: dict[str, str] = {}
+        uri = os.environ.get(self.config.iceberg_catalog_uri_env)
+        credential = os.environ.get(self.config.iceberg_credential_env)
+        token = os.environ.get(self.config.iceberg_token_env)
+        if uri:
+            properties["type"] = "rest"
+            properties["uri"] = uri
+            properties["header.X-Iceberg-Access-Delegation"] = "vended-credentials"
+        if self.config.iceberg_warehouse:
+            properties["warehouse"] = self.config.iceberg_warehouse
+        if credential:
+            properties["credential"] = credential
+        if token:
+            properties["token"] = token
+        return properties
+
+
+def _iceberg_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    return value
+
+
+def _created_at_text(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value or "")
