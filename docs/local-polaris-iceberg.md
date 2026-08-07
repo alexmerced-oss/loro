@@ -100,6 +100,11 @@ The integration test expects:
 - A local Polaris server reachable by the CLI
 - At least one catalog available to list
 
+For GitHub Actions, see [Polaris, Object Storage, And DuckDB CI](ci-polaris-duckdb.md).
+The manual `Integration` workflow can start the official Polaris quickstart stack, generate
+DuckDB seed files, and run Loro service-level dry-run checks without requiring a permanent
+external Polaris environment.
+
 ## Notes
 
 - The quickstart is for local development, not production.

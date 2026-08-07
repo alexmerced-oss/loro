@@ -15,6 +15,12 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
+      polaris_quickstart:
+        description: "Start the official Polaris quickstart stack for service-level CI smoke checks"
+        required: true
+        default: "false"
+        type: choice
+        options: ["true", "false"]
 
 jobs:
   postgres:
@@ -58,3 +64,110 @@ jobs:
         env:
           LORO_INTEGRATION_POLARIS: "1"
         run: python -m pytest -m integration tests/integration/test_polaris_cli_integration.py
+
+  polaris-quickstart:
+    if: ${{ inputs.polaris_quickstart == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install data and seed dependencies
+        run: python -m pip install -e ".[dev,data]" duckdb
+
+      - name: Download Polaris quickstart compose
+        run: |
+          curl -fsSL \
+            https://raw.githubusercontent.com/apache/polaris/refs/heads/main/site/content/guides/quickstart/docker-compose.yml \
+            -o /tmp/polaris-quickstart.yml
+
+      - name: Start Polaris quickstart stack
+        run: docker compose -p loro-polaris-quickstart -f /tmp/polaris-quickstart.yml up -d
+
+      - name: Wait for Polaris REST API
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          deadline = time.time() + 180
+          last_error = None
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen("http://localhost:8181", timeout=5) as response:
+                      if response.status < 500:
+                          print(f"Polaris responded with HTTP {response.status}")
+                          raise SystemExit(0)
+              except Exception as error:
+                  last_error = error
+                  time.sleep(5)
+          raise SystemExit(f"Polaris did not become ready: {last_error}")
+          PY
+
+      - name: Create DuckDB seed files
+        run: |
+          mkdir -p /tmp/loro-ci-seed
+          python - <<'PY'
+          import duckdb
+
+          connection = duckdb.connect()
+          connection.execute("""
+              CREATE TABLE seed_memories AS
+              SELECT
+                  'seed-1' AS memory_id,
+                  'acme' AS tenant_id,
+                  'team' AS scope_type,
+                  'platform' AS scope_key,
+                  'Use launch readiness briefs with owners and blockers.' AS content
+          """)
+          connection.execute("""
+              COPY seed_memories
+              TO '/tmp/loro-ci-seed/seed_memories.parquet'
+              (FORMAT PARQUET)
+          """)
+          connection.execute("""
+              COPY seed_memories
+              TO '/tmp/loro-ci-seed/seed_memories.csv'
+              (HEADER, DELIMITER ',')
+          """)
+          print("Wrote /tmp/loro-ci-seed/seed_memories.parquet and .csv")
+          PY
+
+      - name: Run Loro Polaris/Iceberg dry-run checks
+        env:
+          LORO_CONFIG_CONTENT: |
+            [polaris]
+            enabled = true
+            cli_path = "polaris"
+            catalog = "quickstart_catalog"
+
+            [memory.shared]
+            enabled = true
+            backend = "iceberg"
+            iceberg_catalog_name = "polaris_catalog"
+            iceberg_catalog_uri_env = "LORO_ICEBERG_CATALOG_URI"
+            iceberg_credential_env = "LORO_ICEBERG_CREDENTIAL"
+            iceberg_token_env = "LORO_ICEBERG_TOKEN"
+            iceberg_warehouse = "quickstart_catalog"
+            iceberg_namespace = "agent_memory"
+            iceberg_table = "shared_memories"
+          LORO_ICEBERG_CATALOG_URI: "http://localhost:8181/api/catalog"
+        run: |
+          python -m loro memory schema --backend iceberg
+          python -m loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+          python -m loro memory backend-check
+
+      - name: Show Polaris logs on failure
+        if: failure()
+        run: docker compose -p loro-polaris-quickstart -f /tmp/polaris-quickstart.yml logs --tail=200
+
+      - name: Stop Polaris quickstart stack
+        if: always()
+        run: docker compose -p loro-polaris-quickstart -f /tmp/polaris-quickstart.yml down -v

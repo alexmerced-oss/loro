@@ -10,6 +10,8 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Memory](memory.md)
 - [Artifacts](artifacts.md)
 - [Polaris And Iceberg](polaris-iceberg.md)
+- [Local Polaris And Iceberg Testing](local-polaris-iceberg.md)
+- [Polaris, Object Storage, And DuckDB CI](ci-polaris-duckdb.md)
 - [AI Providers](providers.md)
 - [Safety](safety.md)
 - [Testing](testing.md)
