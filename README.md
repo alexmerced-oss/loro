@@ -47,7 +47,7 @@ Use the setup wizard or pass options directly:
 loro providers list
 loro providers show openai
 export OPENAI_API_KEY="<your-key>"
-loro configure --provider openai --model gpt-4.1 --small-model gpt-4.1-mini
+loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 loro providers check openai
 ```
 
@@ -107,7 +107,10 @@ loro safety scan "api_key = 'abc123456789'"
 loro providers list
 loro providers show nous-portal
 loro providers check nous
-loro providers request "hello" --provider nous --model hermes-3-405b
+loro providers request "hello" --provider nous --model deepseek/deepseek-v4-flash
+loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
+loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
+loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro data schema events --catalog prod --namespace analytics
 loro data explain-access events --catalog prod --namespace analytics --catalog-role reader

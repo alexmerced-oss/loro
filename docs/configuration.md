@@ -133,7 +133,7 @@ Use the configuration wizard to create `.loro/config.local.toml`:
 
 ```bash
 loro configure
-loro configure --provider openai --model gpt-4.1 --small-model gpt-4.1-mini
+loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 ```
 
 ## Shared Memory Backend Checks

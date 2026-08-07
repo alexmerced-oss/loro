@@ -38,8 +38,27 @@ Configure a local provider profile:
 
 ```bash
 export OPENAI_API_KEY="<your-key>"
-loro configure --provider openai --model gpt-4.1 --small-model gpt-4.1-mini
+loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 loro providers check openai
+```
+
+Other live-tested cloud provider examples:
+
+```bash
+export NOUS_API_KEY="<your-nous-key>"
+loro providers smoke "hello" --provider nous --model deepseek/deepseek-v4-flash --execute
+
+export OPENROUTER_API_KEY="<your-openrouter-key>"
+loro providers smoke "hello" --provider openrouter --model deepseek/deepseek-v4-flash --execute
+
+export OPENCODE_ZEN_API_KEY="<your-opencode-key>"
+loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
+
+export ANTHROPIC_API_KEY="<your-anthropic-key>"
+loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
+
+export GEMINI_API_KEY="<your-gemini-key>"
+loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
 ```
 
 For local Ollama:

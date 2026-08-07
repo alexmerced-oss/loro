@@ -53,8 +53,46 @@ python -m pytest -m "not integration"
 Current high-value gaps that need external services or credentials:
 
 - Live Iceberg/Polaris governed execution.
-- Live model-provider completions for cloud providers.
 - Bedrock requests with real AWS credentials.
+
+## Live Provider Smoke Checks
+
+Run live provider checks only when credentials, spend controls, and enterprise policy allow
+external model calls. These commands exercise Loro's provider adapters; agent-loop smokes can
+then be run with `loro run` and an isolated temp workspace.
+
+```bash
+NOUS_API_KEY="$NOUS_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider nous --model deepseek/deepseek-v4-flash --execute
+
+OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider openrouter --model deepseek/deepseek-v4-flash --execute
+
+OPENCODE_ZEN_API_KEY="$OPENCODE_ZEN_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider opencode-zen --model deepseek-v4-flash --execute
+
+ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider anthropic --model claude-sonnet-5 --execute
+
+OPENAI_API_KEY="$OPENAI_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider openai --model gpt-5.6-luna --execute
+
+GEMINI_API_KEY="$GEMINI_API_KEY" \
+  loro providers smoke "Reply with exactly: ok" \
+  --provider gemini --model gemini-3.6-flash --execute
+```
+
+Loro has live-tested compatibility guards for current model families that reject deprecated
+sampling parameters:
+
+- OpenAI `gpt-5*`: omit `temperature`.
+- Anthropic `claude-sonnet-5*`: omit `temperature`.
+- Gemini `gemini-3.6-flash` and `gemini-3.5-flash-lite`: omit `generationConfig.temperature`.
 
 ## Polaris Local Testing
 

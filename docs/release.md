@@ -34,8 +34,21 @@ loro data polaris catalogs list
 Only run live provider smoke checks when credentials and spend controls are approved:
 
 ```bash
-loro providers smoke "hello" --provider openai --model <model> --execute
+loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute
+loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
+loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
+loro providers smoke "hello" --provider nous --model deepseek/deepseek-v4-flash --execute
+loro providers smoke "hello" --provider openrouter --model deepseek/deepseek-v4-flash --execute
+loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
 ```
+
+Recent patch releases:
+
+- `0.1.1`: updated the Nous Portal endpoint to `https://inference-api.nousresearch.com/v1`.
+- `0.1.2`: omitted unsupported `temperature` for OpenAI `gpt-5*` and Anthropic
+  `claude-sonnet-5*` requests.
+- `0.1.3`: omitted deprecated Gemini sampling config for `gemini-3.6-flash` and
+  `gemini-3.5-flash-lite`.
 
 ## Documentation
 

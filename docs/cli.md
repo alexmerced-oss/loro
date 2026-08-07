@@ -52,11 +52,22 @@ and are constrained to read-only operations. Artifact runtime calls support `doc
 loro providers list
 loro providers show openai
 loro providers check openai
-loro providers request "hello" --provider openai --model gpt-4.1
-loro providers smoke "hello" --provider openai --model gpt-4.1
-loro providers smoke "hello" --provider openai --model gpt-4.1 --execute --stream
+loro providers request "hello" --provider openai --model gpt-5.6-luna
+loro providers smoke "hello" --provider openai --model gpt-5.6-luna
+loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute --stream
+loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
+loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
+loro providers smoke "hello" --provider nous --model deepseek/deepseek-v4-flash --execute
+loro providers smoke "hello" --provider openrouter --model deepseek/deepseek-v4-flash --execute
+loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 ```
+
+Live provider smoke commands require the matching environment variable, such as
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `NOUS_API_KEY`,
+`OPENROUTER_API_KEY`, or `OPENCODE_ZEN_API_KEY`. Dry-run `providers request` and
+`providers smoke` output redacts API keys and lets users inspect provider-specific request
+payloads before spending tokens.
 
 ## Memory
 
