@@ -46,6 +46,15 @@ loro run "Inspect README.md and suggest the next three improvements."
 The wizard stores local settings in `.loro/config.local.toml`. API keys stay in environment
 variables; Loro does not write them into the config file.
 
+Additional setup wizards are available for the enterprise pieces:
+
+```bash
+loro setup memory
+loro setup shared-memory
+loro setup polaris
+loro setup quickstart
+```
+
 ## What It Includes
 
 - A Typer-powered CLI entrypoint.
@@ -93,9 +102,18 @@ loro configure --provider ollama --model llama3.2 --small-model llama3.2
 `loro configure` writes `.loro/config.local.toml` by default. Keep provider secrets in
 environment variables.
 
-Current wizard scope: `loro configure` guides AI provider setup. Memory, Postgres/Iceberg, and
-Polaris settings are configured through TOML today; see the docs links below for those
-enterprise configuration examples.
+Additional setup wizards are available through `loro setup`:
+
+```bash
+loro setup provider
+loro setup memory
+loro setup shared-memory
+loro setup polaris
+loro setup quickstart
+```
+
+`loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain
+explicit-only and draft-gated.
 
 ## Run Agentic Tasks
 

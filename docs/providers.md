@@ -13,6 +13,10 @@ The wizard lists available providers, prompts for the primary and small model, a
 `.loro/config.local.toml`. API keys stay in environment variables. Choose `mock` for a no-key
 first run, or pick a cloud provider after exporting the matching API key.
 
+`loro setup provider` is an alias-style entrypoint for the same provider wizard. Use
+`loro setup quickstart` to run provider setup together with local memory, shared memory, and
+Polaris setup.
+
 ## Commands
 
 ```bash
@@ -24,12 +28,20 @@ loro providers smoke "hello" --provider openai --model gpt-5.6-luna
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute --stream
 loro configure
+loro setup provider
+loro setup quickstart
 ```
 
 Non-interactive example:
 
 ```bash
 loro configure \
+  --provider ollama \
+  --model llama3.2 \
+  --small-model llama3.2 \
+  --base-url http://localhost:11434
+
+loro setup provider \
   --provider ollama \
   --model llama3.2 \
   --small-model llama3.2 \

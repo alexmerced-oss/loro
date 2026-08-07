@@ -7,9 +7,18 @@ loro --version
 loro doctor
 loro config
 loro configure
+loro setup provider
+loro setup memory
+loro setup shared-memory
+loro setup polaris
+loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
 ```
+
+`loro configure` and `loro setup provider` run the AI provider wizard. The other setup
+commands guide local memory, shared-memory, and Polaris configuration. `loro setup quickstart`
+runs the setup wizards in sequence and preserves existing sections in `.loro/config.local.toml`.
 
 `plan` and `run` can execute explicit typed tool directives in the prompt:
 

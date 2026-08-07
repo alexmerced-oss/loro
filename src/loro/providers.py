@@ -3,9 +3,7 @@ from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
-import tomli_w
-
-from loro.config import LoroConfig, ModelConfig
+from loro.config import LoroConfig, ModelConfig, write_config_sections
 from loro.provider_profiles import PROVIDER_PROFILES, ProviderProfile
 
 
@@ -99,21 +97,4 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
 
 
 def write_local_model_config(path: Path, config: LoroConfig) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "model": {
-            "provider": config.model.provider,
-            "model": config.model.model,
-            "small_model": config.model.small_model,
-            "timeout_seconds": config.model.timeout_seconds,
-            "temperature": config.model.temperature,
-        }
-    }
-    if config.model.api_key_env:
-        data["model"]["api_key_env"] = config.model.api_key_env
-    if config.model.base_url:
-        data["model"]["base_url"] = config.model.base_url
-    if config.model.max_tokens:
-        data["model"]["max_tokens"] = config.model.max_tokens
-    path.write_text(tomli_w.dumps(data), encoding="utf-8")
-    return path
+    return write_config_sections(path, config, ["model"])

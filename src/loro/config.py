@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+import tomli_w
 from pydantic import BaseModel, Field
 
 try:
@@ -120,6 +121,40 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
+    if section == "model":
+        data: dict[str, Any] = {
+            "provider": config.model.provider,
+            "model": config.model.model,
+            "small_model": config.model.small_model,
+            "timeout_seconds": config.model.timeout_seconds,
+            "temperature": config.model.temperature,
+        }
+        if config.model.api_key_env:
+            data["api_key_env"] = config.model.api_key_env
+        if config.model.base_url:
+            data["base_url"] = config.model.base_url
+        if config.model.max_tokens:
+            data["max_tokens"] = config.model.max_tokens
+        return {"model": data}
+    if section == "memory.local":
+        return {"memory": {"local": config.memory.local.model_dump(exclude_none=True)}}
+    if section == "memory.shared":
+        return {"memory": {"shared": config.memory.shared.model_dump(exclude_none=True)}}
+    if section == "polaris":
+        return {"polaris": config.polaris.model_dump(exclude_none=True)}
+    raise ValueError(f"Unsupported config section: {section}")
+
+
+def write_config_sections(path: Path, config: LoroConfig, sections: list[str]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_toml(path)
+    for section in sections:
+        data = _merge(data, _config_section_data(config, section))
+    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    return path
 
 
 def config_paths(project_root: Path | None = None) -> list[Path]:

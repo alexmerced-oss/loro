@@ -127,14 +127,28 @@ matching over `tool`, `action`, and `target`; the first matching rule wins.
 
 Common tool names today are `edit`, `git`, `shell`, and `web`.
 
-## Provider Wizard
+## Setup Wizards
 
-Use the configuration wizard to create `.loro/config.local.toml`:
+Use setup wizards to create or update `.loro/config.local.toml` without hand-writing TOML:
 
 ```bash
 loro configure
 loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
+loro setup provider
+loro setup memory
+loro setup shared-memory
+loro setup polaris
+loro setup quickstart
 ```
+
+`loro configure` and `loro setup provider` configure the AI provider. `loro setup memory`
+configures private local memory. `loro setup shared-memory` configures explicit-only shared
+enterprise memory with either Postgres or Iceberg. `loro setup polaris` configures governed
+data discovery through the Polaris CLI. `loro setup quickstart` runs all four in sequence.
+
+All setup commands preserve existing sections in the target config file. They write local
+settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain
+in environment variables.
 
 ## Shared Memory Backend Checks
 

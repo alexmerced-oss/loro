@@ -81,8 +81,18 @@ loro providers check ollama
 `loro configure` writes `.loro/config.local.toml` by default. Keep API keys in environment
 variables, not in config files.
 
-Current wizard scope: `loro configure` guides AI provider setup. Memory, Postgres/Iceberg, and
-Polaris settings are configured through TOML today.
+Additional setup wizards configure the rest of the local quick-start surface:
+
+```bash
+loro setup memory
+loro setup shared-memory
+loro setup polaris
+loro setup quickstart
+```
+
+`loro setup quickstart` runs provider, local memory, shared memory, and Polaris setup in
+sequence. Use `mock`, disable shared memory, and disable Polaris for a completely local
+no-key/no-service first run.
 
 ## Run Agentic Tasks
 
@@ -143,6 +153,12 @@ Generated files go to `artifacts/` by default and include provenance sidecars.
 ## Governed Data
 
 Enable Polaris when your enterprise catalog is configured:
+
+```bash
+loro setup polaris
+```
+
+Or write the TOML directly:
 
 ```toml
 [polaris]

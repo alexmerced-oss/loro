@@ -542,6 +542,152 @@ def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
     assert 'api_key_env = "OPENCODE_GO_API_KEY"' in text
 
 
+def test_setup_memory_preserves_provider_config(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    runner = CliRunner()
+    provider_result = runner.invoke(
+        app,
+        [
+            "setup",
+            "provider",
+            "--provider",
+            "ollama",
+            "--model",
+            "llama3.2",
+            "--small-model",
+            "llama3.2",
+            "--output",
+            str(output),
+        ],
+    )
+    assert provider_result.exit_code == 0
+    memory_result = runner.invoke(
+        app,
+        [
+            "setup",
+            "memory",
+            "--enabled",
+            "--path",
+            str(tmp_path / "memory"),
+            "--no-auto-propose",
+            "--output",
+            str(output),
+        ],
+    )
+    assert memory_result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert 'provider = "ollama"' in text
+    assert "[memory.local]" in text
+    assert f'path = "{tmp_path / "memory"}"' in text
+    assert "auto_propose = false" in text
+
+
+def test_setup_shared_memory_postgres(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "shared-memory",
+            "--enabled",
+            "--backend",
+            "postgres",
+            "--postgres-dsn-env",
+            "TEST_LORO_POSTGRES_DSN",
+            "--postgres-schema",
+            "agent_memory",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert "[memory.shared]" in text
+    assert 'backend = "postgres"' in text
+    assert 'postgres_dsn_env = "TEST_LORO_POSTGRES_DSN"' in text
+    assert 'postgres_schema = "agent_memory"' in text
+    assert "explicit-only" in result.stdout
+
+
+def test_setup_shared_memory_iceberg(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "shared-memory",
+            "--enabled",
+            "--backend",
+            "iceberg",
+            "--iceberg-catalog-name",
+            "polaris",
+            "--iceberg-catalog-uri-env",
+            "TEST_ICEBERG_URI",
+            "--iceberg-credential-env",
+            "TEST_ICEBERG_CREDENTIAL",
+            "--iceberg-token-env",
+            "TEST_ICEBERG_TOKEN",
+            "--iceberg-warehouse",
+            "quickstart_catalog",
+            "--iceberg-namespace",
+            "agent_memory",
+            "--iceberg-table",
+            "shared_memories",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert 'backend = "iceberg"' in text
+    assert 'iceberg_catalog_name = "polaris"' in text
+    assert 'iceberg_warehouse = "quickstart_catalog"' in text
+
+
+def test_setup_polaris(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "polaris",
+            "--enabled",
+            "--cli-path",
+            "/usr/local/bin/polaris",
+            "--realm",
+            "quickstart",
+            "--catalog",
+            "quickstart_catalog",
+            "--no-require-role-inspection",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert "[polaris]" in text
+    assert 'cli_path = "/usr/local/bin/polaris"' in text
+    assert 'realm = "quickstart"' in text
+    assert 'catalog = "quickstart_catalog"' in text
+    assert "require_role_inspection = false" in text
+
+
 def test_providers_check_missing_key(monkeypatch) -> None:
     monkeypatch.delenv("NOUS_API_KEY", raising=False)
     result = CliRunner().invoke(app, ["providers", "check", "nous"])

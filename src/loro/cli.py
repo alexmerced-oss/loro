@@ -12,7 +12,7 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
-from loro.config import load_config
+from loro.config import load_config, write_config_sections
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
@@ -62,6 +62,7 @@ file_app = typer.Typer(help="Read and search local files.")
 shell_app = typer.Typer(help="Run permission-gated shell commands.")
 safety_app = typer.Typer(help="Scan content for obvious secrets.")
 providers_app = typer.Typer(help="Inspect and configure AI providers.")
+setup_app = typer.Typer(help="Guided setup wizards for Loro configuration.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -74,6 +75,7 @@ app.add_typer(file_app, name="file")
 app.add_typer(shell_app, name="shell")
 app.add_typer(safety_app, name="safety")
 app.add_typer(providers_app, name="providers")
+app.add_typer(setup_app, name="setup")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -284,6 +286,316 @@ def configure(
         path=str(written),
     )
     console.print(f"Wrote provider config: {written}")
+
+
+@setup_app.command("provider")
+def setup_provider(
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Provider name. Omit for interactive prompt."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Primary model name.")] = None,
+    small_model: Annotated[
+        str | None,
+        typer.Option("--small-model", help="Small/fast model name."),
+    ] = None,
+    api_key_env: Annotated[
+        str | None,
+        typer.Option("--api-key-env", help="Environment variable containing API key."),
+    ] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Run the AI provider setup wizard."""
+    configure(
+        provider=provider,
+        model=model,
+        small_model=small_model,
+        api_key_env=api_key_env,
+        base_url=base_url,
+        output=output,
+    )
+
+
+@setup_app.command("memory")
+def setup_memory(
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable local memory."),
+    ] = None,
+    path: Annotated[str | None, typer.Option("--path", help="Local memory directory.")] = None,
+    auto_propose: Annotated[
+        bool | None,
+        typer.Option("--auto-propose/--no-auto-propose", help="Allow local memory proposals."),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure private local memory."""
+    interactive = enabled is None and path is None and auto_propose is None
+    config = load_config()
+    if enabled is None:
+        enabled = (
+            typer.confirm("Enable local memory?", default=config.memory.local.enabled)
+            if interactive
+            else config.memory.local.enabled
+        )
+    if path is None:
+        path = (
+            typer.prompt("Local memory path", default=config.memory.local.path)
+            if interactive
+            else config.memory.local.path
+        )
+    if auto_propose is None:
+        auto_propose = (
+            typer.confirm(
+                "Enable local memory proposals?",
+                default=config.memory.local.auto_propose,
+            )
+            if interactive
+            else config.memory.local.auto_propose
+        )
+    config.memory.local.enabled = enabled
+    config.memory.local.path = path
+    config.memory.local.auto_propose = auto_propose
+    written = write_config_sections(output, config, ["memory.local"])
+    _audit().write("config.local_memory_written", path=str(written), enabled=enabled)
+    console.print(f"Wrote local memory config: {written}")
+
+
+@setup_app.command("shared-memory")
+def setup_shared_memory(
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable shared enterprise memory."),
+    ] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option("--backend", help="Shared memory backend: postgres or iceberg."),
+    ] = None,
+    postgres_dsn_env: Annotated[
+        str | None,
+        typer.Option("--postgres-dsn-env", help="Environment variable with Postgres DSN."),
+    ] = None,
+    postgres_schema: Annotated[
+        str | None,
+        typer.Option("--postgres-schema", help="Postgres schema for shared memory."),
+    ] = None,
+    iceberg_catalog_name: Annotated[
+        str | None,
+        typer.Option("--iceberg-catalog-name", help="PyIceberg catalog name."),
+    ] = None,
+    iceberg_catalog_uri_env: Annotated[
+        str | None,
+        typer.Option("--iceberg-catalog-uri-env", help="Env var with Iceberg REST catalog URI."),
+    ] = None,
+    iceberg_credential_env: Annotated[
+        str | None,
+        typer.Option("--iceberg-credential-env", help="Env var with Iceberg credential."),
+    ] = None,
+    iceberg_token_env: Annotated[
+        str | None,
+        typer.Option("--iceberg-token-env", help="Env var with Iceberg bearer token."),
+    ] = None,
+    iceberg_warehouse: Annotated[
+        str | None,
+        typer.Option("--iceberg-warehouse", help="Iceberg warehouse/catalog identifier."),
+    ] = None,
+    iceberg_namespace: Annotated[
+        str | None,
+        typer.Option("--iceberg-namespace", help="Iceberg namespace for shared memory."),
+    ] = None,
+    iceberg_table: Annotated[
+        str | None,
+        typer.Option("--iceberg-table", help="Iceberg table for shared memory."),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure explicit-only shared enterprise memory."""
+    config = load_config()
+    interactive = all(
+        value is None
+        for value in [
+            enabled,
+            backend,
+            postgres_dsn_env,
+            postgres_schema,
+            iceberg_catalog_name,
+            iceberg_catalog_uri_env,
+            iceberg_credential_env,
+            iceberg_token_env,
+            iceberg_warehouse,
+            iceberg_namespace,
+            iceberg_table,
+        ]
+    )
+    if enabled is None:
+        enabled = (
+            typer.confirm("Enable shared enterprise memory?", default=config.memory.shared.enabled)
+            if interactive
+            else config.memory.shared.enabled
+        )
+    if backend is None:
+        backend = (
+            typer.prompt("Shared memory backend", default=config.memory.shared.backend)
+            if interactive
+            else config.memory.shared.backend
+        )
+    if backend not in {"postgres", "iceberg"}:
+        raise typer.BadParameter("Shared memory backend must be postgres or iceberg.")
+    shared = config.memory.shared
+    shared.enabled = enabled
+    shared.backend = backend  # type: ignore[assignment]
+    if backend == "postgres":
+        shared.postgres_dsn_env = postgres_dsn_env or (
+            typer.prompt("Postgres DSN env var", default=shared.postgres_dsn_env)
+            if interactive
+            else shared.postgres_dsn_env
+        )
+        shared.postgres_schema = postgres_schema or (
+            typer.prompt("Postgres schema", default=shared.postgres_schema)
+            if interactive
+            else shared.postgres_schema
+        )
+    else:
+        shared.iceberg_catalog_name = iceberg_catalog_name or (
+            typer.prompt("Iceberg catalog name", default=shared.iceberg_catalog_name)
+            if interactive
+            else shared.iceberg_catalog_name
+        )
+        shared.iceberg_catalog_uri_env = iceberg_catalog_uri_env or (
+            typer.prompt("Iceberg REST catalog URI env var", default=shared.iceberg_catalog_uri_env)
+            if interactive
+            else shared.iceberg_catalog_uri_env
+        )
+        shared.iceberg_credential_env = iceberg_credential_env or (
+            typer.prompt("Iceberg credential env var", default=shared.iceberg_credential_env)
+            if interactive
+            else shared.iceberg_credential_env
+        )
+        shared.iceberg_token_env = iceberg_token_env or (
+            typer.prompt("Iceberg token env var", default=shared.iceberg_token_env)
+            if interactive
+            else shared.iceberg_token_env
+        )
+        shared.iceberg_warehouse = iceberg_warehouse or (
+            typer.prompt("Iceberg warehouse", default=shared.iceberg_warehouse or "")
+            if interactive
+            else shared.iceberg_warehouse
+        )
+        shared.iceberg_namespace = iceberg_namespace or (
+            typer.prompt("Iceberg namespace", default=shared.iceberg_namespace)
+            if interactive
+            else shared.iceberg_namespace
+        )
+        shared.iceberg_table = iceberg_table or (
+            typer.prompt("Iceberg table", default=shared.iceberg_table)
+            if interactive
+            else shared.iceberg_table
+        )
+        if shared.iceberg_warehouse == "":
+            shared.iceberg_warehouse = None
+    written = write_config_sections(output, config, ["memory.shared"])
+    _audit().write(
+        "config.shared_memory_written",
+        path=str(written),
+        enabled=enabled,
+        backend=backend,
+    )
+    console.print(f"Wrote shared memory config: {written}")
+    console.print("Shared memory writes remain explicit-only and draft-gated.")
+
+
+@setup_app.command("polaris")
+def setup_polaris(
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable Polaris governed data discovery."),
+    ] = None,
+    cli_path: Annotated[str | None, typer.Option("--cli-path", help="Polaris CLI path.")] = None,
+    realm: Annotated[str | None, typer.Option("--realm", help="Polaris realm.")] = None,
+    catalog: Annotated[
+        str | None,
+        typer.Option("--catalog", help="Default Polaris catalog."),
+    ] = None,
+    require_role_inspection: Annotated[
+        bool | None,
+        typer.Option(
+            "--require-role-inspection/--no-require-role-inspection",
+            help="Require role inspection when explaining access.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure Apache Polaris governed data discovery."""
+    interactive = all(
+        value is None for value in [enabled, cli_path, realm, catalog, require_role_inspection]
+    )
+    config = load_config()
+    polaris = config.polaris
+    if enabled is None:
+        enabled = (
+            typer.confirm("Enable Polaris governed data discovery?", default=polaris.enabled)
+            if interactive
+            else polaris.enabled
+        )
+    polaris.enabled = enabled
+    polaris.cli_path = cli_path or (
+        typer.prompt("Polaris CLI path", default=polaris.cli_path)
+        if interactive
+        else polaris.cli_path
+    )
+    polaris.realm = realm if realm is not None else (
+        typer.prompt("Polaris realm", default=polaris.realm or "")
+        if interactive
+        else polaris.realm
+    )
+    polaris.catalog = catalog if catalog is not None else (
+        typer.prompt("Default Polaris catalog", default=polaris.catalog or "")
+        if interactive
+        else polaris.catalog
+    )
+    if require_role_inspection is None:
+        require_role_inspection = (
+            typer.confirm("Require role inspection?", default=polaris.require_role_inspection)
+            if interactive
+            else polaris.require_role_inspection
+        )
+    polaris.require_role_inspection = require_role_inspection
+    if polaris.realm == "":
+        polaris.realm = None
+    if polaris.catalog == "":
+        polaris.catalog = None
+    written = write_config_sections(output, config, ["polaris"])
+    _audit().write("config.polaris_written", path=str(written), enabled=enabled)
+    console.print(f"Wrote Polaris config: {written}")
+
+
+@setup_app.command("quickstart")
+def setup_quickstart(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Run provider, local memory, shared memory, and Polaris setup in sequence."""
+    console.print("Loro quickstart setup")
+    setup_provider(output=output)
+    setup_memory(output=output)
+    setup_shared_memory(output=output)
+    setup_polaris(output=output)
+    console.print("Quickstart setup complete.")
 
 
 @app.command()
