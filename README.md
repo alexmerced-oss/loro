@@ -19,6 +19,33 @@ python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
 python -m pip install "loro-agent[dev]"  # Development and test tools
 ```
 
+## 60-Second Quick Start
+
+Loro ships with a provider setup wizard. Run it with no flags for an interactive setup:
+
+```bash
+loro configure
+loro doctor
+loro plan "Create a release readiness checklist for this project."
+```
+
+For a no-key first run, choose the `mock` provider in the wizard. That lets you verify the CLI,
+configuration loading, memory paths, artifact folders, and health checks before connecting a
+paid model provider.
+
+When you are ready to use a cloud model, set the provider API key in your shell and rerun the
+wizard:
+
+```bash
+export OPENAI_API_KEY="<your-key>"
+loro configure
+loro providers check openai
+loro run "Inspect README.md and suggest the next three improvements."
+```
+
+The wizard stores local settings in `.loro/config.local.toml`. API keys stay in environment
+variables; Loro does not write them into the config file.
+
 ## What It Includes
 
 - A Typer-powered CLI entrypoint.
@@ -41,7 +68,13 @@ python -m pip install "loro-agent[dev]"  # Development and test tools
 
 ## Configure A Provider
 
-Use the setup wizard or pass options directly:
+Use the setup wizard:
+
+```bash
+loro configure
+```
+
+Or pass options directly for repeatable onboarding scripts:
 
 ```bash
 loro providers list
@@ -59,6 +92,10 @@ loro configure --provider ollama --model llama3.2 --small-model llama3.2
 
 `loro configure` writes `.loro/config.local.toml` by default. Keep provider secrets in
 environment variables.
+
+Current wizard scope: `loro configure` guides AI provider setup. Memory, Postgres/Iceberg, and
+Polaris settings are configured through TOML today; see the docs links below for those
+enterprise configuration examples.
 
 ## Run Agentic Tasks
 

@@ -27,6 +27,16 @@ pipx install loro-agent
 
 ## Configure An AI Provider
 
+For the fastest path, run the interactive provider wizard:
+
+```bash
+loro configure
+loro doctor
+```
+
+Choose `mock` if you want to verify the CLI without an API key. Choose a cloud provider when
+you have the matching API key available in your shell.
+
 List built-in providers:
 
 ```bash
@@ -70,6 +80,9 @@ loro providers check ollama
 
 `loro configure` writes `.loro/config.local.toml` by default. Keep API keys in environment
 variables, not in config files.
+
+Current wizard scope: `loro configure` guides AI provider setup. Memory, Postgres/Iceberg, and
+Polaris settings are configured through TOML today.
 
 ## Run Agentic Tasks
 

@@ -2,6 +2,17 @@
 
 Loro supports provider configuration through built-in profiles and a local setup wizard.
 
+Run the wizard with no flags for the easiest setup:
+
+```bash
+loro configure
+loro doctor
+```
+
+The wizard lists available providers, prompts for the primary and small model, and writes
+`.loro/config.local.toml`. API keys stay in environment variables. Choose `mock` for a no-key
+first run, or pick a cloud provider after exporting the matching API key.
+
 ## Commands
 
 ```bash
