@@ -95,6 +95,7 @@ jobs:
         run: |
           python - <<'PY'
           import time
+          import urllib.error
           import urllib.request
 
           deadline = time.time() + 180
@@ -105,6 +106,11 @@ jobs:
                       if response.status < 500:
                           print(f"Polaris responded with HTTP {response.status}")
                           raise SystemExit(0)
+              except urllib.error.HTTPError as error:
+                  if error.code < 500:
+                      print(f"Polaris responded with HTTP {error.code}")
+                      raise SystemExit(0)
+                  last_error = error
               except Exception as error:
                   last_error = error
                   time.sleep(5)
