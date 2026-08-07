@@ -216,10 +216,11 @@ class GeminiClient(BaseModelClient):
             method="POST",
             url=url,
             headers={"Content-Type": "application/json"},
-            json={
-                "contents": contents,
-                "generationConfig": {"temperature": self.config.temperature},
-            },
+            json=_gemini_payload(
+                contents=contents,
+                model=self.config.model,
+                temperature=self.config.temperature,
+            ),
         )
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
@@ -421,3 +422,21 @@ def _supports_openai_temperature(provider: str, model: str) -> bool:
 
 def _supports_anthropic_temperature(model: str) -> bool:
     return not model.startswith("claude-sonnet-5")
+
+
+def _gemini_payload(
+    *, contents: list[dict[str, Any]], model: str, temperature: float
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"contents": contents}
+    if _supports_gemini_temperature(model):
+        payload["generationConfig"] = {"temperature": temperature}
+    return payload
+
+
+def _supports_gemini_temperature(model: str) -> bool:
+    return not (
+        model == "gemini-3.6-flash"
+        or model.startswith("gemini-3.6-")
+        or model == "gemini-3.5-flash-lite"
+        or model.startswith("gemini-3.5-flash-lite-")
+    )

@@ -296,6 +296,12 @@ def test_gemini_request(monkeypatch: pytest.MonkeyPatch) -> None:
     assert request.json["contents"][0]["role"] == "model"
 
 
+def test_gemini_36_flash_request_omits_temperature() -> None:
+    client = GeminiClient(ModelConfig(provider="gemini", model="gemini-3.6-flash"))
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+    assert "generationConfig" not in request.json
+
+
 def test_ollama_request() -> None:
     client = OllamaClient(ModelConfig(provider="ollama", model="llama3.2"))
     request = client.build_request([ModelMessage(role="user", content="hello")])
