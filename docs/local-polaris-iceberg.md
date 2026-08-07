@@ -51,7 +51,7 @@ iceberg_table = "shared_memories"
 Install optional data dependencies for Iceberg/PyIceberg checks:
 
 ```bash
-python -m pip install -e ".[data]"
+python -m pip install "loro-agent[data]"
 ```
 
 Configure the PyIceberg REST catalog connection with environment variables, keeping secrets

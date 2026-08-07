@@ -88,7 +88,7 @@ content, malformed tool calls, and optional SDK issues.
 AWS Bedrock requires optional dependencies:
 
 ```bash
-python -m pip install -e ".[aws]"
+python -m pip install "loro-agent[aws]"
 ```
 
 Bedrock uses AWS environment/profile credentials through `boto3`; Loro does not store AWS

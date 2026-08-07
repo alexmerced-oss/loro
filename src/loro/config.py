@@ -132,6 +132,10 @@ def config_paths(project_root: Path | None = None) -> list[Path]:
     ]
 
 
+def managed_config_paths() -> list[Path]:
+    return [Path("/etc/loro/managed.toml")]
+
+
 def load_config(project_root: Path | None = None) -> LoroConfig:
     data: dict[str, Any] = {}
     for path in config_paths(project_root):
@@ -142,4 +146,14 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
     env_content = os.environ.get("LORO_CONFIG_CONTENT")
     if env_content:
         data = _merge(data, tomllib.loads(env_content))
+    managed_data: dict[str, Any] = {}
+    for path in managed_config_paths():
+        managed_data = _merge(managed_data, _read_toml(path))
+    managed_env_config = os.environ.get("LORO_MANAGED_CONFIG")
+    if managed_env_config:
+        managed_data = _merge(managed_data, _read_toml(Path(managed_env_config).expanduser()))
+    managed_env_content = os.environ.get("LORO_MANAGED_CONFIG_CONTENT")
+    if managed_env_content:
+        managed_data = _merge(managed_data, tomllib.loads(managed_env_content))
+    data = _merge(data, managed_data)
     return LoroConfig.model_validate(data)

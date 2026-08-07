@@ -43,7 +43,8 @@ flowchart LR
 
 ## Runtime Flow
 
-1. The CLI resolves config from managed, user, project, local, `LORO_CONFIG`, and `LORO_CONFIG_CONTENT`.
+1. The CLI resolves config from system, user, project, local, `LORO_CONFIG`, and
+   `LORO_CONFIG_CONTENT`, then applies managed enterprise overlays last.
 2. The runtime loads local memory and, when enabled, searches shared enterprise memory for
    relevant cited records.
 3. The runtime emits `runtime.task_started`.
@@ -75,8 +76,12 @@ Loro config is loaded in increasing precedence:
 4. `.loro/config.local.toml`
 5. File referenced by `LORO_CONFIG`
 6. Inline TOML from `LORO_CONFIG_CONTENT`
+7. Non-overridable managed overlays from `/etc/loro/managed.toml`, `LORO_MANAGED_CONFIG`,
+   and `LORO_MANAGED_CONFIG_CONTENT`
 
-Managed enterprise policy will eventually be made non-overridable. Today the merge model is simple deep-merge precedence.
+Managed overlays use the same TOML schema as normal config but are re-applied after runtime
+overrides, making them suitable for enterprise permission denies, audit defaults, shared
+memory policy, and governed data configuration.
 
 ## Permissions
 
@@ -96,7 +101,7 @@ Current examples:
 - Runtime file writes, Git mutations, and shell execution require explicit approval unless
   policy sets the relevant action to `allow`.
 
-Future work should add managed enterprise denies and richer data-scope matchers.
+Future work should add richer data-scope matchers.
 
 ## AI Providers
 

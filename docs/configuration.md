@@ -8,6 +8,10 @@ Loro uses TOML configuration and merges layers in increasing precedence:
 4. `.loro/config.local.toml`
 5. `LORO_CONFIG`
 6. `LORO_CONFIG_CONTENT`
+7. Managed overlays: `/etc/loro/managed.toml`, `LORO_MANAGED_CONFIG`, and `LORO_MANAGED_CONFIG_CONTENT`
+
+Managed overlays are applied last so enterprise policy can be non-overridable by user,
+project, local, or runtime config.
 
 ## Example
 
@@ -78,7 +82,43 @@ LORO_CONFIG=/path/to/config.toml loro doctor
 LORO_CONFIG_CONTENT='[permissions]\nshell = "allow"\n' loro doctor
 ```
 
-Future managed enterprise policy should be non-overridable. The current MVP uses deep-merge precedence.
+## Managed Enterprise Overlays
+
+Managed overlays use the same TOML shape as normal configuration, but they are merged after
+all other layers. Use them for enterprise guardrails such as permission denies, audit
+requirements, shared-memory backend settings, and Polaris defaults.
+
+```toml
+# /etc/loro/managed.toml
+[permissions]
+shell = "deny"
+web = "deny"
+
+[[permissions.rules]]
+tool = "git"
+action = "commit"
+target = "*"
+decision = "ask"
+reason = "Enterprise policy requires explicit commit approval."
+
+[audit]
+enabled = true
+include_prompt_preview = false
+
+[memory.shared]
+enabled = true
+write_policy = "explicit_user_dictation_only"
+```
+
+For test, container, or centrally launched desktop environments:
+
+```bash
+LORO_MANAGED_CONFIG=/opt/loro/managed.toml loro doctor
+LORO_MANAGED_CONFIG_CONTENT='[permissions]\nshell = "deny"\n' loro doctor
+```
+
+Normal runtime overrides cannot loosen values supplied by managed overlays because managed
+TOML is applied last.
 
 ## Permission Rules
 

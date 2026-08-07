@@ -4,6 +4,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 
 ## Contents
 
+- [Getting Started](getting-started.md)
 - [CLI Guide](cli.md)
 - [Configuration](configuration.md)
 - [Memory](memory.md)

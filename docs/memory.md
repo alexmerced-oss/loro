@@ -127,7 +127,7 @@ vars unset.
 Install optional data dependencies for execution:
 
 ```bash
-python -m pip install -e ".[data]"
+python -m pip install "loro-agent[data]"
 ```
 
 Iceberg `shared-search` uses PyIceberg scans and filters records locally against the logical
