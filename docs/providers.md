@@ -103,7 +103,7 @@ The Nous profile follows Hermes' bundled Nous plugin:
 - Provider ID: `nous`
 - Aliases: `nous-portal`, `nousresearch`
 - API key env var: `NOUS_API_KEY`
-- Base URL: `https://inference.nousresearch.com/v1`
+- Base URL: `https://inference-api.nousresearch.com/v1`
 - Default models: `hermes-3-405b`, `hermes-3-70b`
 
 OpenCode documents OpenCode Zen and OpenCode Go as optional OpenCode-team providers that are connected through `/connect`, authenticated through `opencode.ai/auth`, and then selected through the OpenCode model list. Hermes also ships an `opencode-zen` provider plugin that defines both Zen and Go:

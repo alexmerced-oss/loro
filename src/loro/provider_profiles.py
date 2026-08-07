@@ -128,7 +128,7 @@ PROVIDER_PROFILES: dict[str, ProviderProfile] = {
         small_model="hermes-3-70b",
         aliases=("nous-portal", "nousresearch"),
         api_key_env="NOUS_API_KEY",
-        base_url="https://inference.nousresearch.com/v1",
+        base_url="https://inference-api.nousresearch.com/v1",
         notes=(
             "Mirrors Hermes' Nous provider profile: Nous Portal / Nous Research "
             "Hermes model family."

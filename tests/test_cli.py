@@ -486,7 +486,7 @@ def test_provider_show_alias() -> None:
     result = CliRunner().invoke(app, ["providers", "show", "nous-portal"])
     assert result.exit_code == 0
     assert "NOUS_API_KEY" in result.stdout
-    assert "inference.nousresearch.com" in result.stdout
+    assert "inference-api.nousresearch.com" in result.stdout
 
 
 def test_configure_non_interactive(tmp_path, monkeypatch) -> None:

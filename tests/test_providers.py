@@ -32,7 +32,7 @@ def test_nous_profile_matches_hermes_plugin_metadata() -> None:
     config = model_config_from_profile("nous-portal")
     assert config.provider == "nous"
     assert config.api_key_env == "NOUS_API_KEY"
-    assert config.base_url == "https://inference.nousresearch.com/v1"
+    assert config.base_url == "https://inference-api.nousresearch.com/v1"
 
 
 def test_opencode_profiles_match_hermes_plugin_metadata() -> None:
