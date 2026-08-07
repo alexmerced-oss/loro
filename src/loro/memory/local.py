@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +15,7 @@ class LocalMemoryStore:
         self.path = self.root / "memories.jsonl"
 
     @classmethod
-    def from_config(cls, config: LocalMemoryConfig) -> "LocalMemoryStore":
+    def from_config(cls, config: LocalMemoryConfig) -> LocalMemoryStore:
         return cls(Path(config.path))
 
     def remember(self, content: str, scope: str = "local") -> MemoryRecord:
