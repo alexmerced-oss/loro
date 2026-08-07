@@ -263,6 +263,12 @@ def test_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:
     assert request.json["model"] == "gpt-test"
 
 
+def test_openai_gpt5_request_omits_temperature() -> None:
+    client = OpenAICompatibleClient(ModelConfig(provider="openai", model="gpt-5.6-luna"))
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+    assert "temperature" not in request.json
+
+
 def test_anthropic_request(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     client = AnthropicClient(
@@ -272,6 +278,12 @@ def test_anthropic_request(monkeypatch: pytest.MonkeyPatch) -> None:
     assert request.url == "https://api.anthropic.com/v1/messages"
     assert request.headers["x-api-key"] == "test-key"
     assert request.json["max_tokens"] == 4096
+
+
+def test_anthropic_sonnet_5_request_omits_temperature() -> None:
+    client = AnthropicClient(ModelConfig(provider="anthropic", model="claude-sonnet-5"))
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+    assert "temperature" not in request.json
 
 
 def test_gemini_request(monkeypatch: pytest.MonkeyPatch) -> None:

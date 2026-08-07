@@ -125,8 +125,9 @@ class OpenAICompatibleClient(BaseModelClient):
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": self._message_payload(messages),
-            "temperature": self.config.temperature,
         }
+        if _supports_openai_temperature(self.config.provider, self.config.model):
+            payload["temperature"] = self.config.temperature
         if self.config.max_tokens:
             payload["max_tokens"] = self.config.max_tokens
         return ModelRequest(
@@ -168,9 +169,10 @@ class AnthropicClient(BaseModelClient):
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": self._message_payload(messages),
-            "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens or 4096,
         }
+        if _supports_anthropic_temperature(self.config.model):
+            payload["temperature"] = self.config.temperature
         return ModelRequest(
             method="POST",
             url=f"{base_url}/v1/messages",
@@ -409,3 +411,13 @@ def _provider_tool_calls(provider: str, payload: dict[str, Any]) -> list[ModelTo
         return parse_provider_tool_calls(protocol, payload)
     except ModelToolCallParseError as error:
         raise ModelProviderError(f"{provider} returned malformed tool calls: {error}") from error
+
+
+def _supports_openai_temperature(provider: str, model: str) -> bool:
+    if provider == "openai" and model.startswith("gpt-5"):
+        return False
+    return True
+
+
+def _supports_anthropic_temperature(model: str) -> bool:
+    return not model.startswith("claude-sonnet-5")
