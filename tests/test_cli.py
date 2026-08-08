@@ -53,6 +53,59 @@ def test_policy_explain_reports_structured_match(monkeypatch) -> None:
     assert payload["normalized_resource"]["executable_name"] == "python"
 
 
+def test_audit_doctor_reports_jsonl_ready(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n'
+        f'buffer_path = "{tmp_path / "buffer.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(app, ["audit", "doctor"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["schema_version"] == "1.0"
+    assert payload["sink"] == "jsonl"
+
+
+def test_audit_doctor_fails_for_incomplete_http_config(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[audit]\nsink = "http"\nhttp_token_env = "MISSING_TOKEN"\n'
+        f'buffer_path = "{tmp_path / "buffer.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(app, ["audit", "doctor"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert len(payload["issues"]) == 2
+
+
+def test_audit_flush_retries_buffered_events(tmp_path, monkeypatch) -> None:
+    buffer_path = tmp_path / "buffer.jsonl"
+    buffer_path.write_text('{"event_id":"event-1","event_type":"test"}\n', encoding="utf-8")
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[audit]\nsink = "http"\nhttp_url = "https://audit.example/events"\n'
+        f'buffer_path = "{buffer_path}"\n',
+    )
+    delivered: list[dict] = []
+    monkeypatch.setattr(
+        "loro.audit.HttpAuditSink.deliver",
+        lambda self, payload: delivered.append(payload),
+    )
+
+    result = CliRunner().invoke(app, ["audit", "flush"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"attempted": 1, "delivered": 1, "remaining": 0}
+    assert delivered[0]["event_id"] == "event-1"
+    assert buffer_path.read_text(encoding="utf-8") == ""
+
+
 def test_plan_scaffold() -> None:
     result = CliRunner().invoke(app, ["plan", "Draft a rollout plan"])
     assert result.exit_code == 0
@@ -969,6 +1022,50 @@ def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
     assert "interactive = true" in text
     assert "allow_non_interactive = false" in text
     assert "once_ttl_seconds = 60" in text
+
+
+def test_setup_audit_writes_external_sink_configuration(tmp_path, monkeypatch) -> None:
+    output = tmp_path / "config.toml"
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "setup-audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "audit",
+            "--sink",
+            "http",
+            "--http-url",
+            "https://audit.example/events",
+            "--http-token-env",
+            "LORO_AUDIT_TOKEN",
+            "--failure-mode",
+            "fail",
+            "--buffer-path",
+            str(tmp_path / "buffer.jsonl"),
+            "--max-buffer-events",
+            "500",
+            "--max-retries",
+            "3",
+            "--backoff-seconds",
+            "0.5",
+            "--timeout-seconds",
+            "15",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert 'sink = "http"' in text
+    assert 'http_url = "https://audit.example/events"' in text
+    assert 'http_token_env = "LORO_AUDIT_TOKEN"' in text
+    assert 'failure_mode = "fail"' in text
+    assert "max_buffer_events = 500" in text
 
 
 def test_shared_memory_defaults_to_active_identity(tmp_path, monkeypatch) -> None:

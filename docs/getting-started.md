@@ -86,14 +86,16 @@ Additional setup wizards configure the rest of the local quick-start surface:
 ```bash
 loro setup identity
 loro setup approvals
+loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
 ```
 
-`loro setup quickstart` runs provider, identity, approvals, local memory, shared memory, and Polaris setup in
-sequence. Use `mock`, disable shared memory, and disable Polaris for a completely local
+`loro setup quickstart` runs provider, identity, approvals, audit, local memory, shared memory,
+and Polaris setup in sequence. Use `mock`, keep the JSONL audit default, disable shared memory,
+and disable Polaris for a completely local
 no-key/no-service first run.
 
 For a local identity, Loro uses the operating-system username and the `default` tenant. An

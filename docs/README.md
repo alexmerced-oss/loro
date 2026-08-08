@@ -10,6 +10,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Identity Context](identity.md)
 - [Approvals](approvals.md)
 - [Normalized Resource Policy](policy.md)
+- [Audit Events And Delivery](audit.md)
 - [Memory](memory.md)
 - [Artifacts](artifacts.md)
 - [Polaris And Iceberg](polaris-iceberg.md)

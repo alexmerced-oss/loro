@@ -122,8 +122,18 @@ class PolarisConfig(BaseModel):
 
 class AuditConfig(BaseModel):
     enabled: bool = True
+    schema_version: str = "1.0"
+    sink: Literal["jsonl", "http"] = "jsonl"
     path: str = "~/.local/state/loro/audit.jsonl"
     include_prompt_preview: bool = True
+    http_url: str | None = None
+    http_token_env: str | None = None
+    failure_mode: Literal["warn", "fail"] = "warn"
+    buffer_path: str = "~/.local/state/loro/audit-buffer.jsonl"
+    max_buffer_events: int = Field(default=1000, ge=1)
+    max_retries: int = Field(default=2, ge=0, le=10)
+    backoff_seconds: float = Field(default=0.25, ge=0, le=60)
+    timeout_seconds: float = Field(default=10, gt=0, le=300)
 
 
 class SessionConfig(BaseModel):
@@ -191,6 +201,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"memory": {"shared": config.memory.shared.model_dump(exclude_none=True)}}
     if section == "polaris":
         return {"polaris": config.polaris.model_dump(exclude_none=True)}
+    if section == "audit":
+        return {"audit": config.audit.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")
 
 

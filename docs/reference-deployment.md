@@ -45,7 +45,7 @@ evidence items are closed.
 | Shared memory | Managed Postgres | Opt-in Testcontainers integration | Pin supported Postgres version; require TLS, least privilege, backup/restore, tenant tests, and retention. |
 | Scale-out memory | Polaris-governed Iceberg REST catalog | PyIceberg adapter plus service/dry-run quickstart | Not in first production pilot until full read/write, isolation, lifecycle, and recovery tests pass. |
 | Governed data | Polaris CLI typed read-only discovery; Iceberg REST for approved memory access | Unit tests and opt-in Polaris smoke | Pin Polaris CLI/server versions, authenticate as the user/workload, scope catalogs/resources, and prove denial behavior. |
-| Audit | Local JSONL for development | Unit tests | Authenticated external sink with bounded buffering, delivery health, immutability/tamper evidence, and retention before pilot. |
+| Audit | Schema `1.0`; JSONL development sink; bearer-authenticated HTTP sink with retry, bounded buffering, doctor/flush | Unit and failure-injection tests | Deploy and load-test the collector; add destination immutability/tamper evidence, retention, alerting, and stronger authentication as required before pilot. |
 | Isolation | Tool policy and workspace boundaries | Unit tests | Named enforceable sandbox profile, environment allowlist, network rules, time/output limits before broader pilot. |
 
 Version numbers for Postgres, Polaris, object storage, and the model gateway remain deployment
@@ -100,6 +100,16 @@ require_role_inspection = true
 
 [audit]
 enabled = true
+schema_version = "1.0"
+sink = "http"
+http_url = "https://audit.example.internal/v1/loro/events"
+http_token_env = "LORO_AUDIT_TOKEN"
+failure_mode = "fail"
+buffer_path = "/var/lib/loro/audit-buffer.jsonl"
+max_buffer_events = 1000
+max_retries = 2
+backoff_seconds = 0.25
+timeout_seconds = 10
 include_prompt_preview = false
 
 [safety]
@@ -109,7 +119,7 @@ block_on_findings = true
 
 This is a directional baseline, not a ready-to-deploy policy. Add deployment-specific
 normalized resource rules; sandbox profiles, signed policy distribution, and external audit
-settings remain later batches.
+destination hardening/validation remain later work.
 
 ## Network And Credential Boundaries
 

@@ -13,6 +13,7 @@ build/
 !.env.example
 .loro/config.local.toml
 .loro/audit.jsonl
+.loro/audit-buffer.jsonl
 .loro/memory/
 .loro/shared-memory-drafts.jsonl
 .loro/sessions/

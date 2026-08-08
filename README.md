@@ -51,6 +51,7 @@ Additional setup wizards are available for the enterprise pieces:
 ```bash
 loro setup identity
 loro setup approvals
+loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -71,7 +72,7 @@ loro setup quickstart
 - Polaris client for read-only governed catalog discovery.
 - Artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
 - Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
-- JSONL audit logging for runtime tasks, memory writes, and artifact creation.
+- Versioned JSONL/HTTP audit delivery with bounded buffering, retry, diagnostics, and flush.
 - Durable session records with `loro sessions list` and `loro sessions show`.
 - Permission-gated file and shell tools.
 - Shared memory draft staging and Postgres/Iceberg schema output.
@@ -113,11 +114,14 @@ Additional setup wizards are available through `loro setup`:
 loro setup provider
 loro setup identity
 loro setup approvals
+loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
 loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"shell","executable_name":"python"}}'
+loro audit doctor
+loro audit flush
 ```
 
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain

@@ -41,7 +41,7 @@ flowchart LR
 - `loro.artifacts`: document, presentation, spreadsheet, brief, and provenance generators.
 - `loro.memory`: local memory, shared-memory draft storage, schema generation, backend adapters, and shared-memory operations.
 - `loro.polaris`: controlled read-only wrapper around the Polaris CLI.
-- `loro.audit`: JSONL audit event writer.
+- `loro.audit`: versioned event envelope, JSONL/HTTP sinks, bounded buffer, and delivery controls.
 - `loro.serialization`: small helpers for JSON-safe CLI output.
 - `loro.sessions`: durable JSON session records.
 
@@ -67,6 +67,13 @@ flowchart LR
 11. The runtime emits `runtime.task_completed`.
 12. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
     not full sensitive payloads.
+
+Audit schema `1.0` promotes identity, trace, action/target, policy, approval, result, and
+redaction metadata into stable top-level fields while retaining legacy details. JSONL is the
+default sink. HTTP delivery retries with exponential backoff, then writes the complete event to
+a bounded JSONL buffer. Warning mode continues visibly; fail mode raises after buffering.
+`loro audit flush` retries buffered events in order. See
+[Audit Events And Delivery](docs/audit.md).
 
 The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
@@ -190,6 +197,7 @@ Future work should expose governed table context to the agent loop and add highe
 Runtime files are ignored by Git:
 
 - `.loro/audit.jsonl`
+- `.loro/audit-buffer.jsonl`
 - `.loro/memory/`
 - `.loro/sessions/`
 - `artifacts/`

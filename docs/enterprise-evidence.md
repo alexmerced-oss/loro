@@ -36,7 +36,7 @@ Evidence states:
 | E1-03 | Consequential actions use attributable exact approvals | Identity/policy (TBD) | Partial | [Approvals](approvals.md), `src/loro/approvals.py`, and CLI/runtime tests cover current tool paths, including configured policy-version/source binding; durable records, corporate identity verification, and signed policy artifacts remain TBD. |
 | E1-04 | Model self-approval, replay, mutation, and expiry fail | Security (TBD) | Existing | `tests/test_approvals.py` and `tests/test_tool_runtime.py` cover model-origin rejection, changed arguments, one-time replay, cross-session reuse, expiry, and exact session scope. |
 | E1-05 | Resource scopes are normalized and explainable | Runtime/security (TBD) | Existing | `src/loro/resources.py`, `src/loro/permissions.py`, `tests/test_resources.py`, runtime/CLI tests, `loro policy explain`, and [Normalized Resource Policy](policy.md) cover the current tool surface; sandbox and signed-policy review remain later gates. |
-| E1-06 | Every consequential event contains actor/policy/approval/target | Release/security (TBD) | Partial | Current CLI/runtime audit events carry actor, tenant, and identity context; policy version, normalized target, attributable approval, and versioned schema remain TBD. |
+| E1-06 | Every consequential event contains actor/policy/approval/target | Release/security (TBD) | Partial | Schema `1.0` promotes identity/session/trace, action/target, policy, approval, result, and redaction fields; approvals and policy evaluations populate the relevant context. Event-family completeness review and release evidence remain TBD. |
 | E1-07 | Limited-pilot permission model approved | Security (TBD) | External | Review record and accepted-risk references TBD. |
 
 ## Phase 2: Isolation And Data Protection
@@ -55,13 +55,13 @@ Evidence states:
 
 | ID | Exit item | Owner | Status | Evidence and remaining proof |
 | --- | --- | --- | --- | --- |
-| E3-01 | Versioned complete audit schema | Release/security (TBD) | Partial | Local events and `tests/test_audit.py` exist; schema/version/completeness tests TBD. |
-| E3-02 | Durable external sink survives outages without silent loss | Operations (TBD) | Planned | Sink interface, authenticated delivery, bounded buffer, retry, and failure-injection report TBD. |
+| E3-01 | Versioned complete audit schema | Release/security (TBD) | Partial | Schema `1.0`, compatibility fields, promoted metadata, tests, and [Audit Events And Delivery](audit.md) exist; event-family completeness policy and external review remain TBD. |
+| E3-02 | Durable external sink survives outages without silent loss | Operations (TBD) | Partial | HTTP sink, bearer auth, retry/backoff, bounded JSONL buffer, warn/fail modes, doctor/flush, and failure-injection tests exist; production collector, load, locking, and outage evidence remain TBD. |
 | E3-03 | Audit evidence is immutable or tamper-evident | Operations/security (TBD) | Planned | Destination control and verification procedure TBD. |
 | E3-04 | Metrics/traces cover latency, denial, approval, cost, memory, and audit | Operations/runtime (TBD) | Planned | Telemetry schema, dashboards, and alert tests TBD. |
 | E3-05 | Gateway resilience and policy-safe fallback are proven | Runtime (TBD) | Partial | Provider adapters/smoke tests exist; enterprise TLS/proxy/rate/fallback tests TBD. |
 | E3-06 | Per-user/tenant budgets are enforced | Runtime/product (TBD) | Partial | Maximum agent steps exists; token/cost/concurrency/output/tool budgets TBD. |
-| E3-07 | Health checks and runbooks recover documented failures | Operations (TBD) | Partial | `loro doctor` and backend checks exist; identity/audit health plus exercised runbooks TBD. |
+| E3-07 | Health checks and runbooks recover documented failures | Operations (TBD) | Partial | `loro doctor`, `loro audit doctor`, `loro audit flush`, identity, and backend checks exist; exercised enterprise runbooks and alert evidence remain TBD. |
 
 ## Phase 4: Verification And Supply Chain
 

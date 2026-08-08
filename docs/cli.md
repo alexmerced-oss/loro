@@ -10,6 +10,7 @@ loro configure
 loro setup provider
 loro setup identity
 loro setup approvals
+loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -119,6 +120,18 @@ loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"
 
 Output identifies the decision, reason, configured policy version, policy source, matched rule,
 and normalized resource. See [Normalized Resource Policy](policy.md).
+
+## Audit Delivery
+
+```bash
+loro setup audit
+loro audit doctor
+loro audit flush
+```
+
+`audit doctor` validates the schema, sink settings, credential environment, and local backlog.
+`audit flush` retries buffered HTTP events in order and exits nonzero if delivery remains
+incomplete. See [Audit Events And Delivery](audit.md).
 
 ## Memory
 

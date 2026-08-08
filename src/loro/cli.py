@@ -81,6 +81,7 @@ providers_app = typer.Typer(help="Inspect and configure AI providers.")
 setup_app = typer.Typer(help="Guided setup wizards for Loro configuration.")
 identity_app = typer.Typer(help="Inspect and validate the active enterprise identity.")
 policy_app = typer.Typer(help="Explain normalized permission decisions.")
+audit_app = typer.Typer(help="Inspect and flush audit delivery.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -96,6 +97,7 @@ app.add_typer(providers_app, name="providers")
 app.add_typer(setup_app, name="setup")
 app.add_typer(identity_app, name="identity")
 app.add_typer(policy_app, name="policy")
+app.add_typer(audit_app, name="audit")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -1042,6 +1044,132 @@ def setup_approvals(
     console.print(f"Wrote approval config: {written}")
 
 
+@setup_app.command("audit")
+def setup_audit(
+    sink: Annotated[
+        str | None, typer.Option("--sink", help="Audit sink: jsonl or http.")
+    ] = None,
+    path: Annotated[
+        str | None, typer.Option("--path", help="Local JSONL audit path.")
+    ] = None,
+    http_url: Annotated[
+        str | None, typer.Option("--http-url", help="External HTTP collector URL.")
+    ] = None,
+    http_token_env: Annotated[
+        str | None,
+        typer.Option("--http-token-env", help="Environment variable containing bearer token."),
+    ] = None,
+    failure_mode: Annotated[
+        str | None, typer.Option("--failure-mode", help="Delivery failure mode: warn or fail.")
+    ] = None,
+    buffer_path: Annotated[
+        str | None, typer.Option("--buffer-path", help="Bounded local delivery buffer path."),
+    ] = None,
+    max_buffer_events: Annotated[
+        int | None, typer.Option("--max-buffer-events", help="Maximum retained events.")
+    ] = None,
+    max_retries: Annotated[
+        int | None, typer.Option("--max-retries", help="HTTP delivery retries.")
+    ] = None,
+    backoff_seconds: Annotated[
+        float | None, typer.Option("--backoff-seconds", help="Initial retry backoff.")
+    ] = None,
+    timeout_seconds: Annotated[
+        float | None, typer.Option("--timeout-seconds", help="HTTP request timeout.")
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure local or external audit delivery and buffering."""
+    values = [
+        sink,
+        path,
+        http_url,
+        http_token_env,
+        failure_mode,
+        buffer_path,
+        max_buffer_events,
+        max_retries,
+        backoff_seconds,
+        timeout_seconds,
+    ]
+    wizard = all(value is None for value in values)
+    config = load_config()
+    previous_audit = config.audit.model_copy(deep=True)
+    audit = config.audit
+    if wizard:
+        sink = typer.prompt("Audit sink (jsonl/http)", default=audit.sink)
+        path = typer.prompt("Local JSONL audit path", default=audit.path)
+        if sink.strip().casefold() == "http":
+            http_url = typer.prompt("HTTP collector URL", default=audit.http_url or "")
+            http_token_env = typer.prompt(
+                "HTTP bearer token environment variable",
+                default=audit.http_token_env or "",
+            )
+            failure_mode = typer.prompt(
+                "Delivery failure mode (warn/fail)", default=audit.failure_mode
+            )
+            buffer_path = typer.prompt("Local buffer path", default=audit.buffer_path)
+            max_buffer_events = typer.prompt(
+                "Maximum buffered events", default=audit.max_buffer_events, type=int
+            )
+            max_retries = typer.prompt("HTTP retries", default=audit.max_retries, type=int)
+            backoff_seconds = typer.prompt(
+                "Initial retry backoff (seconds)",
+                default=audit.backoff_seconds,
+                type=float,
+            )
+            timeout_seconds = typer.prompt(
+                "HTTP timeout (seconds)", default=audit.timeout_seconds, type=float
+            )
+    if sink is not None:
+        normalized_sink = sink.strip().casefold()
+        if normalized_sink not in {"jsonl", "http"}:
+            raise typer.BadParameter("Audit sink must be jsonl or http.")
+        audit.sink = normalized_sink  # type: ignore[assignment]
+    if failure_mode is not None:
+        normalized_mode = failure_mode.strip().casefold()
+        if normalized_mode not in {"warn", "fail"}:
+            raise typer.BadParameter("Audit failure mode must be warn or fail.")
+        audit.failure_mode = normalized_mode  # type: ignore[assignment]
+    if path is not None:
+        audit.path = path
+    if http_url is not None:
+        audit.http_url = http_url or None
+    if http_token_env is not None:
+        audit.http_token_env = http_token_env or None
+    if buffer_path is not None:
+        audit.buffer_path = buffer_path
+    if max_buffer_events is not None:
+        if max_buffer_events < 1:
+            raise typer.BadParameter("Maximum buffered events must be positive.")
+        audit.max_buffer_events = max_buffer_events
+    if max_retries is not None:
+        if not 0 <= max_retries <= 10:
+            raise typer.BadParameter("HTTP retries must be between 0 and 10.")
+        audit.max_retries = max_retries
+    if backoff_seconds is not None:
+        if not 0 <= backoff_seconds <= 60:
+            raise typer.BadParameter("Retry backoff must be between 0 and 60 seconds.")
+        audit.backoff_seconds = backoff_seconds
+    if timeout_seconds is not None:
+        if not 0 < timeout_seconds <= 300:
+            raise typer.BadParameter("HTTP timeout must be between 0 and 300 seconds.")
+        audit.timeout_seconds = timeout_seconds
+    if audit.sink == "http" and not audit.http_url:
+        raise typer.BadParameter("HTTP audit sink requires --http-url.")
+    written = write_config_sections(output, config, ["audit"])
+    AuditLogger(previous_audit, _identity()).write(
+        "config.audit_written",
+        path=str(written),
+        sink=audit.sink,
+        failure_mode=audit.failure_mode,
+    )
+    console.print(f"Wrote audit config: {written}")
+
+
 @setup_app.command("quickstart")
 def setup_quickstart(
     output: Annotated[
@@ -1054,6 +1182,7 @@ def setup_quickstart(
     setup_provider(output=output)
     setup_identity(output=output)
     setup_approvals(output=output)
+    setup_audit(output=output)
     setup_memory(output=output)
     setup_shared_memory(output=output)
     setup_polaris(output=output)
@@ -1072,6 +1201,31 @@ def identity_doctor() -> None:
     diagnostic = diagnose_identity(load_config().identity)
     console.print_json(data=diagnostic.to_payload())
     raise typer.Exit(code=0 if diagnostic.ok else 1)
+
+
+@audit_app.command("doctor")
+def audit_doctor() -> None:
+    """Validate audit schema, sink configuration, credentials, and buffer state."""
+    diagnostic = _audit().doctor()
+    console.print_json(data=diagnostic)
+    raise typer.Exit(code=0 if diagnostic["ok"] else 1)
+
+
+@audit_app.command("flush")
+def audit_flush() -> None:
+    """Retry delivery of events retained in the external-sink buffer."""
+    try:
+        result = _audit().flush()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(
+        data={
+            "attempted": result.attempted,
+            "delivered": result.delivered,
+            "remaining": result.remaining,
+        }
+    )
+    raise typer.Exit(code=0 if result.remaining == 0 else 1)
 
 
 @app.command()
@@ -1099,6 +1253,8 @@ def doctor() -> None:
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
     console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
+    console.print(f"Audit schema: {config.audit.schema_version}")
+    console.print(f"Audit sink: {config.audit.sink} ({config.audit.failure_mode})")
     console.print(f"Session path: {config.sessions.path}")
     console.print(f"Safety scanner: {'enabled' if config.safety.enabled else 'disabled'}")
     console.print(

@@ -1,5 +1,9 @@
 import json
 
+import pytest
+
+from loro.audit import AuditDeliveryError
+from loro.audit.sinks import AuditSinkError
 from loro.config import (
     AuditConfig,
     IdentityConfig,
@@ -215,6 +219,31 @@ def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeyp
     assert "approval.requested" in events
     assert "approval.denied" in events
     assert "approval.granted" not in events
+
+
+def test_runtime_fails_closed_after_buffering_required_audit_event(
+    tmp_path, monkeypatch
+) -> None:
+    client = SequencedModelClient(["This response must not be reached."])
+
+    def fail_delivery(self, payload) -> None:
+        raise AuditSinkError("collector down")
+
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.audit.HttpAuditSink.deliver", fail_delivery)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.audit.sink = "http"
+    config.audit.http_url = "https://audit.example/events"
+    config.audit.failure_mode = "fail"
+    config.audit.buffer_path = str(tmp_path / "audit-buffer.jsonl")
+
+    with pytest.raises(AuditDeliveryError, match="event buffered"):
+        AgentRuntime(config).run("Prepare a brief", mode="run")
+
+    buffered = (tmp_path / "audit-buffer.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(buffered) == 1
+    assert json.loads(buffered[0])["event_type"] == "runtime.task_started"
+    assert client.messages == []
 
 
 def _runtime_config(tmp_path, *, max_steps: int) -> LoroConfig:

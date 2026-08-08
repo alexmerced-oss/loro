@@ -151,7 +151,7 @@ verification, smoke checks, and packaging steps.
 - Identity and SSO/internal model gateway integration
 - Durable approval storage and signed policy artifacts (configured versions are already bound)
 - Enforceable sandbox profiles and data protection
-- Durable audit sinks beyond local JSONL
+- Audit destination immutability, stronger authentication, and production outage evidence
 - Automated end-to-end integration tests for Postgres, Iceberg, and Polaris
 - Supply-chain controls, operational runbooks, and pilot validation
 

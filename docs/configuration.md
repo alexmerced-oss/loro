@@ -84,8 +84,16 @@ require_role_inspection = true
 
 [audit]
 enabled = true
+schema_version = "1.0"
+sink = "jsonl"
 path = ".loro/audit.jsonl"
 include_prompt_preview = true
+failure_mode = "warn"
+buffer_path = ".loro/audit-buffer.jsonl"
+max_buffer_events = 1000
+max_retries = 2
+backoff_seconds = 0.25
+timeout_seconds = 10
 
 [sessions]
 path = ".loro/sessions"
@@ -128,6 +136,13 @@ reason = "Enterprise policy requires explicit commit approval."
 [audit]
 enabled = true
 include_prompt_preview = false
+schema_version = "1.0"
+sink = "http"
+http_url = "https://audit.example.internal/v1/loro/events"
+http_token_env = "LORO_AUDIT_TOKEN"
+failure_mode = "fail"
+buffer_path = "/var/lib/loro/audit-buffer.jsonl"
+max_buffer_events = 1000
 
 [memory.shared]
 enabled = true
@@ -180,6 +195,7 @@ loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 loro setup provider
 loro setup identity
 loro setup approvals
+loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -191,8 +207,9 @@ configures local or enterprise-provided identity fields and fail-closed requirem
 setup approvals` configures interactive prompts, non-interactive automation, exact session
 reuse, and expiration. `loro setup memory` configures private local memory. `loro setup shared-memory` configures
 explicit-only shared enterprise memory with either Postgres or Iceberg. `loro setup polaris`
-configures governed data discovery through the Polaris CLI. `loro setup quickstart` runs all
-six in sequence.
+configures governed data discovery through the Polaris CLI. `loro setup audit` configures local
+JSONL or external HTTP delivery, retry, buffering, and failure behavior. `loro setup quickstart`
+runs all seven setup areas in sequence.
 
 All setup commands preserve existing sections in the target config file. They write local
 settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain
@@ -202,6 +219,8 @@ See [Identity Context](identity.md) for identity precedence, supported environme
 managed requirements, propagation, and current trust limitations.
 See [Approvals](approvals.md) for record binding, replay protection, prompt behavior, and the
 recommended managed policy that disables non-interactive approvals.
+See [Audit Events And Delivery](audit.md) for schema fields, collector behavior, buffering,
+failure modes, and operations.
 
 ## Shared Memory Backend Checks
 

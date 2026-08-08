@@ -163,6 +163,17 @@ Acceptance criteria:
 - External sink failures have deterministic CLI/runtime stop or warning behavior based on
   policy.
 
+Status: complete for the reference sink surface. Audit schema `1.0` promotes identity, session,
+trace, action/target, policy, approval, result, and redaction metadata while retaining legacy
+details. `loro.audit.sinks` provides JSONL and bearer-authenticated HTTP delivery; HTTP retries
+with exponential backoff and retains failures in a bounded local buffer. Warning and fail-closed
+modes are deterministic, buffer exhaustion always raises, and `loro audit doctor`/`flush`
+provide operational visibility and recovery. Failure-injection tests cover retry, buffering,
+full-buffer behavior, flush, and runtime fail-closed behavior. Destination immutability,
+cross-process buffer locking, batching, mTLS/signing, production collector evidence, and strict
+event-family completeness remain later operations/security work. See
+[Audit Events And Delivery](audit.md).
+
 ## Recommended Immediate Start
 
 Start with Batch 1. It is documentation-heavy, but it prevents the rest of the hardening work

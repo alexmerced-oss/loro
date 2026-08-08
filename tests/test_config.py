@@ -138,3 +138,29 @@ def test_managed_config_can_disable_non_interactive_approvals(monkeypatch) -> No
 
     assert config.approvals.allow_non_interactive is False
     assert config.approvals.allow_session_scope is False
+
+
+def test_external_audit_configuration_loads(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        """
+        [audit]
+        schema_version = "1.0"
+        sink = "http"
+        http_url = "https://audit.example/events"
+        http_token_env = "LORO_AUDIT_TOKEN"
+        failure_mode = "fail"
+        buffer_path = "/tmp/loro-audit-buffer.jsonl"
+        max_buffer_events = 250
+        max_retries = 4
+        backoff_seconds = 0.5
+        timeout_seconds = 15
+        """,
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.audit.sink == "http"
+    assert config.audit.failure_mode == "fail"
+    assert config.audit.max_buffer_events == 250
+    assert config.audit.max_retries == 4

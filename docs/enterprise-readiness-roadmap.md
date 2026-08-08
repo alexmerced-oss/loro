@@ -20,7 +20,7 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Agent runtime | Bounded model/tool loop, sessions, typed tools, provider-normalized tool calls | MVP complete |
 | Configuration | Layered config plus non-overridable managed overlays | Implemented; deployment validation needed |
 | Permissions | `allow` / `ask` / `deny`, normalized structured rules, identity-bound interactive approval records | Partial; signed policy artifacts and security review missing |
-| Audit | Local JSONL events with redacted previews | Partial; durable external sinks and integrity controls missing |
+| Audit | Versioned JSONL/HTTP events, retry, bounded buffer, doctor/flush | Partial; destination immutability and production evidence missing |
 | Identity | Typed local/config/environment context, managed required fields, audit/session propagation | Foundation implemented; corporate assertion verification and authorization binding missing |
 | Isolation | Tool-level policy and working-directory boundaries | Partial; enforceable sandbox profiles missing |
 | Shared memory | Tenant-aware Postgres/Iceberg schema, proposals, explicit commits, citations | Implemented; isolation and lifecycle proof needed |
