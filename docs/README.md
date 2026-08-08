@@ -19,5 +19,9 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Development Roadmap](roadmap.md)
 - [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md)
 - [Enterprise Next Batches](enterprise-next-batches.md)
+- [Enterprise Threat Model](threat-model.md)
+- [Enterprise Data Classification](data-classification.md)
+- [Enterprise Reference Deployment](reference-deployment.md)
+- [Enterprise Evidence Register](enterprise-evidence.md)
 
 The product-level requirements live in [../PRD.md](../PRD.md), and the engineering architecture lives in [../ARCHITECTURE.md](../ARCHITECTURE.md).

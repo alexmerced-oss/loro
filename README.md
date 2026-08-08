@@ -190,6 +190,9 @@ Memory and artifact commands scan for obvious secrets by default. Use `--allow-s
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
+- [Development Roadmap](docs/roadmap.md)
+- [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
+- [Enterprise Evidence Register](docs/enterprise-evidence.md)
 
 ## License
 

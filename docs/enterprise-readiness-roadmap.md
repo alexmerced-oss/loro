@@ -70,6 +70,13 @@ stable interfaces.
 
 **Goal:** turn the current alpha into an explicitly owned hardening program.
 
+Phase 0 working documents:
+
+- [Threat Model](threat-model.md)
+- [Enterprise Data Classification](data-classification.md)
+- [Enterprise Reference Deployment](reference-deployment.md)
+- [Enterprise Readiness Evidence Register](enterprise-evidence.md)
+
 Deliverables:
 
 - Assign owners for runtime, identity, permissions, memory/data, security, and release.
@@ -226,6 +233,9 @@ GA exit gate:
 - Known limitations and unsupported use cases are published.
 
 ## Release Gates And Measures
+
+The status, owner, and proof for each exit item are tracked in the
+[Enterprise Readiness Evidence Register](enterprise-evidence.md).
 
 The team should choose numeric targets during Phase 0. At minimum, each candidate release must
 report:

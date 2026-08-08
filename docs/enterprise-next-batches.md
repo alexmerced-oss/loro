@@ -45,6 +45,14 @@ Acceptance criteria:
 - The docs identify assumptions and open decisions instead of pretending unknowns are solved.
 - No runtime behavior changes are required for this batch.
 
+Status: repository deliverables complete. The [threat model](threat-model.md),
+[data classification policy](data-classification.md),
+[reference deployment](reference-deployment.md), and
+[evidence register](enterprise-evidence.md) are drafted and cross-linked. Phase 0 governance
+remains open until an adopting organization assigns the documented owners, approves the data
+classification mapping and threat model, pins infrastructure versions, and records deployment
+reproduction and baseline results.
+
 ## Batch 2: Identity Context Foundation
 
 Goal: make Loro internally identity-aware before approvals, memory commits, and audit sinks rely
