@@ -109,6 +109,31 @@ def test_data_tables_typed_command(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_governed_data_ask_policy_prompts_before_execution(monkeypatch, tmp_path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, capture_output, text, check):
+        commands.append(command)
+        return CompletedProcess(command, 0, stdout="prod\n", stderr="")
+
+    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[polaris]\n"
+        "enabled = true\n"
+        'cli_path = "polaris"\n'
+        "[permissions]\n"
+        'governed_data = "ask"\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+
+    result = CliRunner().invoke(app, ["data", "catalogs"], input="once\n")
+
+    assert result.exit_code == 0
+    assert "Approval required" in result.stdout
+    assert commands == [["polaris", "catalogs", "list"]]
+
+
 def test_data_applicable_policies_typed_command(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
 
@@ -256,7 +281,7 @@ def test_data_explain_access_command(monkeypatch, tmp_path) -> None:
 def test_shell_run_requires_yes() -> None:
     result = CliRunner().invoke(app, ["shell", "run", "--", "python", "-c", "print('loro')"])
     assert result.exit_code != 0
-    assert "requires approval" in str(result.exception)
+    assert "Approval required" in result.stdout
 
 
 def test_shell_run_with_yes() -> None:
@@ -266,6 +291,42 @@ def test_shell_run_with_yes() -> None:
     )
     assert result.exit_code == 0
     assert "loro" in result.stdout
+
+
+def test_shell_run_interactive_approval_is_audited(tmp_path, monkeypatch) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{audit_path}\"\n",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["shell", "run", "--", "python", "-c", "print('approved')"],
+        input="once\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approval required" in result.stdout
+    assert "approved" in result.stdout
+    events = [json.loads(line)["event_type"] for line in audit_path.read_text().splitlines()]
+    assert events[:3] == ["approval.requested", "approval.granted", "approval.used"]
+    assert events[-1] == "shell.executed"
+
+
+def test_shell_non_interactive_approval_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[approvals]\nallow_non_interactive = false\n",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["shell", "run", "--yes", "--", "python", "-c", "print('blocked')"],
+    )
+
+    assert result.exit_code != 0
+    assert "Non-interactive approvals are disabled" in result.stderr
 
 
 def test_shared_memory_schema_command() -> None:
@@ -379,7 +440,10 @@ def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
     )
     assert remember_result.exit_code == 0
     draft_id = remember_result.stdout.splitlines()[0].split(": ", maxsplit=1)[1]
-    commit_result = runner.invoke(app, ["memory", "commit-draft", draft_id, "--execute"])
+    commit_result = runner.invoke(
+        app,
+        ["memory", "commit-draft", draft_id, "--execute", "--yes"],
+    )
     assert commit_result.exit_code != 0
     assert "required for Iceberg shared memory" in commit_result.stderr
 
@@ -832,6 +896,38 @@ def test_setup_identity_can_remediate_missing_required_field(tmp_path, monkeypat
 
     assert result.exit_code == 0
     assert 'organization = "acme"' in output.read_text(encoding="utf-8")
+
+
+def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "approvals",
+            "--interactive",
+            "--deny-non-interactive",
+            "--allow-session-scope",
+            "--once-ttl",
+            "60",
+            "--session-ttl",
+            "300",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert "[approvals]" in text
+    assert "interactive = true" in text
+    assert "allow_non_interactive = false" in text
+    assert "once_ttl_seconds = 60" in text
 
 
 def test_shared_memory_defaults_to_active_identity(tmp_path, monkeypatch) -> None:

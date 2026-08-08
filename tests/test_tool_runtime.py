@@ -3,6 +3,7 @@ from subprocess import run
 import pytest
 
 from loro.config import (
+    ApprovalsConfig,
     LocalMemoryConfig,
     LoroConfig,
     MemoryConfig,
@@ -76,6 +77,75 @@ def test_tool_registry_file_write_with_approval(tmp_path) -> None:
     result = ToolRegistry(LoroConfig()).execute(call)
     assert result.ok is True
     assert target.read_text(encoding="utf-8") == "hello"
+
+
+def test_model_cannot_self_approve_file_write(tmp_path) -> None:
+    target = tmp_path / "model-note.txt"
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "hello", "approved": true}}',
+        origin="model",
+    )[0]
+
+    result = ToolRegistry(LoroConfig()).execute(call)
+
+    assert result.ok is False
+    assert "Model-provided approval arguments are not trusted" in result.output
+    assert not target.exists()
+
+
+def test_model_action_can_receive_interactive_user_approval(tmp_path) -> None:
+    target = tmp_path / "approved-note.txt"
+    requests = []
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "hello", "approved": true}}',
+        origin="model",
+    )[0]
+    registry = ToolRegistry(
+        LoroConfig(),
+        approval_provider=lambda request: requests.append(request) or "once",
+    )
+
+    result = registry.execute(call)
+
+    assert result.ok is True
+    assert len(requests) == 1
+    assert target.read_text(encoding="utf-8") == "hello"
+
+
+def test_non_interactive_runtime_approval_can_be_disabled(tmp_path) -> None:
+    target = tmp_path / "blocked-note.txt"
+    call = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "hello", "approved": true}}'
+    )[0]
+    config = LoroConfig(approvals=ApprovalsConfig(allow_non_interactive=False))
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "Non-interactive approvals are disabled" in result.output
+    assert not target.exists()
+
+
+def test_session_approval_reuses_only_exact_tool_request(tmp_path) -> None:
+    target = tmp_path / "session-note.txt"
+    requests = []
+    registry = ToolRegistry(
+        LoroConfig(),
+        approval_provider=lambda request: requests.append(request) or "session",
+    )
+    original = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "first"}}',
+        origin="model",
+    )[0]
+    changed = parse_tool_calls(
+        f'@tool file.write {{"path": "{target}", "content": "second"}}',
+        origin="model",
+    )[0]
+
+    assert registry.execute(original).ok is True
+    assert registry.execute(original).ok is True
+    assert registry.execute(changed).ok is True
+    assert len(requests) == 2
 
 
 def test_tool_registry_file_replace_with_approval(tmp_path) -> None:

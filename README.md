@@ -50,6 +50,7 @@ Additional setup wizards are available for the enterprise pieces:
 
 ```bash
 loro setup identity
+loro setup approvals
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -61,6 +62,7 @@ loro setup quickstart
 - A Typer-powered CLI entrypoint.
 - Configuration loading from system, user, project, local, runtime, and managed enterprise sources.
 - Identity context from config/environment with managed required fields and audit/session propagation.
+- Identity-bound approval records with interactive once/session/deny prompts and replay protection.
 - Permission decision primitives.
 - Local and shared memory interfaces.
 - Postgres and Iceberg shared memory adapters with explicit-only shared write flows.
@@ -109,6 +111,7 @@ Additional setup wizards are available through `loro setup`:
 ```bash
 loro setup provider
 loro setup identity
+loro setup approvals
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -191,6 +194,7 @@ Memory and artifact commands scan for obvious secrets by default. Use `--allow-s
 - [CLI Guide](docs/cli.md)
 - [Configuration](docs/configuration.md)
 - [Identity Context](docs/identity.md)
+- [Approvals](docs/approvals.md)
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)

@@ -80,7 +80,7 @@ Polaris access control.
 | ID | Threat and attack path | Impact | Current control | Required enterprise control | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | TM-01 | Prompt injection in a user prompt, repository, tool result, governed metadata, or recalled memory tells the model to run a tool or reveal data. | Unauthorized action or disclosure. | Typed tools, permission decisions, bounded steps, read-only Polaris allowlist. | Identity-bound interactive approval, normalized scopes, sandbox profiles, content trust labels, adversarial tests. | `tests/test_tools.py`, `tests/test_tool_runtime.py`, and `tests/test_runtime.py` are partial; Phase 1/2 evidence pending. |
-| TM-02 | Model output supplies `approved=true` or otherwise attempts to approve its own file, shell, Git, or data action. | Arbitrary mutation or command execution. | `ask`/`deny` policy gates exist, but runtime arguments can carry approval. | Approval records created only by a trusted UI/user path, bound to exact arguments, identity, session, policy version, and expiry. | Batch 3 negative tests pending. |
+| TM-02 | Model output supplies `approved=true` or otherwise attempts to approve its own file, shell, Git, or data action. | Arbitrary mutation or command execution. | Model/user tool-call origins are distinguished; trusted approval records bind canonical arguments, identity, session, decision, and expiry. | Add signed policy-version binding and durable enterprise approval evidence. | `tests/test_approvals.py` and `tests/test_tool_runtime.py`; policy-version evidence pending. |
 | TM-03 | Path traversal, symlink substitution, glob ambiguity, command encoding, or shell argument confusion bypasses policy. | Access outside the workspace or unintended execution. | Working-directory checks and glob rules. | Canonical symlink-safe resource scopes, executable/argument normalization, sandbox enforcement, bypass corpus. | Batch 4 and Phase 2 evidence pending. |
 | TM-04 | Credentials leak into prompts, inherited subprocess environments, logs, sessions, memory, or artifacts. | Account compromise and data breach. | Environment-backed provider/data credentials; lightweight secret scanner; prompt previews. | Environment allowlists, managed DLP, structured redaction metadata, credential isolation, leak tests. | Safety tests exist; enterprise DLP evidence pending. |
 | TM-05 | Caller chooses another `tenant_id`, or a query/write omits tenant enforcement. | Cross-tenant memory disclosure or corruption. | Tenant fields and filters exist in shared-memory adapters. | Tenant derived from trusted identity/policy, database row-level controls where applicable, negative tests for every operation. | Adapter tests partial; production-like isolation proof pending. |
@@ -112,8 +112,8 @@ Current 0.1.x strengths include bounded agent steps, typed tools, layered manage
 permission decisions, explicit shared-memory drafts and commits, tenant fields, cited recall,
 read-only Polaris validation, secret-pattern scanning, and JSONL auditing.
 
-These are alpha controls. Identity is not yet enterprise-grade; approvals are not attributable;
-tenant selection can still originate at the CLI/runtime boundary; filesystem and shell scopes
+These are alpha controls. Identity is not yet backed by a verified corporate assertion; approval
+records are process-local; tenant selection can still originate at the CLI/runtime boundary; filesystem and shell scopes
 are not fully normalized; local audit is not durable or tamper-evident; sandbox, DLP, retention,
 and release-supply-chain controls remain open. Consequently, Loro 0.1.x is suitable for
 controlled evaluation with non-production or approved low-risk data, not unrestricted

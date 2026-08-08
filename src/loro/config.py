@@ -59,8 +59,18 @@ class PermissionsConfig(BaseModel):
     default: PermissionDecision = "ask"
     shell: PermissionDecision = "ask"
     edit: PermissionDecision = "ask"
+    shared_memory: PermissionDecision = "ask"
+    governed_data: PermissionDecision = "allow"
     web: PermissionDecision = "deny"
     rules: list["PermissionRuleConfig"] = Field(default_factory=list)
+
+
+class ApprovalsConfig(BaseModel):
+    interactive: bool = True
+    allow_non_interactive: bool = True
+    allow_session_scope: bool = True
+    once_ttl_seconds: int = Field(default=300, ge=1)
+    session_ttl_seconds: int = Field(default=900, ge=1)
 
 
 class PermissionRuleConfig(BaseModel):
@@ -125,6 +135,7 @@ class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     identity: IdentityConfig = Field(default_factory=IdentityConfig)
+    approvals: ApprovalsConfig = Field(default_factory=ApprovalsConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
@@ -168,6 +179,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"model": data}
     if section == "identity":
         return {"identity": config.identity.model_dump(exclude_none=True)}
+    if section == "approvals":
+        return {"approvals": config.approvals.model_dump(exclude_none=True)}
     if section == "memory.local":
         return {"memory": {"local": config.memory.local.model_dump(exclude_none=True)}}
     if section == "memory.shared":

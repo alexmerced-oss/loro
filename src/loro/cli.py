@@ -1,18 +1,20 @@
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
+import click
 import typer
 from rich.console import Console
 
 from loro import __version__
+from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
 from loro.artifacts.common import ArtifactResult, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
-from loro.config import load_config, write_config_sections
+from loro.config import LoroConfig, load_config, write_config_sections
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -90,8 +92,19 @@ DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
 def _runtime() -> AgentRuntime:
+    config = load_config()
     try:
-        return AgentRuntime(load_config())
+        return AgentRuntime(
+            config,
+            approval_provider=(
+                lambda request: _prompt_for_approval(
+                    request,
+                    allow_session_scope=config.approvals.allow_session_scope,
+                )
+            )
+            if config.approvals.interactive
+            else None,
+        )
     except IdentityConfigurationError as error:
         raise typer.BadParameter(str(error)) from error
 
@@ -118,6 +131,95 @@ def _permissions() -> PermissionEngine:
 
 def _safety() -> SafetyScanner:
     return SafetyScanner(load_config().safety)
+
+
+def _approval_manager(config: LoroConfig | None = None) -> ApprovalManager:
+    resolved_config = config or load_config()
+    try:
+        identity = resolve_identity(resolved_config.identity)
+    except IdentityConfigurationError as error:
+        raise typer.BadParameter(str(error)) from error
+    audit = AuditLogger(resolved_config.audit, identity)
+    return ApprovalManager(
+        resolved_config.approvals,
+        identity,
+        event_handler=lambda event_type, payload: audit.write(event_type, **dict(payload)),
+    )
+
+
+def _prompt_for_approval(
+    request: ApprovalRequest,
+    *,
+    allow_session_scope: bool,
+) -> ApprovalScope | None:
+    console.print("[bold yellow]Approval required[/bold yellow]")
+    console.print(f"Action: {request.action}")
+    console.print(f"Target: {request.target}")
+    console.print(f"Arguments: {request.display_arguments()}")
+    console.print(f"Policy: {request.policy_decision} ({request.policy_reason})")
+    console.print(f"Risk: {request.risk_reason}")
+    console.print(
+        f"Identity: {request.identity_subject} / {request.identity_tenant} "
+        f"(session {request.identity_session_id})"
+    )
+    choices = "once/session/deny" if allow_session_scope else "once/deny"
+    choice = typer.prompt(f"Approval ({choices})", default="deny").strip().casefold()
+    if choice == "once":
+        return "once"
+    if choice == "session" and allow_session_scope:
+        return "session"
+    return None
+
+
+def _authorize_cli_action(
+    *,
+    tool: str,
+    action: str,
+    target: str,
+    arguments: dict[str, Any],
+    risk_reason: str,
+    non_interactive_approved: bool = False,
+) -> None:
+    config = load_config()
+    permission_request = PermissionRequest(tool=tool, action=action, target=target)
+    result = PermissionEngine(config.permissions).evaluate(permission_request)
+    if result.decision == "deny":
+        raise typer.BadParameter(f"{tool} is denied by policy: {action}")
+    if result.decision == "allow":
+        return
+    manager = _approval_manager(config)
+    request = manager.request(
+        action=f"{tool}.{action}",
+        target=target,
+        arguments=arguments,
+        policy_decision=result.decision,
+        policy_reason=result.reason,
+        risk_reason=risk_reason,
+    )
+    if non_interactive_approved:
+        try:
+            record = manager.grant(request, scope="once", method="non_interactive")
+            manager.consume(request, record.approval_id)
+        except PermissionError as error:
+            manager.deny(request)
+            raise typer.BadParameter(str(error)) from error
+        return
+    if not config.approvals.interactive:
+        manager.deny(request)
+        raise typer.BadParameter(f"{tool} requires trusted user approval.")
+    try:
+        scope = _prompt_for_approval(
+            request,
+            allow_session_scope=config.approvals.allow_session_scope,
+        )
+    except click.Abort:
+        manager.deny(request)
+        raise
+    if scope is None:
+        manager.deny(request)
+        raise typer.Abort()
+    record = manager.grant(request, scope=scope, method="interactive")
+    manager.consume(request, record.approval_id)
 
 
 def _enforce_safe_content(content: str, context: str, allow_sensitive: bool = False) -> None:
@@ -205,6 +307,23 @@ def _polaris_client() -> PolarisClient:
             markup=False,
         )
         raise typer.Exit(code=2)
+    context = click.get_current_context(silent=True)
+    action = context.info_name if context is not None and context.info_name else "discovery"
+    arguments = dict(context.params) if context is not None else {}
+    data_options = context.obj if context is not None and isinstance(context.obj, dict) else {}
+    target_parts = [
+        str(arguments[key])
+        for key in ("catalog", "namespace", "table", "view", "resource", "role", "policy")
+        if arguments.get(key) is not None
+    ]
+    _authorize_cli_action(
+        tool="governed_data",
+        action=action,
+        target="/".join(target_parts) or config.polaris.catalog or "catalog",
+        arguments=arguments,
+        risk_reason="Read metadata from the governed Apache Polaris catalog.",
+        non_interactive_approved=bool(data_options.get("yes", False)),
+    )
     return PolarisClient(config.polaris)
 
 
@@ -733,6 +852,101 @@ def setup_identity(
     console.print(f"Wrote identity config: {written}")
 
 
+@setup_app.command("approvals")
+def setup_approvals(
+    interactive: Annotated[
+        bool | None,
+        typer.Option(
+            "--interactive/--no-interactive",
+            help="Allow trusted terminal approval prompts.",
+        ),
+    ] = None,
+    allow_non_interactive: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-non-interactive/--deny-non-interactive",
+            help="Allow --yes and explicit user-authored approval fields.",
+        ),
+    ] = None,
+    allow_session_scope: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-session-scope/--deny-session-scope",
+            help="Allow exact-match approvals to be reused during one runtime session.",
+        ),
+    ] = None,
+    once_ttl_seconds: Annotated[
+        int | None,
+        typer.Option("--once-ttl", help="One-time approval lifetime in seconds."),
+    ] = None,
+    session_ttl_seconds: Annotated[
+        int | None,
+        typer.Option("--session-ttl", help="Session approval lifetime in seconds."),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure interactive and non-interactive approval behavior."""
+    values = [
+        interactive,
+        allow_non_interactive,
+        allow_session_scope,
+        once_ttl_seconds,
+        session_ttl_seconds,
+    ]
+    wizard = all(value is None for value in values)
+    config = load_config()
+    approvals = config.approvals
+    if wizard:
+        interactive = typer.confirm(
+            "Enable interactive approval prompts?",
+            default=approvals.interactive,
+        )
+        allow_non_interactive = typer.confirm(
+            "Allow non-interactive approvals?",
+            default=approvals.allow_non_interactive,
+        )
+        allow_session_scope = typer.confirm(
+            "Allow exact-match session approvals?",
+            default=approvals.allow_session_scope,
+        )
+        once_ttl_seconds = typer.prompt(
+            "One-time approval TTL (seconds)",
+            default=approvals.once_ttl_seconds,
+            type=int,
+        )
+        session_ttl_seconds = typer.prompt(
+            "Session approval TTL (seconds)",
+            default=approvals.session_ttl_seconds,
+            type=int,
+        )
+    if interactive is not None:
+        approvals.interactive = interactive
+    if allow_non_interactive is not None:
+        approvals.allow_non_interactive = allow_non_interactive
+    if allow_session_scope is not None:
+        approvals.allow_session_scope = allow_session_scope
+    if once_ttl_seconds is not None:
+        if once_ttl_seconds < 1:
+            raise typer.BadParameter("One-time approval TTL must be positive.")
+        approvals.once_ttl_seconds = once_ttl_seconds
+    if session_ttl_seconds is not None:
+        if session_ttl_seconds < 1:
+            raise typer.BadParameter("Session approval TTL must be positive.")
+        approvals.session_ttl_seconds = session_ttl_seconds
+    written = write_config_sections(output, config, ["approvals"])
+    _audit().write(
+        "config.approvals_written",
+        path=str(written),
+        interactive=approvals.interactive,
+        allow_non_interactive=approvals.allow_non_interactive,
+        allow_session_scope=approvals.allow_session_scope,
+    )
+    console.print(f"Wrote approval config: {written}")
+
+
 @setup_app.command("quickstart")
 def setup_quickstart(
     output: Annotated[
@@ -744,6 +958,7 @@ def setup_quickstart(
     console.print("Loro quickstart setup")
     setup_provider(output=output)
     setup_identity(output=output)
+    setup_approvals(output=output)
     setup_memory(output=output)
     setup_shared_memory(output=output)
     setup_polaris(output=output)
@@ -789,6 +1004,12 @@ def doctor() -> None:
     console.print(
         f"Identity: {'ready' if identity_diagnostic.ok else 'missing required fields'} "
         f"({identity_diagnostic.context.subject}, {identity_diagnostic.context.source})"
+    )
+    console.print(
+        "Approvals: "
+        f"interactive={'enabled' if config.approvals.interactive else 'disabled'}, "
+        "non-interactive="
+        f"{'allowed' if config.approvals.allow_non_interactive else 'denied'}"
     )
     if not identity_diagnostic.ok:
         console.print(
@@ -1083,6 +1304,14 @@ def memory_commit_draft(
             help="Execute the commit. Without this flag Loro only renders backend SQL.",
         ),
     ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Non-interactive approval for an ask-gated shared-memory commit.",
+        ),
+    ] = False,
 ) -> None:
     """Render or execute an explicit shared memory draft commit."""
     config = load_config()
@@ -1090,6 +1319,25 @@ def memory_commit_draft(
     draft = draft_store.get(draft_id)
     if draft is None:
         raise typer.BadParameter(f"Unknown shared memory draft id: {draft_id}")
+
+    if execute:
+        _authorize_cli_action(
+            tool="shared_memory",
+            action="commit draft",
+            target=f"{draft.tenant_id}/{draft.scope_type}/{draft.scope_key}/{draft.draft_id}",
+            arguments={
+                "draft_id": draft.draft_id,
+                "tenant_id": draft.tenant_id,
+                "scope_type": draft.scope_type,
+                "scope_key": draft.scope_key,
+                "memory_type": draft.memory_type,
+                "classification": draft.classification,
+                "content": draft.content,
+                "created_by": draft.created_by,
+            },
+            risk_reason="Commit user-dictated content to shared enterprise memory.",
+            non_interactive_approved=yes,
+        )
 
     try:
         result = render_or_commit_shared_draft(config, draft, execute=execute)
@@ -1353,6 +1601,23 @@ def brief_executive(
         allow_sensitive=allow_sensitive,
         brief_type="executive",
     )
+
+
+@data_app.callback()
+def data_options(
+    context: typer.Context,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Non-interactive approval for ask-gated governed-data discovery.",
+        ),
+    ] = False,
+) -> None:
+    """Configure governed-data command approval behavior."""
+    context.ensure_object(dict)
+    context.obj["yes"] = yes
 
 
 @data_app.command("catalogs")
@@ -1626,9 +1891,15 @@ def shell_run(
     timeout: Annotated[int, typer.Option("--timeout", help="Timeout in seconds.")] = 120,
 ) -> None:
     """Run a shell command without invoking a shell interpreter."""
-    _permissions().require_allowed(
-        PermissionRequest(tool="shell", action="run command", target=" ".join(args)),
-        approved=yes,
+    if not args:
+        raise typer.BadParameter("Provide a command to execute.")
+    _authorize_cli_action(
+        tool="shell",
+        action="run command",
+        target=args[0],
+        arguments={"args": args, "timeout": timeout},
+        risk_reason="Execute a subprocess with the displayed arguments.",
+        non_interactive_approved=yes,
     )
     result = ShellTools().run(args, timeout=timeout)
     _audit().write(

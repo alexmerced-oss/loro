@@ -108,6 +108,13 @@ Acceptance criteria:
 - Tests prove expired approvals and broad replay attempts fail.
 - CLI commands remain usable in non-interactive CI/test paths.
 
+Status: complete for the current tool surface. Identity-bound approval requests and records,
+canonical argument digests, once/session scope, expiry, replay protection, interactive prompts,
+managed non-interactive controls, and lifecycle audit events cover runtime file/shell/Git/Polaris,
+direct shell, shared-memory commit, and governed-data discovery paths. Durable approval storage,
+policy-version binding, and full resource normalization remain explicitly deferred to later
+batches. See [Approvals](approvals.md).
+
 ## Batch 4: Normalized Resource Scopes
 
 Goal: evaluate permissions against normalized resources rather than loose strings.

@@ -92,3 +92,19 @@ def test_managed_identity_required_fields_cannot_be_removed(monkeypatch) -> None
     assert config.identity.required_fields == ["organization"]
     with pytest.raises(IdentityConfigurationError, match="organization"):
         resolve_identity(config.identity, environ={})
+
+
+def test_managed_config_can_disable_non_interactive_approvals(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[approvals]\nallow_non_interactive = true\nallow_session_scope = true\n",
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        "[approvals]\nallow_non_interactive = false\nallow_session_scope = false\n",
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.approvals.allow_non_interactive is False
+    assert config.approvals.allow_session_scope is False

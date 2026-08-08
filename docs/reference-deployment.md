@@ -41,7 +41,7 @@ evidence items are closed.
 | Loro distribution | `loro-agent` from a controlled package mirror | PyPI release and clean-install process | Pin exact version/hash; add signature, provenance, and SBOM before GA. |
 | Model access | Internal OpenAI-compatible gateway preferred; otherwise explicitly approved direct provider | Provider unit and controlled live smoke tests | Record class ceiling, residency, retention, TLS/proxy, budgets, and fallback policy. |
 | Configuration | `/etc/loro/managed.toml` or `LORO_MANAGED_CONFIG`; managed values load last | Unit tests cover precedence | Protect distribution and integrity; validate version and fail closed when required. |
-| Identity | Corporate identity propagated to runtime, approvals, memory, and audit | Not implemented | Required before enterprise pilot actions are treated as attributable. |
+| Identity | Typed context propagated to runtime, approvals, memory, sessions, and audit | Context foundation implemented | Integrate and verify a corporate assertion source before pilot attribution is trusted. |
 | Shared memory | Managed Postgres | Opt-in Testcontainers integration | Pin supported Postgres version; require TLS, least privilege, backup/restore, tenant tests, and retention. |
 | Scale-out memory | Polaris-governed Iceberg REST catalog | PyIceberg adapter plus service/dry-run quickstart | Not in first production pilot until full read/write, isolation, lifecycle, and recovery tests pass. |
 | Governed data | Polaris CLI typed read-only discovery; Iceberg REST for approved memory access | Unit tests and opt-in Polaris smoke | Pin Polaris CLI/server versions, authenticate as the user/workload, scope catalogs/resources, and prove denial behavior. |

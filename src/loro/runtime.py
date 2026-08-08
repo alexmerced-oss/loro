@@ -1,5 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import LoroConfig
 from loro.identity import IdentityContext, resolve_identity
@@ -27,12 +29,29 @@ class AgentResult:
 class AgentRuntime:
     """Bounded model-directed runtime loop for Loro agent tasks."""
 
-    def __init__(self, config: LoroConfig) -> None:
+    def __init__(
+        self,
+        config: LoroConfig,
+        approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
+    ) -> None:
         self.config = config
         self.identity = resolve_identity(config.identity)
         self.audit = AuditLogger(config.audit, self.identity)
+        self.approvals = ApprovalManager(
+            config.approvals,
+            self.identity,
+            event_handler=lambda event_type, payload: self.audit.write(
+                event_type,
+                **dict(payload),
+            ),
+        )
         self.sessions = SessionStore(config.sessions)
-        self.tools = ToolRegistry(config, identity=self.identity)
+        self.tools = ToolRegistry(
+            config,
+            identity=self.identity,
+            approval_manager=self.approvals,
+            approval_provider=approval_provider,
+        )
 
     def run(self, prompt: str, mode: str) -> AgentResult:
         recalled_memories: list[str] = []
@@ -86,7 +105,7 @@ class AgentRuntime:
             self.audit.write("runtime.model_completed", mode=mode, step=step)
             tool_calls = [
                 *_tool_calls_from_model_response(model_response.tool_calls),
-                *parse_tool_calls(model_response_content),
+                *parse_tool_calls(model_response_content, origin="model"),
             ]
             if not tool_calls:
                 stop_reason = "completed"
@@ -266,7 +285,7 @@ def _shared_memory_payload(memory: SharedMemorySearchRecord) -> dict[str, str]:
 
 
 def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall]:
-    return [ToolCall(name=call.name, args=call.args) for call in calls]
+    return [ToolCall(name=call.name, args=call.args, origin="model") for call in calls]
 
 
 def _tool_identity_payload(identity: IdentityContext) -> dict[str, object]:

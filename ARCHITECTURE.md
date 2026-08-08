@@ -31,6 +31,7 @@ flowchart LR
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.config`: layered configuration model and environment overrides.
 - `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
+- `loro.approvals`: identity-bound approval requests/records, expiration, and replay protection.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
 - `loro.provider_profiles`: built-in AI provider profile registry.
 - `loro.providers`: provider lookup, validation, and local configuration writer.
@@ -49,19 +50,21 @@ flowchart LR
    `LORO_CONFIG_CONTENT`, then applies managed enterprise overlays last.
 2. Loro resolves identity from configuration/environment, validates managed required fields,
    and fails before runtime construction when they are missing.
-3. The runtime loads local memory and, when enabled, searches the identity tenant's shared memory for
-   relevant cited records.
+3. The runtime loads local memory and, when enabled, searches the identity tenant's shared
+   memory for relevant cited records.
 4. The runtime emits `runtime.task_started` with identity attribution.
 5. Explicit prompt tool directives are executed before the first model call.
 6. The runtime calls the configured model and parses provider-neutral tool directives from
    the response.
-7. Approved tool calls are executed, audited, and sent back to the model as structured text.
-8. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
+7. Ask-gated actions create an exact approval request. Trusted interactive approval is recorded
+   before the tool executes; model-provided approval fields are not trusted.
+8. Approved tool calls are executed, audited, and sent back to the model as structured text.
+9. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
    is reached.
-9. The runtime creates a session summary, including identity, tool execution payloads, and stop reason,
-   and persists it to the configured session store.
-10. The runtime emits `runtime.task_completed`.
-11. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
+10. The runtime creates a session summary, including identity, tool execution payloads, and stop
+    reason, and persists it to the configured session store.
+11. The runtime emits `runtime.task_completed`.
+12. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
     not full sensitive payloads.
 
 The current model-directed loop uses text directives such as
@@ -105,7 +108,7 @@ supplied tenant overrides; those controls belong to the approval and resource-sc
 The permission engine evaluates requests as:
 
 - `allow`: tool may execute.
-- `ask`: tool requires an explicit CLI approval flag or future interactive approval.
+- `ask`: tool requires a trusted interactive or policy-enabled non-interactive approval record.
 - `deny`: tool is blocked.
 
 Ordered permission rules can override per-tool defaults with case-insensitive glob matches
@@ -113,12 +116,15 @@ on tool, action, and target. The first matching rule wins.
 
 Current examples:
 
-- `loro shell run --yes -- python -c "print('ok')"` requires `--yes` when shell policy is `ask`.
+- `loro shell run -- python -c "print('ok')"` prompts when shell policy is `ask`.
+- `--yes` remains a non-enterprise automation path and can be disabled by managed policy.
 - `loro file read` and `loro file search` are read-only and internally approved for the current CLI command.
 - Runtime file writes, Git mutations, and shell execution require explicit approval unless
   policy sets the relevant action to `allow`.
 
-Future work should add richer data-scope matchers.
+Approval requests bind canonical arguments, identity, session, target, decision, and expiration.
+One-time approvals are consumed once; exact session approvals can be reused until expiry. Future
+work should add richer normalized resource matchers and policy-version binding.
 
 ## AI Providers
 

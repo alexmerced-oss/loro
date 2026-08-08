@@ -9,6 +9,7 @@ loro config
 loro configure
 loro setup provider
 loro setup identity
+loro setup approvals
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -18,7 +19,7 @@ loro run "Summarize the project"
 ```
 
 `loro configure` and `loro setup provider` run the AI provider wizard. The other setup
-commands guide identity, local memory, shared-memory, and Polaris configuration. `loro setup
+commands guide identity, approvals, local memory, shared-memory, and Polaris configuration. `loro setup
 quickstart` runs the setup wizards in sequence and preserves existing sections in
 `.loro/config.local.toml`.
 
@@ -50,22 +51,23 @@ tool registry supports:
 
 - `file.read`: `{"path": "README.md", "limit": 1000}`
 - `file.search`: `{"query": "Polaris", "root": ".", "limit": 5}`
-- `file.write`: `{"path": "notes.md", "content": "Hello", "approved": true}`
-- `file.replace`: `{"path": "notes.md", "old": "Hello", "new": "Hi", "approved": true}`
+- `file.write`: `{"path": "notes.md", "content": "Hello"}`
+- `file.replace`: `{"path": "notes.md", "old": "Hello", "new": "Hi"}`
 - `git.status`: `{"cwd": "."}`
 - `git.diff`: `{"cwd": "."}`
 - `git.show`: `{"cwd": ".", "revision": "HEAD"}`
-- `git.add`: `{"cwd": ".", "paths": ["notes.md"], "approved": true}`
-- `git.commit`: `{"cwd": ".", "message": "Update notes", "approved": true}`
+- `git.add`: `{"cwd": ".", "paths": ["notes.md"]}`
+- `git.commit`: `{"cwd": ".", "message": "Update notes"}`
 - `memory.search`: `{"query": "launch template", "limit": 10}`
 - `memory.shared_search`: `{"query": "launch template", "tenant_id": "acme"}`
-- `shell.run`: `{"args": ["python", "-c", "print(123)"], "approved": true}`
+- `shell.run`: `{"args": ["python", "-c", "print(123)"]}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
 - `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
 
-Runtime write-like calls still obey configured permissions. When policy is `ask`, `file.write`,
-`file.replace`, `git.add`, `git.commit`, and `shell.run` must include `"approved": true`;
-`deny` always blocks execution. File writes/replacements and artifact creation use the same
+Runtime write-like calls still obey configured permissions. When policy is `ask`, Loro prompts
+the trusted terminal user; a model-provided `approved=true` cannot authorize itself. Explicit
+user-authored directives and direct `--yes` flags remain available only when non-interactive
+approvals are enabled. `deny` always blocks execution. File writes/replacements and artifact creation use the same
 safety scanner as CLI write commands. Polaris runtime calls require `[polaris].enabled = true`
 and are constrained to read-only operations. Artifact runtime calls support `document`,
 `presentation`, `spreadsheet`, and `brief`; they write provenance sidecars.
@@ -92,6 +94,20 @@ Live provider smoke commands require the matching environment variable, such as
 `OPENROUTER_API_KEY`, or `OPENCODE_ZEN_API_KEY`. Dry-run `providers request` and
 `providers smoke` output redacts API keys and lets users inspect provider-specific request
 payloads before spending tokens.
+
+## Approvals
+
+```bash
+loro setup approvals
+loro shell run -- python -c "print('interactive')"
+loro shell run --yes -- python -c "print('automation')"
+loro memory commit-draft <draft-id> --execute
+loro data --yes catalogs
+```
+
+Interactive prompts support once, exact-match session, and deny. Non-interactive approvals are
+audited but should be disabled in enterprise managed configuration. See
+[Approvals](approvals.md).
 
 ## Memory
 

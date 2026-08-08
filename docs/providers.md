@@ -14,8 +14,8 @@ The wizard lists available providers, prompts for the primary and small model, a
 first run, or pick a cloud provider after exporting the matching API key.
 
 `loro setup provider` is an alias-style entrypoint for the same provider wizard. Use
-`loro setup quickstart` to run provider setup together with local memory, shared memory, and
-Polaris setup.
+`loro setup quickstart` to run provider setup together with identity, approvals, local memory,
+shared memory, and Polaris setup.
 
 ## Commands
 

@@ -33,8 +33,8 @@ Evidence states:
 | --- | --- | --- | --- | --- |
 | E1-01 | Trusted identity context is required and propagated | Identity/policy (TBD) | Partial | Typed context, config/environment resolution, managed required fields, CLI diagnostics, propagation, and tests exist in `src/loro/identity.py`, `tests/test_identity.py`, and [Identity Context](identity.md); corporate assertion verification/integration remains TBD. |
 | E1-02 | Managed policy is validated, versioned, and fail-closed | Identity/policy (TBD) | Partial | Managed overlay precedence exists in `src/loro/config.py` and `tests/test_config.py`; integrity/version/failure tests TBD. |
-| E1-03 | Consequential actions use attributable exact approvals | Identity/policy (TBD) | Planned | Batch 3 approval records and UI tests TBD. |
-| E1-04 | Model self-approval, replay, mutation, and expiry fail | Security (TBD) | Planned | Negative approval test suite TBD. |
+| E1-03 | Consequential actions use attributable exact approvals | Identity/policy (TBD) | Partial | [Approvals](approvals.md), `src/loro/approvals.py`, and CLI/runtime tests cover current tool paths; durable records, corporate identity verification, and signed policy-version binding remain TBD. |
+| E1-04 | Model self-approval, replay, mutation, and expiry fail | Security (TBD) | Existing | `tests/test_approvals.py` and `tests/test_tool_runtime.py` cover model-origin rejection, changed arguments, one-time replay, cross-session reuse, expiry, and exact session scope. |
 | E1-05 | Resource scopes are normalized and explainable | Runtime/security (TBD) | Planned | Batch 4 resource models, bypass corpus, and `loro policy explain` TBD. |
 | E1-06 | Every consequential event contains actor/policy/approval/target | Release/security (TBD) | Partial | Current CLI/runtime audit events carry actor, tenant, and identity context; policy version, normalized target, attributable approval, and versioned schema remain TBD. |
 | E1-07 | Limited-pilot permission model approved | Security (TBD) | External | Review record and accepted-risk references TBD. |

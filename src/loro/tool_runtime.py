@@ -2,8 +2,9 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
 from loro.artifacts.common import ArtifactResult, write_provenance
 from loro.artifacts.documents import create_document_artifact
@@ -26,6 +27,7 @@ from loro.tools.shell import ShellTools
 class ToolCall:
     name: str
     args: dict[str, Any]
+    origin: Literal["user", "model"] = "user"
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class ToolExecution:
         return {
             "tool": self.call.name,
             "args": self.call.args,
+            "origin": self.call.origin,
             "ok": self.ok,
             "output": self.output,
         }
@@ -50,9 +53,13 @@ class ToolRegistry:
         self,
         config: LoroConfig,
         identity: IdentityContext | None = None,
+        approval_manager: ApprovalManager | None = None,
+        approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
+        self.approvals = approval_manager or ApprovalManager(config.approvals, self.identity)
+        self.approval_provider = approval_provider
         self.permissions = PermissionEngine(config.permissions)
         self.files = FileTools()
         self.git = GitTools()
@@ -117,10 +124,11 @@ class ToolRegistry:
         content = str(call.args["content"])
         append = bool(call.args.get("append", False))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
-        approved = bool(call.args.get("approved", False))
-        self.permissions.require_allowed(
+        self._authorize(
+            call,
             PermissionRequest(tool="edit", action="write file", target=str(path)),
-            approved=approved,
+            approval_target=str(path.expanduser().resolve(strict=False)),
+            risk_reason="Write or append content to a filesystem path.",
         )
         self._assert_safe_write(content, allow_sensitive=allow_sensitive)
         written = self.files.write_text(path, content, append=append)
@@ -133,10 +141,11 @@ class ToolRegistry:
         new = str(call.args["new"])
         count = int(call.args.get("count", -1))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
-        approved = bool(call.args.get("approved", False))
-        self.permissions.require_allowed(
+        self._authorize(
+            call,
             PermissionRequest(tool="edit", action="replace file", target=str(path)),
-            approved=approved,
+            approval_target=str(path.expanduser().resolve(strict=False)),
+            risk_reason="Replace existing content in a filesystem path.",
         )
         self._assert_safe_write(new, allow_sensitive=allow_sensitive)
         replacements = self.files.replace_text(path, old, new, count=count)
@@ -144,13 +153,18 @@ class ToolRegistry:
 
     def _run_shell(self, call: ToolCall) -> ToolExecution:
         args = call.args.get("args")
-        if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        if (
+            not isinstance(args, list)
+            or not args
+            or not all(isinstance(item, str) for item in args)
+        ):
             raise ValueError("shell.run requires args as a list of strings.")
         timeout = int(call.args.get("timeout", 120))
-        approved = bool(call.args.get("approved", False))
-        self.permissions.require_allowed(
+        self._authorize(
+            call,
             PermissionRequest(tool="shell", action="run command", target=" ".join(args)),
-            approved=approved,
+            approval_target=args[0],
+            risk_reason="Execute a subprocess with the displayed arguments.",
         )
         result = self.shell.run(args, timeout=timeout)
         output = _format_process_output(
@@ -163,7 +177,6 @@ class ToolRegistry:
     def _run_git(self, call: ToolCall) -> ToolExecution:
         cwd = Path(str(call.args.get("cwd", ".")))
         timeout = int(call.args.get("timeout", 120))
-        approved = bool(call.args.get("approved", False))
         action = call.name.removeprefix("git.")
         if action == "status":
             self.permissions.require_allowed(
@@ -186,16 +199,20 @@ class ToolRegistry:
             result = self.git.show(revision, cwd=cwd, timeout=timeout)
         elif action == "add":
             paths = _string_list(call.args.get("paths"), "git.add requires paths.")
-            self.permissions.require_allowed(
+            self._authorize(
+                call,
                 PermissionRequest(tool="git", action="add", target=" ".join(paths)),
-                approved=approved,
+                approval_target=str(cwd.expanduser().resolve(strict=False)),
+                risk_reason="Stage repository paths for a future commit.",
             )
             result = self.git.add(paths, cwd=cwd, timeout=timeout)
         elif action == "commit":
             message = str(call.args["message"])
-            self.permissions.require_allowed(
+            self._authorize(
+                call,
                 PermissionRequest(tool="git", action="commit", target=message),
-                approved=approved,
+                approval_target=str(cwd.expanduser().resolve(strict=False)),
+                risk_reason="Create a Git commit in the target repository.",
             )
             result = self.git.commit(message, cwd=cwd, timeout=timeout)
         else:
@@ -291,6 +308,16 @@ class ToolRegistry:
         args = call.args.get("args")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise ValueError("polaris.readonly requires args as a list of strings.")
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="governed_data",
+                action="read governed metadata",
+                target=" ".join(args),
+            ),
+            approval_target=" ".join(args),
+            risk_reason="Read metadata from the governed enterprise catalog.",
+        )
         result = PolarisClient(self.config.polaris).run_readonly(args)
         output = _format_process_output(
             returncode=result.returncode,
@@ -308,8 +335,69 @@ class ToolRegistry:
                 "Set allow_sensitive only if policy allows persistence."
             )
 
+    def _authorize(
+        self,
+        call: ToolCall,
+        permission_request: PermissionRequest,
+        *,
+        approval_target: str,
+        risk_reason: str,
+    ) -> None:
+        result = self.permissions.evaluate(permission_request)
+        if result.decision == "deny":
+            raise PermissionError(
+                f"{permission_request.tool} is denied by policy: {permission_request.action}"
+            )
+        if result.decision == "allow":
+            return
+        request = self.approvals.request(
+            action=f"{permission_request.tool}.{permission_request.action}",
+            target=approval_target,
+            arguments=call.args,
+            policy_decision=result.decision,
+            policy_reason=result.reason,
+            risk_reason=risk_reason,
+        )
+        if self.approvals.consume_matching_session(request) is not None:
+            return
+        if call.origin == "user" and bool(call.args.get("approved", False)):
+            try:
+                record = self.approvals.grant(request, scope="once", method="non_interactive")
+                self.approvals.consume(request, record.approval_id)
+            except PermissionError:
+                self.approvals.deny(request)
+                raise
+            return
+        if self.approval_provider is not None and self.config.approvals.interactive:
+            try:
+                scope = self.approval_provider(request)
+            except Exception:
+                self.approvals.deny(request)
+                raise
+            if scope is not None:
+                try:
+                    record = self.approvals.grant(request, scope=scope, method="interactive")
+                    self.approvals.consume(request, record.approval_id)
+                except PermissionError:
+                    self.approvals.deny(request)
+                    raise
+                return
+            self.approvals.deny(request)
+            raise PermissionError(f"Approval denied for {request.action}.")
+        if call.origin == "model" and bool(call.args.get("approved", False)):
+            self.approvals.deny(request)
+            raise PermissionError("Model-provided approval arguments are not trusted.")
+        self.approvals.deny(request)
+        raise PermissionError(
+            f"{permission_request.tool} requires approval from a trusted user."
+        )
 
-def parse_tool_calls(prompt: str) -> list[ToolCall]:
+
+def parse_tool_calls(
+    prompt: str,
+    *,
+    origin: Literal["user", "model"] = "user",
+) -> list[ToolCall]:
     calls: list[ToolCall] = []
     for line in prompt.splitlines():
         stripped = line.strip()
@@ -317,20 +405,24 @@ def parse_tool_calls(prompt: str) -> list[ToolCall]:
             continue
         directive = stripped.removeprefix("@tool ").strip()
         if directive.startswith("{"):
-            calls.append(_parse_json_tool_call(directive))
+            calls.append(_parse_json_tool_call(directive, origin=origin))
             continue
         name, _, raw_args = directive.partition(" ")
         if not name or not raw_args.strip():
-            calls.append(ToolCall(name=name or "unknown", args={}))
+            calls.append(ToolCall(name=name or "unknown", args={}, origin=origin))
             continue
         data = json.loads(raw_args)
         if not isinstance(data, dict):
             raise ValueError("Tool call arguments must be a JSON object.")
-        calls.append(ToolCall(name=name, args=data))
+        calls.append(ToolCall(name=name, args=data, origin=origin))
     return calls
 
 
-def _parse_json_tool_call(raw: str) -> ToolCall:
+def _parse_json_tool_call(
+    raw: str,
+    *,
+    origin: Literal["user", "model"],
+) -> ToolCall:
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError("Tool directive must be a JSON object.")
@@ -340,7 +432,7 @@ def _parse_json_tool_call(raw: str) -> ToolCall:
         raise ValueError("Tool directive requires a non-empty string name.")
     if not isinstance(args, dict):
         raise ValueError("Tool directive args must be a JSON object.")
-    return ToolCall(name=name, args=args)
+    return ToolCall(name=name, args=args, origin=origin)
 
 
 def _string_list(value: Any, message: str) -> list[str]:

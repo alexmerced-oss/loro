@@ -31,10 +31,19 @@ environment_enabled = true
 environment_prefix = "LORO_IDENTITY_"
 required_fields = []
 
+[approvals]
+interactive = true
+allow_non_interactive = true
+allow_session_scope = true
+once_ttl_seconds = 300
+session_ttl_seconds = 900
+
 [permissions]
 default = "ask"
 shell = "ask"
 edit = "ask"
+shared_memory = "ask"
+governed_data = "allow"
 web = "deny"
 
 [[permissions.rules]]
@@ -102,6 +111,11 @@ web = "deny"
 [identity]
 required_fields = ["subject", "organization", "tenant", "auth_method", "source"]
 
+[approvals]
+interactive = true
+allow_non_interactive = false
+allow_session_scope = true
+
 [[permissions.rules]]
 tool = "git"
 action = "commit"
@@ -144,6 +158,7 @@ loro configure
 loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 loro setup provider
 loro setup identity
+loro setup approvals
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -152,10 +167,11 @@ loro setup quickstart
 
 `loro configure` and `loro setup provider` configure the AI provider. `loro setup identity`
 configures local or enterprise-provided identity fields and fail-closed requirements. `loro
-setup memory` configures private local memory. `loro setup shared-memory` configures
+setup approvals` configures interactive prompts, non-interactive automation, exact session
+reuse, and expiration. `loro setup memory` configures private local memory. `loro setup shared-memory` configures
 explicit-only shared enterprise memory with either Postgres or Iceberg. `loro setup polaris`
 configures governed data discovery through the Polaris CLI. `loro setup quickstart` runs all
-five in sequence.
+six in sequence.
 
 All setup commands preserve existing sections in the target config file. They write local
 settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain
@@ -163,6 +179,8 @@ in environment variables.
 
 See [Identity Context](identity.md) for identity precedence, supported environment variables,
 managed requirements, propagation, and current trust limitations.
+See [Approvals](approvals.md) for record binding, replay protection, prompt behavior, and the
+recommended managed policy that disables non-interactive approvals.
 
 ## Shared Memory Backend Checks
 

@@ -85,13 +85,14 @@ Additional setup wizards configure the rest of the local quick-start surface:
 
 ```bash
 loro setup identity
+loro setup approvals
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
 ```
 
-`loro setup quickstart` runs provider, identity, local memory, shared memory, and Polaris setup in
+`loro setup quickstart` runs provider, identity, approvals, local memory, shared memory, and Polaris setup in
 sequence. Use `mock`, disable shared memory, and disable Polaris for a completely local
 no-key/no-service first run.
 
@@ -132,8 +133,10 @@ loro run 'Read the README.
 @tool {"name": "file.read", "args": {"path": "README.md", "limit": 4000}}'
 ```
 
-Write-like runtime actions are permission-gated. When policy is `ask`, tool calls must include
-`"approved": true`, and `deny` always blocks execution.
+Write-like runtime actions are permission-gated. When policy is `ask`, Loro shows the action,
+target, arguments, policy reason, risk, and identity before the user chooses once, session, or
+deny. Model-provided approval arguments are never trusted, and `deny` always blocks execution.
+See [Approvals](approvals.md) for managed and non-interactive modes.
 
 ## Use Memory
 

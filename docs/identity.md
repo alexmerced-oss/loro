@@ -119,7 +119,7 @@ untrusted users from replacing that launch context. Loro does not currently vali
 signatures, perform device flow, fetch directory groups, or cryptographically bind identity to
 managed policy.
 
-Identity supplies attribution and safe defaults; it is not yet an authorization decision. An
-explicit CLI tenant argument can still select another tenant, and current approval flags are not
-bound to identity. The next approval and normalized-resource batches will bind identity to exact
-actions, tenant scopes, policy versions, sessions, and expiration.
+Identity supplies attribution and safe defaults; it is not by itself an authorization decision.
+Approval records now bind exact canonical arguments to subject, tenant, identity session, policy
+decision, and expiration. An explicit CLI tenant argument can still select another tenant, and
+policy-version/resource normalization remains Batch 4 work.

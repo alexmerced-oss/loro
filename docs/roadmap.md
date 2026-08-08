@@ -70,8 +70,9 @@ Acceptance criteria:
 Status: core loop complete. Runtime has file read/search, local memory search,
 permission-gated shell execution, read-only Polaris passthrough, artifact generation, approved
 file write/replace, and Git status/diff/show/add/commit helpers. Interactive TUI approval
-prompts remain in Enterprise Hardening; current runtime approvals are explicit tool arguments
-plus policy evaluation.
+prompts and identity-bound approval records now cover ask-gated actions. Explicit user-authored
+approval arguments remain a managed, non-interactive compatibility path; model-originated
+approval arguments are not trusted.
 
 ### Batch 2: Shared Memory Retrieval And Governance
 
@@ -148,7 +149,7 @@ verification, smoke checks, and packaging steps.
 ## Enterprise Hardening
 
 - Identity and SSO/internal model gateway integration
-- Attributable interactive approval prompts
+- Durable approval storage and signed policy-version binding
 - Enforceable sandbox profiles and data protection
 - Durable audit sinks beyond local JSONL
 - Automated end-to-end integration tests for Postgres, Iceberg, and Polaris
