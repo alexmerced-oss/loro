@@ -7,6 +7,7 @@ from loro.config import (
     LocalMemoryConfig,
     LoroConfig,
     MemoryConfig,
+    PermissionRuleConfig,
     PermissionsConfig,
     PolarisConfig,
     SharedMemoryConfig,
@@ -203,6 +204,52 @@ def test_tool_registry_shell_run_respects_deny() -> None:
     result = ToolRegistry(LoroConfig(permissions=PermissionsConfig(shell="deny"))).execute(call)
     assert result.ok is False
     assert "denied by policy" in result.output
+
+
+def test_tool_registry_shell_structured_rule_blocks_absolute_executable() -> None:
+    call = parse_tool_calls(
+        '@tool shell.run {"args": ["/usr/bin/python3", "-c", "print(123)"], '
+        '"approved": true}'
+    )[0]
+    config = LoroConfig(
+        permissions=PermissionsConfig(
+            shell="allow",
+            rules=[
+                PermissionRuleConfig(
+                    tool="shell",
+                    action="run*",
+                    resource_kind="shell",
+                    resource={"executable_name": "python3"},
+                    decision="deny",
+                )
+            ],
+        )
+    )
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "denied by policy" in result.output
+
+
+def test_tool_registry_rejects_symlink_outside_workspace(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    workspace.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    (workspace / "linked").symlink_to(outside, target_is_directory=True)
+    call = parse_tool_calls(
+        f'@tool file.read {{"path": "{workspace / "linked" / "secret.txt"}"}}'
+    )[0]
+    config = LoroConfig(
+        permissions=PermissionsConfig(workspace_roots=[str(workspace)])
+    )
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "outside configured workspace roots" in result.output
 
 
 def test_tool_registry_git_status(tmp_path) -> None:

@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -43,6 +44,13 @@ from loro.providers import (
     provider_names,
     write_local_model_config,
 )
+from loro.resources import (
+    NormalizedResource,
+    filesystem_resource,
+    memory_resource,
+    resource_from_payload,
+    shell_resource,
+)
 from loro.runtime import AgentRuntime
 from loro.safety import SafetyScanner
 from loro.serialization import jsonable_mapping
@@ -72,6 +80,7 @@ safety_app = typer.Typer(help="Scan content for obvious secrets.")
 providers_app = typer.Typer(help="Inspect and configure AI providers.")
 setup_app = typer.Typer(help="Guided setup wizards for Loro configuration.")
 identity_app = typer.Typer(help="Inspect and validate the active enterprise identity.")
+policy_app = typer.Typer(help="Explain normalized permission decisions.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -86,6 +95,7 @@ app.add_typer(safety_app, name="safety")
 app.add_typer(providers_app, name="providers")
 app.add_typer(setup_app, name="setup")
 app.add_typer(identity_app, name="identity")
+app.add_typer(policy_app, name="policy")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -157,6 +167,7 @@ def _prompt_for_approval(
     console.print(f"Target: {request.target}")
     console.print(f"Arguments: {request.display_arguments()}")
     console.print(f"Policy: {request.policy_decision} ({request.policy_reason})")
+    console.print(f"Policy source: {request.policy_source} @ {request.policy_version}")
     console.print(f"Risk: {request.risk_reason}")
     console.print(
         f"Identity: {request.identity_subject} / {request.identity_tenant} "
@@ -179,9 +190,15 @@ def _authorize_cli_action(
     arguments: dict[str, Any],
     risk_reason: str,
     non_interactive_approved: bool = False,
+    resource: NormalizedResource | None = None,
 ) -> None:
     config = load_config()
-    permission_request = PermissionRequest(tool=tool, action=action, target=target)
+    permission_request = PermissionRequest(
+        tool=tool,
+        action=action,
+        target=target,
+        resource=resource,
+    )
     result = PermissionEngine(config.permissions).evaluate(permission_request)
     if result.decision == "deny":
         raise typer.BadParameter(f"{tool} is denied by policy: {action}")
@@ -193,6 +210,8 @@ def _authorize_cli_action(
         target=target,
         arguments=arguments,
         policy_decision=result.decision,
+        policy_version=result.policy_version,
+        policy_source=result.policy_source,
         policy_reason=result.reason,
         risk_reason=risk_reason,
     )
@@ -316,6 +335,20 @@ def _polaris_client() -> PolarisClient:
         for key in ("catalog", "namespace", "table", "view", "resource", "role", "policy")
         if arguments.get(key) is not None
     ]
+    resource = NormalizedResource(
+        kind="polaris",
+        fields={
+            "operation": action,
+            "catalog": str(arguments.get("catalog") or config.polaris.catalog or ""),
+            "namespace": str(arguments.get("namespace") or ""),
+            "table": str(arguments.get("table") or ""),
+            "resource": str(arguments.get("resource") or ""),
+            "role": str(
+                arguments.get("catalog_role") or arguments.get("principal_role") or ""
+            ),
+            "policy": str(arguments.get("policy") or ""),
+        },
+    )
     _authorize_cli_action(
         tool="governed_data",
         action=action,
@@ -323,6 +356,7 @@ def _polaris_client() -> PolarisClient:
         arguments=arguments,
         risk_reason="Read metadata from the governed Apache Polaris catalog.",
         non_interactive_approved=bool(data_options.get("yes", False)),
+        resource=resource,
     )
     return PolarisClient(config.polaris)
 
@@ -354,6 +388,67 @@ def plan(prompt: Annotated[str, typer.Argument(help="Planning prompt for Loro.")
 def show_config() -> None:
     """Show resolved configuration."""
     console.print_json(load_config().model_dump_json(indent=2))
+
+
+@policy_app.command("explain")
+def policy_explain(
+    request_json: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "JSON request with tool, action, optional target, and optional resource."
+            )
+        ),
+    ],
+) -> None:
+    """Explain the policy decision for a normalized request fixture."""
+    try:
+        fixture = json.loads(request_json)
+    except json.JSONDecodeError as error:
+        raise typer.BadParameter(f"Invalid request JSON: {error.msg}") from error
+    if not isinstance(fixture, dict):
+        raise typer.BadParameter("Policy request fixture must be a JSON object.")
+    tool = fixture.get("tool")
+    action = fixture.get("action")
+    if not isinstance(tool, str) or not tool.strip():
+        raise typer.BadParameter("Policy request requires a non-empty tool.")
+    if not isinstance(action, str) or not action.strip():
+        raise typer.BadParameter("Policy request requires a non-empty action.")
+    resource_payload = fixture.get("resource")
+    resource = None
+    if resource_payload is not None:
+        if not isinstance(resource_payload, dict):
+            raise typer.BadParameter("Policy request resource must be a JSON object.")
+        if isinstance(resource_payload.get("fields"), dict):
+            resource_payload = {
+                "kind": resource_payload.get("kind"),
+                **resource_payload["fields"],
+            }
+        try:
+            resource = resource_from_payload(resource_payload)
+        except PermissionError as error:
+            raise typer.BadParameter(str(error)) from error
+    target = fixture.get("target")
+    if target is not None and not isinstance(target, str):
+        raise typer.BadParameter("Policy request target must be a string.")
+    result = _permissions().evaluate(
+        PermissionRequest(
+            tool=tool.strip(),
+            action=action.strip(),
+            target=target,
+            resource=resource,
+        )
+    )
+    console.print_json(
+        data={
+            "decision": result.decision,
+            "reason": result.reason,
+            "policy_version": result.policy_version,
+            "policy_source": result.policy_source,
+            "matched_rule": result.matched_rule,
+            "normalized_resource": resource.to_payload() if resource else None,
+        }
+    )
 
 
 @app.command()
@@ -994,7 +1089,12 @@ def doctor() -> None:
     if config.model.base_url:
         console.print(f"Base URL: {config.model.base_url}")
     console.print(f"Default permission: {config.permissions.default}")
+    console.print(f"Policy version: {config.permissions.version}")
     console.print(f"Permission rules: {len(config.permissions.rules)}")
+    console.print(
+        "Workspace roots: "
+        + (", ".join(config.permissions.workspace_roots) or "unrestricted local mode")
+    )
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
@@ -1321,6 +1421,13 @@ def memory_commit_draft(
         raise typer.BadParameter(f"Unknown shared memory draft id: {draft_id}")
 
     if execute:
+        resource = memory_resource(
+            operation="commit",
+            tenant=draft.tenant_id,
+            scope_type=draft.scope_type,
+            scope_key=draft.scope_key,
+            backend=config.memory.shared.backend,
+        )
         _authorize_cli_action(
             tool="shared_memory",
             action="commit draft",
@@ -1337,6 +1444,7 @@ def memory_commit_draft(
             },
             risk_reason="Commit user-dictated content to shared enterprise memory.",
             non_interactive_approved=yes,
+            resource=resource,
         )
 
     try:
@@ -1852,8 +1960,20 @@ def file_read(
     limit: Annotated[int, typer.Option("--limit", help="Maximum characters to print.")] = 20000,
 ) -> None:
     """Read a text file."""
+    config = load_config()
+    resource = filesystem_resource(
+        path,
+        operation="read",
+        workspace_roots=config.permissions.workspace_roots,
+    )
+    path = Path(str(resource.fields["path"]))
     _permissions().require_allowed(
-        PermissionRequest(tool="edit", action="read file", target=str(path)),
+        PermissionRequest(
+            tool="edit",
+            action="read file",
+            target=str(path),
+            resource=resource,
+        ),
         approved=True,
     )
     text = FileTools().read_text(path, limit=limit)
@@ -1868,8 +1988,20 @@ def file_search(
     limit: Annotated[int, typer.Option("--limit", help="Maximum matches to print.")] = 50,
 ) -> None:
     """Search local text files."""
+    config = load_config()
+    resource = filesystem_resource(
+        root,
+        operation="search",
+        workspace_roots=config.permissions.workspace_roots,
+    )
+    root = Path(str(resource.fields["path"]))
     _permissions().require_allowed(
-        PermissionRequest(tool="edit", action="search files", target=str(root)),
+        PermissionRequest(
+            tool="edit",
+            action="search files",
+            target=str(root),
+            resource=resource,
+        ),
         approved=True,
     )
     matches = FileTools().search(root=root, query=query, limit=limit)
@@ -1893,6 +2025,7 @@ def shell_run(
     """Run a shell command without invoking a shell interpreter."""
     if not args:
         raise typer.BadParameter("Provide a command to execute.")
+    resource = shell_resource(args)
     _authorize_cli_action(
         tool="shell",
         action="run command",
@@ -1900,6 +2033,7 @@ def shell_run(
         arguments={"args": args, "timeout": timeout},
         risk_reason="Execute a subprocess with the displayed arguments.",
         non_interactive_approved=yes,
+        resource=resource,
     )
     result = ShellTools().run(args, timeout=timeout)
     _audit().write(

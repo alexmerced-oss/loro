@@ -79,10 +79,12 @@ more restrictive but must not override managed values.
 max_steps = 5
 
 [permissions]
+version = "replace-with-managed-policy-version"
 default = "deny"
 shell = "ask"
 edit = "ask"
 web = "deny"
+workspace_roots = ["/work/repos", "/work/documents"]
 
 [memory.shared]
 enabled = true
@@ -105,8 +107,9 @@ enabled = true
 block_on_findings = true
 ```
 
-This is a directional baseline, not a ready-to-deploy policy. Identity requirements, normalized
-resource rules, sandbox profiles, and external audit settings will be added by later batches.
+This is a directional baseline, not a ready-to-deploy policy. Add deployment-specific
+normalized resource rules; sandbox profiles, signed policy distribution, and external audit
+settings remain later batches.
 
 ## Network And Credential Boundaries
 

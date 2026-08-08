@@ -18,7 +18,7 @@
 - Polaris typed catalog, namespace, table, and view commands
 - Polaris typed role, privilege, policy, and applicable-policy commands
 - Explicit typed runtime tool loop for file read/search
-- Glob-based permission policy rules
+- Legacy glob and structured normalized-resource permission policy rules
 - Bounded model-directed runtime loop with provider-neutral JSON tool directives
 - Runtime tools for shell execution, local memory search, and read-only Polaris passthrough
 - Runtime artifact generation tool with provenance sidecars
@@ -149,7 +149,7 @@ verification, smoke checks, and packaging steps.
 ## Enterprise Hardening
 
 - Identity and SSO/internal model gateway integration
-- Durable approval storage and signed policy-version binding
+- Durable approval storage and signed policy artifacts (configured versions are already bound)
 - Enforceable sandbox profiles and data protection
 - Durable audit sinks beyond local JSONL
 - Automated end-to-end integration tests for Postgres, Iceberg, and Polaris

@@ -135,6 +135,14 @@ Acceptance criteria:
 - Existing permission tests still pass.
 - Policy explanations show the matched rule, normalized resource, and policy source.
 
+Status: complete for the current tool surface. `loro.resources` normalizes filesystem, shell,
+Git, memory, Polaris, and provider scopes; configured workspace roots reject traversal and
+symlink escape; structured field rules preserve legacy target globs; policy results expose
+version/source/matched rule; approvals bind policy version/source; and `loro policy explain`
+renders request-fixture decisions. Sandbox enforcement, signed policy artifacts, TOCTOU
+containment, and storage-level tenant controls remain later-phase work. See
+[Normalized Resource Policy](policy.md).
+
 ## Batch 5: Versioned Audit Schema And External Sink Interface
 
 Goal: make audit evidence durable and ready for enterprise operations.

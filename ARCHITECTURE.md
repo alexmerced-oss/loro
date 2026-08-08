@@ -33,6 +33,7 @@ flowchart LR
 - `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
 - `loro.approvals`: identity-bound approval requests/records, expiration, and replay protection.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
+- `loro.resources`: canonical resource scopes for paths, commands, Git, memory, Polaris, and providers.
 - `loro.provider_profiles`: built-in AI provider profile registry.
 - `loro.providers`: provider lookup, validation, and local configuration writer.
 - `loro.tools`: local file, shell, and Git tools, with more tools expected behind typed interfaces.
@@ -111,8 +112,9 @@ The permission engine evaluates requests as:
 - `ask`: tool requires a trusted interactive or policy-enabled non-interactive approval record.
 - `deny`: tool is blocked.
 
-Ordered permission rules can override per-tool defaults with case-insensitive glob matches
-on tool, action, and target. The first matching rule wins.
+Ordered permission rules can override per-tool defaults with legacy glob matches on tool,
+action, and target or structured matches on normalized resource kind and fields. The first
+matching rule wins. Results identify the policy version, source, matched rule, and resource.
 
 Current examples:
 
@@ -122,9 +124,11 @@ Current examples:
 - Runtime file writes, Git mutations, and shell execution require explicit approval unless
   policy sets the relevant action to `allow`.
 
-Approval requests bind canonical arguments, identity, session, target, decision, and expiration.
-One-time approvals are consumed once; exact session approvals can be reused until expiry. Future
-work should add richer normalized resource matchers and policy-version binding.
+Approval requests bind canonical arguments, identity, session, normalized target, decision,
+policy version/source, and expiration. One-time approvals are consumed once; exact session
+approvals can be reused until expiry. Filesystem roots resolve symlinks and traversal before
+policy or approval, while shell policy receives invoked and resolved executable fields plus the
+exact argument array. See [Normalized Resource Policy](docs/policy.md).
 
 ## AI Providers
 

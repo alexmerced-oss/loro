@@ -17,6 +17,13 @@ from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient
+from loro.resources import (
+    filesystem_resource,
+    git_resource,
+    memory_resource,
+    polaris_resource,
+    shell_resource,
+)
 from loro.safety import SafetyScanner
 from loro.tools.files import FileTools
 from loro.tools.git import GitTools
@@ -93,10 +100,20 @@ class ToolRegistry:
             return ToolExecution(call=call, ok=False, output=str(error))
 
     def _read_file(self, call: ToolCall) -> ToolExecution:
-        path = Path(str(call.args["path"]))
+        resource = filesystem_resource(
+            str(call.args["path"]),
+            operation="read",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        path = Path(str(resource.fields["path"]))
         limit = int(call.args.get("limit", 20000))
         self.permissions.require_allowed(
-            PermissionRequest(tool="edit", action="read file", target=str(path)),
+            PermissionRequest(
+                tool="edit",
+                action="read file",
+                target=str(path),
+                resource=resource,
+            ),
             approved=True,
         )
         return ToolExecution(
@@ -107,10 +124,20 @@ class ToolRegistry:
 
     def _search_files(self, call: ToolCall) -> ToolExecution:
         query = str(call.args["query"])
-        root = Path(str(call.args.get("root", ".")))
+        resource = filesystem_resource(
+            str(call.args.get("root", ".")),
+            operation="search",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        root = Path(str(resource.fields["path"]))
         limit = int(call.args.get("limit", 50))
         self.permissions.require_allowed(
-            PermissionRequest(tool="edit", action="search files", target=str(root)),
+            PermissionRequest(
+                tool="edit",
+                action="search files",
+                target=str(root),
+                resource=resource,
+            ),
             approved=True,
         )
         matches = self.files.search(root=root, query=query, limit=limit)
@@ -120,14 +147,24 @@ class ToolRegistry:
         return ToolExecution(call=call, ok=True, output=output or "No matches.")
 
     def _write_file(self, call: ToolCall) -> ToolExecution:
-        path = Path(str(call.args["path"]))
+        resource = filesystem_resource(
+            str(call.args["path"]),
+            operation="write",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        path = Path(str(resource.fields["path"]))
         content = str(call.args["content"])
         append = bool(call.args.get("append", False))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
         self._authorize(
             call,
-            PermissionRequest(tool="edit", action="write file", target=str(path)),
-            approval_target=str(path.expanduser().resolve(strict=False)),
+            PermissionRequest(
+                tool="edit",
+                action="write file",
+                target=str(path),
+                resource=resource,
+            ),
+            approval_target=resource.target,
             risk_reason="Write or append content to a filesystem path.",
         )
         self._assert_safe_write(content, allow_sensitive=allow_sensitive)
@@ -136,15 +173,25 @@ class ToolRegistry:
         return ToolExecution(call=call, ok=True, output=f"{action}: {written}")
 
     def _replace_file(self, call: ToolCall) -> ToolExecution:
-        path = Path(str(call.args["path"]))
+        resource = filesystem_resource(
+            str(call.args["path"]),
+            operation="replace",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        path = Path(str(resource.fields["path"]))
         old = str(call.args["old"])
         new = str(call.args["new"])
         count = int(call.args.get("count", -1))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
         self._authorize(
             call,
-            PermissionRequest(tool="edit", action="replace file", target=str(path)),
-            approval_target=str(path.expanduser().resolve(strict=False)),
+            PermissionRequest(
+                tool="edit",
+                action="replace file",
+                target=str(path),
+                resource=resource,
+            ),
+            approval_target=resource.target,
             risk_reason="Replace existing content in a filesystem path.",
         )
         self._assert_safe_write(new, allow_sensitive=allow_sensitive)
@@ -160,10 +207,16 @@ class ToolRegistry:
         ):
             raise ValueError("shell.run requires args as a list of strings.")
         timeout = int(call.args.get("timeout", 120))
+        resource = shell_resource(args)
         self._authorize(
             call,
-            PermissionRequest(tool="shell", action="run command", target=" ".join(args)),
-            approval_target=args[0],
+            PermissionRequest(
+                tool="shell",
+                action="run command",
+                target=" ".join(args),
+                resource=resource,
+            ),
+            approval_target=resource.target,
             risk_reason="Execute a subprocess with the displayed arguments.",
         )
         result = self.shell.run(args, timeout=timeout)
@@ -179,39 +232,85 @@ class ToolRegistry:
         timeout = int(call.args.get("timeout", 120))
         action = call.name.removeprefix("git.")
         if action == "status":
+            resource = git_resource(
+                operation=action,
+                cwd=cwd,
+                workspace_roots=self.config.permissions.workspace_roots,
+            )
+            cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(tool="git", action="status", target=str(cwd)),
+                PermissionRequest(
+                    tool="git", action="status", target=str(cwd), resource=resource
+                ),
                 approved=True,
             )
             result = self.git.status(cwd=cwd, timeout=timeout)
         elif action == "diff":
+            resource = git_resource(
+                operation=action,
+                cwd=cwd,
+                workspace_roots=self.config.permissions.workspace_roots,
+            )
+            cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(tool="git", action="diff", target=str(cwd)),
+                PermissionRequest(
+                    tool="git", action="diff", target=str(cwd), resource=resource
+                ),
                 approved=True,
             )
             result = self.git.diff(cwd=cwd, timeout=timeout)
         elif action == "show":
             revision = str(call.args.get("revision", "HEAD"))
+            resource = git_resource(
+                operation=action,
+                cwd=cwd,
+                workspace_roots=self.config.permissions.workspace_roots,
+                revision=revision,
+            )
+            cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(tool="git", action="show", target=revision),
+                PermissionRequest(
+                    tool="git", action="show", target=revision, resource=resource
+                ),
                 approved=True,
             )
             result = self.git.show(revision, cwd=cwd, timeout=timeout)
         elif action == "add":
             paths = _string_list(call.args.get("paths"), "git.add requires paths.")
+            resource = git_resource(
+                operation=action,
+                cwd=cwd,
+                workspace_roots=self.config.permissions.workspace_roots,
+                paths=paths,
+            )
+            cwd = Path(str(resource.fields["repository"]))
             self._authorize(
                 call,
-                PermissionRequest(tool="git", action="add", target=" ".join(paths)),
-                approval_target=str(cwd.expanduser().resolve(strict=False)),
+                PermissionRequest(
+                    tool="git",
+                    action="add",
+                    target=" ".join(paths),
+                    resource=resource,
+                ),
+                approval_target=resource.target,
                 risk_reason="Stage repository paths for a future commit.",
             )
             result = self.git.add(paths, cwd=cwd, timeout=timeout)
         elif action == "commit":
             message = str(call.args["message"])
+            resource = git_resource(
+                operation=action,
+                cwd=cwd,
+                workspace_roots=self.config.permissions.workspace_roots,
+                message=message,
+            )
+            cwd = Path(str(resource.fields["repository"]))
             self._authorize(
                 call,
-                PermissionRequest(tool="git", action="commit", target=message),
-                approval_target=str(cwd.expanduser().resolve(strict=False)),
+                PermissionRequest(
+                    tool="git", action="commit", target=message, resource=resource
+                ),
+                approval_target=resource.target,
                 risk_reason="Create a Git commit in the target repository.",
             )
             result = self.git.commit(message, cwd=cwd, timeout=timeout)
@@ -277,6 +376,20 @@ class ToolRegistry:
         execute = bool(call.args.get("execute", True))
         if not self.config.memory.shared.enabled:
             return ToolExecution(call=call, ok=False, output="Shared memory is disabled.")
+        resource = memory_resource(
+            operation="search",
+            tenant=tenant_id,
+            backend=self.config.memory.shared.backend,
+        )
+        self.permissions.require_allowed(
+            PermissionRequest(
+                tool="shared_memory",
+                action="search",
+                target=tenant_id,
+                resource=resource,
+            ),
+            approved=True,
+        )
         result = search_shared_memories(
             self.config,
             query=query,
@@ -308,14 +421,16 @@ class ToolRegistry:
         args = call.args.get("args")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise ValueError("polaris.readonly requires args as a list of strings.")
+        resource = polaris_resource(args, default_catalog=self.config.polaris.catalog)
         self._authorize(
             call,
             PermissionRequest(
                 tool="governed_data",
                 action="read governed metadata",
                 target=" ".join(args),
+                resource=resource,
             ),
-            approval_target=" ".join(args),
+            approval_target=resource.target,
             risk_reason="Read metadata from the governed enterprise catalog.",
         )
         result = PolarisClient(self.config.polaris).run_readonly(args)
@@ -355,6 +470,8 @@ class ToolRegistry:
             target=approval_target,
             arguments=call.args,
             policy_decision=result.decision,
+            policy_version=result.policy_version,
+            policy_source=result.policy_source,
             policy_reason=result.reason,
             risk_reason=risk_reason,
         )

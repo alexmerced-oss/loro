@@ -15,7 +15,8 @@ When an ask-gated action is requested, Loro displays:
 - Active identity, tenant, and session.
 
 The user chooses `once`, `session`, or `deny`. A session approval can be reused only for the
-same identity session, action, target, canonical arguments, and policy decision. Changed content,
+same identity session, action, target, canonical arguments, policy decision, policy source, and
+policy version. Changed content,
 paths, command arguments, Git messages, tenants, or other arguments create a different request
 and require another approval.
 
@@ -109,7 +110,7 @@ non-interactive or session path.
 
 Loro emits `approval.requested`, `approval.granted`, `approval.denied`, `approval.expired`, and
 `approval.used`. Events include identity attribution, action, target, argument digest, policy
-decision/reason, record scope/method/status, and timestamps. Raw argument content is not written
+decision/reason/version/source, record scope/method/status, and timestamps. Raw argument content is not written
 to approval audit events.
 
 ## Current Limitations
@@ -118,8 +119,7 @@ to approval audit events.
   storage is not implemented.
 - Session reuse is useful inside one agent runtime. Separate CLI invocations create separate
   sessions and do not share grants.
-- Targets are resolved for approval display, and arguments are canonicalized, but the complete
-  symlink-safe/resource-type normalization layer is Batch 4 work.
-- Records bind the policy decision but not yet a signed/versioned policy artifact.
+- Targets use typed normalized resources. Configured policy versions are fingerprint-bound, but
+  policy artifacts are not yet signed or integrity-verified.
 - Corporate identity assertion verification remains separate work; approval strength depends on
   the trustworthiness of the active identity context.

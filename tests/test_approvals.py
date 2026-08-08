@@ -34,6 +34,16 @@ def test_changed_arguments_invalidate_approval() -> None:
         manager.consume(changed, record.approval_id)
 
 
+def test_changed_policy_version_invalidates_approval() -> None:
+    manager = ApprovalManager(ApprovalsConfig(), _identity())
+    original = _request(manager, content="first", policy_version="policy-v1")
+    changed = _request(manager, content="first", policy_version="policy-v2")
+    record = manager.grant(original)
+
+    with pytest.raises(ApprovalReplayError, match="arguments do not match"):
+        manager.consume(changed, record.approval_id)
+
+
 def test_approval_cannot_cross_identity_session() -> None:
     manager = ApprovalManager(ApprovalsConfig(), _identity(session_id="session-1"))
     request = _request(manager, content="first")
@@ -139,12 +149,19 @@ def test_denial_emits_auditable_event() -> None:
     assert events == ["approval.requested", "approval.denied"]
 
 
-def _request(manager: ApprovalManager, *, content: str):
+def _request(
+    manager: ApprovalManager,
+    *,
+    content: str,
+    policy_version: str = "local-v1",
+):
     return manager.request(
         action="edit.write file",
         target="/workspace/note.txt",
         arguments={"path": "/workspace/note.txt", "content": content},
         policy_decision="ask",
+        policy_version=policy_version,
+        policy_source="permissions.edit",
         policy_reason="edit uses configured policy",
         risk_reason="Write a file.",
     )

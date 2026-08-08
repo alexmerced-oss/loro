@@ -10,6 +10,8 @@ from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.model_tools import ModelToolCall
 from loro.models import ModelMessage, ModelProviderError, create_model_client
+from loro.permissions import PermissionEngine, PermissionRequest
+from loro.resources import memory_resource, provider_resource
 from loro.sessions import SessionRecord, SessionStore
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
 
@@ -82,6 +84,29 @@ class AgentRuntime:
                 ),
             )
         ]
+        provider_scope = provider_resource(
+            operation="complete",
+            provider=self.config.model.provider,
+            model=self.config.model.model,
+            base_url=self.config.model.base_url,
+        )
+        provider_policy = PermissionEngine(self.config.permissions).require_allowed(
+            PermissionRequest(
+                tool="provider",
+                action="complete",
+                target=f"{self.config.model.provider}/{self.config.model.model}",
+                resource=provider_scope,
+            ),
+            approved=True,
+        )
+        self.audit.write(
+            "policy.evaluated",
+            action="provider.complete",
+            target=provider_scope.target,
+            decision=provider_policy.decision,
+            policy_version=provider_policy.policy_version,
+            policy_source=provider_policy.policy_source,
+        )
         client = create_model_client(self.config.model)
         model_response_content = ""
         stop_reason = "completed"
@@ -177,6 +202,28 @@ class AgentRuntime:
     def _recall_shared_memories(self, prompt: str) -> list[SharedMemorySearchRecord]:
         if not self.config.memory.shared.enabled:
             return []
+        memory_scope = memory_resource(
+            operation="search",
+            tenant=self.identity.tenant,
+            backend=self.config.memory.shared.backend,
+        )
+        memory_policy = PermissionEngine(self.config.permissions).require_allowed(
+            PermissionRequest(
+                tool="shared_memory",
+                action="search",
+                target=self.identity.tenant,
+                resource=memory_scope,
+            ),
+            approved=True,
+        )
+        self.audit.write(
+            "policy.evaluated",
+            action="shared_memory.search",
+            target=memory_scope.target,
+            decision=memory_policy.decision,
+            policy_version=memory_policy.policy_version,
+            policy_source=memory_policy.policy_source,
+        )
         result = search_shared_memories(
             self.config,
             query=prompt,

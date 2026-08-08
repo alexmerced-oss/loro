@@ -39,12 +39,14 @@ once_ttl_seconds = 300
 session_ttl_seconds = 900
 
 [permissions]
+version = "local-v1"
 default = "ask"
 shell = "ask"
 edit = "ask"
 shared_memory = "ask"
 governed_data = "allow"
 web = "deny"
+workspace_roots = []
 
 [[permissions.rules]]
 tool = "edit"
@@ -144,10 +146,29 @@ TOML is applied last.
 
 ## Permission Rules
 
-Rules are evaluated before the per-tool defaults. They use simple case-insensitive glob
-matching over `tool`, `action`, and `target`; the first matching rule wins.
+Rules are evaluated before the per-tool defaults. Legacy rules use simple case-insensitive glob
+matching over `tool`, `action`, and `target`. Structured rules additionally match
+`resource_kind` and every field under `permissions.rules.resource`; the first matching rule
+wins. Filesystem path fields are case-sensitive on POSIX.
 
-Common tool names today are `edit`, `git`, `shell`, and `web`.
+```toml
+[permissions]
+version = "enterprise-42"
+workspace_roots = ["/work/repos"]
+
+[[permissions.rules]]
+tool = "shell"
+action = "run*"
+resource_kind = "shell"
+decision = "deny"
+
+[permissions.rules.resource]
+resolved_executable_name = "python*"
+```
+
+Common tool names today are `edit`, `git`, `shell`, `shared_memory`, `governed_data`,
+`provider`, and `web`. See [Normalized Resource Policy](policy.md) for fields, workspace-root
+behavior, policy explanation, and security boundaries.
 
 ## Setup Wizards
 

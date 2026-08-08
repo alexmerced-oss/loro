@@ -12,6 +12,47 @@ def test_version() -> None:
     assert "loro" in result.stdout
 
 
+def test_policy_explain_reports_structured_match(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        """
+        [permissions]
+        version = "enterprise-42"
+        shell = "allow"
+
+        [[permissions.rules]]
+        tool = "shell"
+        action = "run*"
+        resource_kind = "shell"
+        decision = "deny"
+        reason = "interpreters require a sandbox"
+
+        [permissions.rules.resource]
+        executable_name = "python"
+        """,
+    )
+    fixture = json.dumps(
+        {
+            "tool": "shell",
+            "action": "run command",
+            "resource": {
+                "kind": "shell",
+                "executable_name": "python",
+                "arguments": ["-V"],
+            },
+        }
+    )
+
+    result = CliRunner().invoke(app, ["policy", "explain", fixture])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["decision"] == "deny"
+    assert payload["policy_version"] == "enterprise-42"
+    assert payload["policy_source"] == "permissions.rules[0]"
+    assert payload["normalized_resource"]["executable_name"] == "python"
+
+
 def test_plan_scaffold() -> None:
     result = CliRunner().invoke(app, ["plan", "Draft a rollout plan"])
     assert result.exit_code == 0

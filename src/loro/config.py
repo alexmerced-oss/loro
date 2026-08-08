@@ -56,12 +56,14 @@ class IdentityConfig(BaseModel):
 
 
 class PermissionsConfig(BaseModel):
+    version: str = "local-v1"
     default: PermissionDecision = "ask"
     shell: PermissionDecision = "ask"
     edit: PermissionDecision = "ask"
     shared_memory: PermissionDecision = "ask"
     governed_data: PermissionDecision = "allow"
     web: PermissionDecision = "deny"
+    workspace_roots: list[str] = Field(default_factory=list)
     rules: list["PermissionRuleConfig"] = Field(default_factory=list)
 
 
@@ -77,6 +79,8 @@ class PermissionRuleConfig(BaseModel):
     tool: str = "*"
     action: str = "*"
     target: str = "*"
+    resource_kind: str = "*"
+    resource: dict[str, str] = Field(default_factory=dict)
     decision: PermissionDecision
     reason: str | None = None
 

@@ -1,8 +1,10 @@
+import json
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
-from typing import Literal
+from typing import Any, Literal
 
 from loro.config import PermissionsConfig
+from loro.resources import NormalizedResource
 
 Decision = Literal["allow", "ask", "deny"]
 
@@ -12,12 +14,17 @@ class PermissionRequest:
     tool: str
     action: str
     target: str | None = None
+    resource: NormalizedResource | None = None
 
 
 @dataclass(frozen=True)
 class PermissionResult:
     decision: Decision
     reason: str
+    policy_version: str
+    policy_source: str
+    matched_rule: int | None
+    normalized_resource: NormalizedResource | None
 
 
 class PermissionEngine:
@@ -25,14 +32,32 @@ class PermissionEngine:
         self.config = config
 
     def evaluate(self, request: PermissionRequest) -> PermissionResult:
-        for rule in self.config.rules:
+        target = request.target or (request.resource.target if request.resource is not None else "")
+        for index, rule in enumerate(self.config.rules):
             if _matches(rule.tool, request.tool) and _matches(rule.action, request.action):
-                target = request.target or ""
-                if _matches(rule.target, target):
+                if _matches(rule.target, target) and _matches_resource(
+                    rule.resource_kind,
+                    rule.resource,
+                    request.resource,
+                ):
                     reason = rule.reason or "matched configured permission rule"
-                    return PermissionResult(decision=rule.decision, reason=reason)
+                    return PermissionResult(
+                        decision=rule.decision,
+                        reason=reason,
+                        policy_version=self.config.version,
+                        policy_source=f"permissions.rules[{index}]",
+                        matched_rule=index,
+                        normalized_resource=request.resource,
+                    )
         decision = getattr(self.config, request.tool, self.config.default)
-        return PermissionResult(decision=decision, reason=f"{request.tool} uses configured policy")
+        return PermissionResult(
+            decision=decision,
+            reason=f"{request.tool} uses configured policy",
+            policy_version=self.config.version,
+            policy_source=f"permissions.{request.tool}",
+            matched_rule=None,
+            normalized_resource=request.resource,
+        )
 
     def require_allowed(
         self,
@@ -51,3 +76,39 @@ class PermissionEngine:
 
 def _matches(pattern: str, value: str) -> bool:
     return fnmatchcase(value.casefold(), pattern.casefold())
+
+
+def _matches_resource(
+    kind_pattern: str,
+    field_patterns: dict[str, str],
+    resource: NormalizedResource | None,
+) -> bool:
+    if kind_pattern != "*" or field_patterns:
+        if resource is None or not _matches(kind_pattern, resource.kind):
+            return False
+    if resource is None:
+        return True
+    for field, pattern in field_patterns.items():
+        if field not in resource.fields:
+            return False
+        value = _field_value(resource.fields[field])
+        if not _resource_field_matches(resource.kind, field, pattern, value):
+            return False
+    return True
+
+
+def _field_value(value: Any) -> str:
+    if isinstance(value, list | dict):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return str(value)
+
+
+def _resource_field_matches(kind: str, field: str, pattern: str, value: str) -> bool:
+    if kind in {"filesystem", "git"} and field in {
+        "path",
+        "workspace_root",
+        "repository",
+        "paths",
+    }:
+        return fnmatchcase(value, pattern)
+    return _matches(pattern, value)

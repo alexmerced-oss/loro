@@ -77,6 +77,36 @@ def test_permission_rules_load_from_config_content(monkeypatch) -> None:
     assert config.permissions.rules[0].decision == "allow"
 
 
+def test_structured_permission_rule_and_policy_version_load(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        """
+        [permissions]
+        version = "enterprise-7"
+        workspace_roots = ["/workspace"]
+
+        [[permissions.rules]]
+        tool = "governed_data"
+        action = "tables"
+        resource_kind = "polaris"
+        decision = "allow"
+
+        [permissions.rules.resource]
+        catalog = "prod"
+        namespace = "analytics"
+        """,
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.permissions.version == "enterprise-7"
+    assert config.permissions.workspace_roots == ["/workspace"]
+    assert config.permissions.rules[0].resource == {
+        "catalog": "prod",
+        "namespace": "analytics",
+    }
+
+
 def test_managed_identity_required_fields_cannot_be_removed(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",

@@ -109,6 +109,17 @@ Interactive prompts support once, exact-match session, and deny. Non-interactive
 audited but should be disabled in enterprise managed configuration. See
 [Approvals](approvals.md).
 
+## Policy Explanation
+
+Explain a normalized request without executing it:
+
+```bash
+loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"shell","executable_name":"python","arguments":["-V"]}}'
+```
+
+Output identifies the decision, reason, configured policy version, policy source, matched rule,
+and normalized resource. See [Normalized Resource Policy](policy.md).
+
 ## Memory
 
 ```bash

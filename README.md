@@ -64,6 +64,7 @@ loro setup quickstart
 - Identity context from config/environment with managed required fields and audit/session propagation.
 - Identity-bound approval records with interactive once/session/deny prompts and replay protection.
 - Permission decision primitives.
+- Normalized filesystem, shell, Git, memory, Polaris, and provider policy resources.
 - Local and shared memory interfaces.
 - Postgres and Iceberg shared memory adapters with explicit-only shared write flows.
 - PyIceberg execution support for governed Iceberg shared-memory search and draft commits.
@@ -116,6 +117,7 @@ loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
+loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"shell","executable_name":"python"}}'
 ```
 
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain

@@ -38,6 +38,8 @@ class ApprovalRequest:
     identity_tenant: str
     identity_session_id: str
     policy_decision: str
+    policy_version: str
+    policy_source: str
     policy_reason: str
     risk_reason: str
     request_id: str = field(default_factory=lambda: str(uuid4()))
@@ -57,6 +59,8 @@ class ApprovalRequest:
             "identity_tenant": self.identity_tenant,
             "identity_session_id": self.identity_session_id,
             "policy_decision": self.policy_decision,
+            "policy_version": self.policy_version,
+            "policy_source": self.policy_source,
         }
         return hashlib.sha256(_canonical_json(bound).encode("utf-8")).hexdigest()
 
@@ -71,6 +75,8 @@ class ApprovalRequest:
             "identity_tenant": self.identity_tenant,
             "identity_session_id": self.identity_session_id,
             "policy_decision": self.policy_decision,
+            "policy_version": self.policy_version,
+            "policy_source": self.policy_source,
             "policy_reason": self.policy_reason,
             "risk_reason": self.risk_reason,
         }
@@ -135,6 +141,8 @@ class ApprovalManager:
         target: str,
         arguments: Mapping[str, Any],
         policy_decision: str,
+        policy_version: str = "local-v1",
+        policy_source: str = "unknown",
         policy_reason: str,
         risk_reason: str,
     ) -> ApprovalRequest:
@@ -150,6 +158,8 @@ class ApprovalManager:
             identity_tenant=self.identity.tenant,
             identity_session_id=self.identity.session_id,
             policy_decision=policy_decision,
+            policy_version=policy_version,
+            policy_source=policy_source,
             policy_reason=policy_reason,
             risk_reason=risk_reason,
         )
