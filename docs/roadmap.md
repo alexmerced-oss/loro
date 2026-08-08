@@ -46,6 +46,8 @@
 - Interactive approval prompts for write, shell, Git mutation, and governed data actions
 
 Managed, non-overridable enterprise configuration overlays are implemented and documented.
+Typed identity context, environment/config resolution, managed required fields, diagnostics,
+audit/session propagation, and shared-memory defaults are also implemented and documented.
 The remaining hardening program is tracked in the
 [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md).
 

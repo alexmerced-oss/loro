@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from loro.config import load_config
+from loro.identity import IdentityConfigurationError, resolve_identity
 
 
 def test_load_project_config() -> None:
@@ -72,3 +75,20 @@ def test_permission_rules_load_from_config_content(monkeypatch) -> None:
     assert len(config.permissions.rules) == 1
     assert config.permissions.rules[0].tool == "edit"
     assert config.permissions.rules[0].decision == "allow"
+
+
+def test_managed_identity_required_fields_cannot_be_removed(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[identity]\nrequired_fields = []\nsubject = "project-user"\n',
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        '[identity]\nrequired_fields = ["organization"]\n',
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.identity.required_fields == ["organization"]
+    with pytest.raises(IdentityConfigurationError, match="organization"):
+        resolve_identity(config.identity, environ={})

@@ -10,7 +10,9 @@ def test_session_store_roundtrip(tmp_path) -> None:
             mode="plan",
             summary="A plan",
             recalled_memories=["Use concise bullets"],
+            identity={"subject": "user-123", "tenant": "acme"},
         )
     )
     assert store.get(record.session_id)["prompt"] == "Draft a plan"
+    assert store.get(record.session_id)["identity"]["subject"] == "user-123"
     assert store.list()[0]["session_id"] == record.session_id

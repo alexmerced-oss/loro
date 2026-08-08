@@ -18,6 +18,7 @@ class SessionRecord:
     recalled_memories: list[str] = field(default_factory=list)
     recalled_shared_memories: list[dict[str, str]] = field(default_factory=list)
     tool_executions: list[dict[str, Any]] = field(default_factory=list)
+    identity: dict[str, Any] = field(default_factory=dict)
     stop_reason: str = "completed"
     session_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -32,6 +33,7 @@ class SessionRecord:
             "recalled_memories": self.recalled_memories,
             "recalled_shared_memories": self.recalled_shared_memories,
             "tool_executions": self.tool_executions,
+            "identity": self.identity,
             "stop_reason": self.stop_reason,
         }
 

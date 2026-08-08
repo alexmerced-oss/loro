@@ -7,6 +7,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data access, 
 ```mermaid
 flowchart LR
   User["Enterprise user"] --> CLI["Loro CLI / TUI"]
+  Identity["Managed identity assertion"] --> CLI
   CLI --> Runtime["Agent runtime"]
   Runtime --> Models["Model provider adapters"]
   Runtime --> Tools["Typed tool registry"]
@@ -29,6 +30,7 @@ flowchart LR
 - `loro.cli`: Typer command surface and command-specific orchestration.
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.config`: layered configuration model and environment overrides.
+- `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
 - `loro.provider_profiles`: built-in AI provider profile registry.
 - `loro.providers`: provider lookup, validation, and local configuration writer.
@@ -45,19 +47,22 @@ flowchart LR
 
 1. The CLI resolves config from system, user, project, local, `LORO_CONFIG`, and
    `LORO_CONFIG_CONTENT`, then applies managed enterprise overlays last.
-2. The runtime loads local memory and, when enabled, searches shared enterprise memory for
+2. Loro resolves identity from configuration/environment, validates managed required fields,
+   and fails before runtime construction when they are missing.
+3. The runtime loads local memory and, when enabled, searches the identity tenant's shared memory for
    relevant cited records.
-3. The runtime emits `runtime.task_started`.
-4. Explicit prompt tool directives are executed before the first model call.
-5. The runtime calls the configured model and parses provider-neutral tool directives from
+4. The runtime emits `runtime.task_started` with identity attribution.
+5. Explicit prompt tool directives are executed before the first model call.
+6. The runtime calls the configured model and parses provider-neutral tool directives from
    the response.
-6. Approved tool calls are executed, audited, and sent back to the model as structured text.
-7. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
+7. Approved tool calls are executed, audited, and sent back to the model as structured text.
+8. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
    is reached.
-8. The runtime creates a session summary, including tool execution payloads and stop reason,
+9. The runtime creates a session summary, including identity, tool execution payloads, and stop reason,
    and persists it to the configured session store.
-9. The runtime emits `runtime.task_completed`.
-10. Artifact and tool commands emit their own audit events with previews and metadata, not full sensitive payloads.
+10. The runtime emits `runtime.task_completed`.
+11. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
+    not full sensitive payloads.
 
 The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
@@ -81,7 +86,19 @@ Loro config is loaded in increasing precedence:
 
 Managed overlays use the same TOML schema as normal config but are re-applied after runtime
 overrides, making them suitable for enterprise permission denies, audit defaults, shared
-memory policy, and governed data configuration.
+memory policy, required identity fields, and governed data configuration.
+
+## Identity
+
+`IdentityContext` carries subject, display name, organization, tenant, groups, roles,
+authentication method, session identifier, and source. Resolved configuration fields override
+`LORO_IDENTITY_*` environment assertions; missing values fall back to the local user and default
+tenant. Managed `required_fields` make runtime and audited commands fail closed.
+
+Audit events and session records include the non-secret identity payload. Runtime shared-memory
+recall uses the identity tenant, and shared-memory CLI operations use identity tenant/subject as
+defaults. This foundation does not authenticate environment assertions or authorize caller-
+supplied tenant overrides; those controls belong to the approval and resource-scope layers.
 
 ## Permissions
 

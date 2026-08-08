@@ -1,3 +1,4 @@
+import json
 from subprocess import CompletedProcess
 
 from typer.testing import CliRunner
@@ -729,3 +730,124 @@ def test_providers_smoke_execute_mock() -> None:
     assert result.exit_code == 0
     assert '"ok": true' in result.stdout
     assert "Mock response for" in result.stdout
+
+
+def test_identity_show_uses_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LORO_IDENTITY_SUBJECT", "user-123")
+    monkeypatch.setenv("LORO_IDENTITY_ORGANIZATION", "acme")
+    monkeypatch.setenv("LORO_IDENTITY_TENANT", "platform")
+    monkeypatch.setenv("LORO_IDENTITY_ROLES", "developer,memory-reader")
+
+    result = CliRunner().invoke(app, ["identity", "show"])
+
+    assert result.exit_code == 0
+    assert '"subject": "user-123"' in result.stdout
+    assert '"tenant": "platform"' in result.stdout
+    assert '"memory-reader"' in result.stdout
+
+
+def test_identity_doctor_reports_missing_required_fields(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[identity]\n"
+        "environment_enabled = false\n"
+        'required_fields = ["organization"]\n',
+    )
+
+    result = CliRunner().invoke(app, ["identity", "doctor"])
+
+    assert result.exit_code == 1
+    assert '"ok": false' in result.stdout
+    assert '"organization"' in result.stdout
+
+
+def test_runtime_fails_closed_when_identity_is_incomplete(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[identity]\n"
+        "environment_enabled = false\n"
+        'required_fields = ["organization"]\n',
+    )
+
+    result = CliRunner().invoke(app, ["plan", "Draft a plan"])
+
+    assert result.exit_code != 0
+    assert "Required identity fields are missing: organization" in result.stderr
+
+
+def test_setup_identity_writes_configuration(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "setup",
+            "identity",
+            "--subject",
+            "user-123",
+            "--organization",
+            "acme",
+            "--tenant",
+            "platform",
+            "--groups",
+            "engineering,data-platform",
+            "--roles",
+            "developer",
+            "--auth-method",
+            "oidc",
+            "--source",
+            "managed-env",
+            "--required-fields",
+            "subject,organization,tenant",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    text = output.read_text(encoding="utf-8")
+    assert '[identity]' in text
+    assert 'subject = "user-123"' in text
+    assert 'organization = "acme"' in text
+    assert 'required_fields = [' in text
+
+
+def test_setup_identity_can_remediate_missing_required_field(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[identity]\n"
+        "environment_enabled = false\n"
+        'required_fields = ["organization"]\n'
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+    )
+    output = tmp_path / "config.local.toml"
+
+    result = CliRunner().invoke(
+        app,
+        ["setup", "identity", "--organization", "acme", "--output", str(output)],
+    )
+
+    assert result.exit_code == 0
+    assert 'organization = "acme"' in output.read_text(encoding="utf-8")
+
+
+def test_shared_memory_defaults_to_active_identity(tmp_path, monkeypatch) -> None:
+    memory_path = tmp_path / "memory"
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f"[memory.local]\npath = \"{memory_path}\"\n"
+        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n"
+        "[identity]\n"
+        'subject = "user-123"\n'
+        'tenant = "platform"\n',
+    )
+
+    result = CliRunner().invoke(app, ["remember", "--shared", "Use approved templates"])
+
+    assert result.exit_code == 0
+    draft = json.loads((memory_path / "shared-memory-drafts.jsonl").read_text(encoding="utf-8"))
+    assert draft["tenant_id"] == "platform"
+    assert draft["created_by"] == "user-123"

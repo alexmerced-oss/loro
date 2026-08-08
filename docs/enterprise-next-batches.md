@@ -77,6 +77,12 @@ Acceptance criteria:
 - Audit events for consequential actions include identity fields where available.
 - Identity is never inferred from prompt text.
 
+Status: foundation complete. `loro.identity` resolves local, configuration, and environment
+identity; managed overlays can enforce required fields; CLI diagnostics and setup are available;
+and audit, runtime, session, tool, and shared-memory paths carry identity. Corporate
+authentication/assertion verification and identity-bound authorization remain Phase 1 work and
+are explicitly documented in [Identity Context](identity.md).
+
 ## Batch 3: Approval Records And Interactive Prompts
 
 Goal: replace approval-by-argument as the enterprise path with attributable, scoped approval

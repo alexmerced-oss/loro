@@ -11,6 +11,7 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import prompt_preview
 from loro.config import LoroConfig
+from loro.identity import IdentityContext, resolve_identity
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -45,8 +46,13 @@ class ToolExecution:
 class ToolRegistry:
     """Executes explicit, typed tool calls for the runtime loop."""
 
-    def __init__(self, config: LoroConfig) -> None:
+    def __init__(
+        self,
+        config: LoroConfig,
+        identity: IdentityContext | None = None,
+    ) -> None:
         self.config = config
+        self.identity = identity or resolve_identity(config.identity)
         self.permissions = PermissionEngine(config.permissions)
         self.files = FileTools()
         self.git = GitTools()
@@ -249,7 +255,7 @@ class ToolRegistry:
 
     def _search_shared_memory(self, call: ToolCall) -> ToolExecution:
         query = str(call.args["query"])
-        tenant_id = str(call.args.get("tenant_id", "default"))
+        tenant_id = str(call.args.get("tenant_id", self.identity.tenant))
         limit = int(call.args.get("limit", 10))
         execute = bool(call.args.get("execute", True))
         if not self.config.memory.shared.enabled:

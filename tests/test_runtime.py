@@ -1,9 +1,16 @@
-from loro.config import AuditConfig, LocalMemoryConfig, LoroConfig, MemoryConfig, RuntimeConfig
+from loro.config import (
+    AuditConfig,
+    IdentityConfig,
+    LocalMemoryConfig,
+    LoroConfig,
+    MemoryConfig,
+    RuntimeConfig,
+)
 from loro.memory.base import SharedMemorySearchRecord, SharedMemorySearchResult
 from loro.model_tools import ModelToolCall
 from loro.models import ModelMessage, ModelProviderError, ModelResponse
 from loro.runtime import AgentRuntime
-from loro.sessions import SessionConfig
+from loro.sessions import SessionConfig, SessionStore
 
 
 class SequencedModelClient:
@@ -141,6 +148,42 @@ def test_runtime_returns_provider_error_stop_reason(tmp_path, monkeypatch) -> No
     result = runtime.run("hello", mode="run")
     assert result.stop_reason == "provider_error"
     assert "provider unavailable" in result.summary
+
+
+def test_runtime_uses_identity_for_shared_memory_audit_and_session(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["Identity-aware answer."])
+    requested_tenants: list[str] = []
+
+    def fake_search(config, *, query, tenant_id, limit, execute):
+        requested_tenants.append(tenant_id)
+        return SharedMemorySearchResult(
+            backend="postgres",
+            query=query,
+            tenant_id=tenant_id,
+            executed=True,
+        )
+
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.identity = IdentityConfig(
+        subject="user-123",
+        organization="acme",
+        tenant="platform",
+        roles=["developer"],
+        auth_method="oidc",
+        source="managed-env",
+    )
+    config.memory.shared.enabled = True
+
+    result = AgentRuntime(config).run("Prepare a brief", mode="run")
+
+    assert requested_tenants == ["platform"]
+    session = SessionStore(config.sessions).get(result.session_id)
+    assert session["identity"]["subject"] == "user-123"
+    assert session["identity"]["tenant"] == "platform"
+    audit_lines = (tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    assert all('"actor": "user-123"' in line for line in audit_lines)
 
 
 def _runtime_config(tmp_path, *, max_steps: int) -> LoroConfig:

@@ -7,6 +7,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Getting Started](getting-started.md)
 - [CLI Guide](cli.md)
 - [Configuration](configuration.md)
+- [Identity Context](identity.md)
 - [Memory](memory.md)
 - [Artifacts](artifacts.md)
 - [Polaris And Iceberg](polaris-iceberg.md)

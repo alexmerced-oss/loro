@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from loro.config import AuditConfig
+from loro.identity import IdentityContext
 
 
 @dataclass(frozen=True)
@@ -17,11 +18,16 @@ class AuditEvent:
 
 
 class AuditLogger:
-    def __init__(self, config: AuditConfig) -> None:
+    def __init__(self, config: AuditConfig, identity: IdentityContext | None = None) -> None:
         self.config = config
+        self.identity = identity
         self.path = Path(config.path).expanduser()
 
     def write(self, event_type: str, **details: Any) -> AuditEvent:
+        if self.identity is not None:
+            details.setdefault("actor", self.identity.subject)
+            details.setdefault("tenant_id", self.identity.tenant)
+            details.setdefault("identity", self.identity.to_payload())
         event = AuditEvent(event_type=event_type, details=details)
         if not self.config.enabled:
             return event

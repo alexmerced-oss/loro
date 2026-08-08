@@ -8,6 +8,7 @@ loro doctor
 loro config
 loro configure
 loro setup provider
+loro setup identity
 loro setup memory
 loro setup shared-memory
 loro setup polaris
@@ -17,8 +18,22 @@ loro run "Summarize the project"
 ```
 
 `loro configure` and `loro setup provider` run the AI provider wizard. The other setup
-commands guide local memory, shared-memory, and Polaris configuration. `loro setup quickstart`
-runs the setup wizards in sequence and preserves existing sections in `.loro/config.local.toml`.
+commands guide identity, local memory, shared-memory, and Polaris configuration. `loro setup
+quickstart` runs the setup wizards in sequence and preserves existing sections in
+`.loro/config.local.toml`.
+
+## Identity
+
+```bash
+loro setup identity
+loro identity show
+loro identity doctor
+```
+
+The active identity is attached to audit events and runtime sessions. Its tenant and subject
+become shared-memory defaults when `--tenant-id` and `--created-by` are omitted. Managed
+configuration can require fields and make runtime/audited commands fail closed. See
+[Identity Context](identity.md) for environment variables and trust boundaries.
 
 `plan` and `run` can execute explicit typed tool directives in the prompt:
 

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import LoroConfig
+from loro.identity import IdentityContext, resolve_identity
 from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
@@ -28,9 +29,10 @@ class AgentRuntime:
 
     def __init__(self, config: LoroConfig) -> None:
         self.config = config
-        self.audit = AuditLogger(config.audit)
+        self.identity = resolve_identity(config.identity)
+        self.audit = AuditLogger(config.audit, self.identity)
         self.sessions = SessionStore(config.sessions)
-        self.tools = ToolRegistry(config)
+        self.tools = ToolRegistry(config, identity=self.identity)
 
     def run(self, prompt: str, mode: str) -> AgentResult:
         recalled_memories: list[str] = []
@@ -128,6 +130,7 @@ class AgentRuntime:
                     _shared_memory_payload(memory) for memory in recalled_shared_memories
                 ],
                 tool_executions=[execution.to_payload() for execution in tool_executions],
+                identity=self.identity.to_payload(),
                 stop_reason=stop_reason,
             )
         )
@@ -158,7 +161,7 @@ class AgentRuntime:
         result = search_shared_memories(
             self.config,
             query=prompt,
-            tenant_id="default",
+            tenant_id=self.identity.tenant,
             limit=5,
             execute=True,
         )
@@ -168,6 +171,7 @@ class AgentRuntime:
             executed=result.executed,
             record_count=len(result.records),
             messages=result.messages,
+            tenant_id=self.identity.tenant,
         )
         return result.records
 
@@ -179,6 +183,7 @@ class AgentRuntime:
                 tool=execution.call.name,
                 ok=execution.ok,
                 step=step,
+                tool_identity=_tool_identity_payload(self.identity),
             )
         return executions
 
@@ -262,3 +267,11 @@ def _shared_memory_payload(memory: SharedMemorySearchRecord) -> dict[str, str]:
 
 def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall]:
     return [ToolCall(name=call.name, args=call.args) for call in calls]
+
+
+def _tool_identity_payload(identity: IdentityContext) -> dict[str, object]:
+    return {
+        "subject": identity.subject,
+        "tenant": identity.tenant,
+        "session_id": identity.session_id,
+    }

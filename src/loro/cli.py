@@ -14,6 +14,12 @@ from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
 from loro.config import load_config, write_config_sections
 from loro.governed_data import explain_access, inspect_table_schema
+from loro.identity import (
+    IdentityConfigurationError,
+    IdentityContext,
+    diagnose_identity,
+    resolve_identity,
+)
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import (
@@ -63,6 +69,7 @@ shell_app = typer.Typer(help="Run permission-gated shell commands.")
 safety_app = typer.Typer(help="Scan content for obvious secrets.")
 providers_app = typer.Typer(help="Inspect and configure AI providers.")
 setup_app = typer.Typer(help="Guided setup wizards for Loro configuration.")
+identity_app = typer.Typer(help="Inspect and validate the active enterprise identity.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -76,17 +83,33 @@ app.add_typer(shell_app, name="shell")
 app.add_typer(safety_app, name="safety")
 app.add_typer(providers_app, name="providers")
 app.add_typer(setup_app, name="setup")
+app.add_typer(identity_app, name="identity")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
 def _runtime() -> AgentRuntime:
-    return AgentRuntime(load_config())
+    try:
+        return AgentRuntime(load_config())
+    except IdentityConfigurationError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+def _identity() -> IdentityContext:
+    try:
+        return resolve_identity(load_config().identity)
+    except IdentityConfigurationError as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 def _audit() -> AuditLogger:
-    return AuditLogger(load_config().audit)
+    config = load_config()
+    try:
+        identity = resolve_identity(config.identity)
+    except IdentityConfigurationError as error:
+        raise typer.BadParameter(str(error)) from error
+    return AuditLogger(config.audit, identity)
 
 
 def _permissions() -> PermissionEngine:
@@ -582,6 +605,134 @@ def setup_polaris(
     console.print(f"Wrote Polaris config: {written}")
 
 
+@setup_app.command("identity")
+def setup_identity(
+    subject: Annotated[
+        str | None, typer.Option("--subject", help="Stable identity subject.")
+    ] = None,
+    display_name: Annotated[
+        str | None, typer.Option("--display-name", help="Human-readable identity name.")
+    ] = None,
+    organization: Annotated[
+        str | None, typer.Option("--organization", help="Enterprise organization identifier.")
+    ] = None,
+    tenant: Annotated[
+        str | None, typer.Option("--tenant", help="Default enterprise tenant.")
+    ] = None,
+    groups: Annotated[
+        str | None, typer.Option("--groups", help="Comma-separated identity groups.")
+    ] = None,
+    roles: Annotated[
+        str | None, typer.Option("--roles", help="Comma-separated identity roles.")
+    ] = None,
+    auth_method: Annotated[
+        str | None, typer.Option("--auth-method", help="Authentication method label.")
+    ] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="Trusted identity assertion source.")
+    ] = None,
+    environment_enabled: Annotated[
+        bool | None,
+        typer.Option(
+            "--environment/--no-environment",
+            help="Allow identity fields from environment variables.",
+        ),
+    ] = None,
+    environment_prefix: Annotated[
+        str | None, typer.Option("--environment-prefix", help="Identity environment prefix.")
+    ] = None,
+    required_fields: Annotated[
+        str | None,
+        typer.Option("--required-fields", help="Comma-separated fields required to run."),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure local or enterprise-provided identity context."""
+    values = [
+        subject,
+        display_name,
+        organization,
+        tenant,
+        groups,
+        roles,
+        auth_method,
+        source,
+        environment_enabled,
+        environment_prefix,
+        required_fields,
+    ]
+    interactive = all(value is None for value in values)
+    config = load_config()
+    identity = config.identity
+    if interactive:
+        subject = typer.prompt("Identity subject", default=identity.subject or "")
+        display_name = typer.prompt("Display name", default=identity.display_name or subject)
+        organization = typer.prompt("Organization", default=identity.organization or "")
+        tenant = typer.prompt("Tenant", default=identity.tenant or "default")
+        groups = typer.prompt("Groups (comma-separated)", default=",".join(identity.groups))
+        roles = typer.prompt("Roles (comma-separated)", default=",".join(identity.roles))
+        auth_method = typer.prompt(
+            "Authentication method",
+            default=identity.auth_method or "os_user",
+        )
+        source = typer.prompt("Identity source", default=identity.source or "config")
+        environment_enabled = typer.confirm(
+            "Allow identity environment variables?",
+            default=identity.environment_enabled,
+        )
+        environment_prefix = typer.prompt(
+            "Identity environment prefix",
+            default=identity.environment_prefix,
+        )
+        required_fields = typer.prompt(
+            "Required fields (comma-separated)",
+            default=",".join(identity.required_fields),
+        )
+    for field, value in {
+        "subject": subject,
+        "display_name": display_name,
+        "organization": organization,
+        "tenant": tenant,
+        "auth_method": auth_method,
+        "source": source,
+    }.items():
+        if value is not None:
+            setattr(identity, field, value or None)
+    if environment_prefix is not None:
+        if not environment_prefix.strip():
+            raise typer.BadParameter("Identity environment prefix cannot be empty.")
+        identity.environment_prefix = environment_prefix.strip()
+    if groups is not None:
+        identity.groups = _comma_separated(groups)
+    if roles is not None:
+        identity.roles = _comma_separated(roles)
+    if required_fields is not None:
+        allowed = set(identity.__class__.model_fields) - {
+            "environment_enabled",
+            "environment_prefix",
+            "required_fields",
+        }
+        parsed_required = _comma_separated(required_fields)
+        unknown = sorted(set(parsed_required) - allowed)
+        if unknown:
+            raise typer.BadParameter(f"Unknown required identity fields: {', '.join(unknown)}")
+        identity.required_fields = parsed_required  # type: ignore[assignment]
+    if environment_enabled is not None:
+        identity.environment_enabled = environment_enabled
+    written = write_config_sections(output, config, ["identity"])
+    identity_diagnostic = diagnose_identity(config.identity)
+    AuditLogger(config.audit, identity_diagnostic.context).write(
+        "config.identity_written",
+        path=str(written),
+        identity_ready=identity_diagnostic.ok,
+        missing_fields=list(identity_diagnostic.missing_fields),
+    )
+    console.print(f"Wrote identity config: {written}")
+
+
 @setup_app.command("quickstart")
 def setup_quickstart(
     output: Annotated[
@@ -589,19 +740,35 @@ def setup_quickstart(
         typer.Option("--output", "-o", help="Config file to write."),
     ] = Path(".loro/config.local.toml"),
 ) -> None:
-    """Run provider, local memory, shared memory, and Polaris setup in sequence."""
+    """Run provider, identity, memory, and Polaris setup in sequence."""
     console.print("Loro quickstart setup")
     setup_provider(output=output)
+    setup_identity(output=output)
     setup_memory(output=output)
     setup_shared_memory(output=output)
     setup_polaris(output=output)
     console.print("Quickstart setup complete.")
 
 
+@identity_app.command("show")
+def identity_show() -> None:
+    """Show the resolved identity context without exposing credentials."""
+    console.print_json(data=_identity().to_payload())
+
+
+@identity_app.command("doctor")
+def identity_doctor() -> None:
+    """Check whether the resolved identity satisfies required fields."""
+    diagnostic = diagnose_identity(load_config().identity)
+    console.print_json(data=diagnostic.to_payload())
+    raise typer.Exit(code=0 if diagnostic.ok else 1)
+
+
 @app.command()
 def doctor() -> None:
     """Validate provider, permission, memory, Polaris, and artifact configuration."""
     config = load_config()
+    identity_diagnostic = diagnose_identity(config.identity)
     console.print("[bold green]Loro doctor[/bold green]")
     console.print(f"Model provider: {config.model.provider}")
     console.print(f"Model: {config.model.model}")
@@ -619,6 +786,15 @@ def doctor() -> None:
     console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
     console.print(f"Session path: {config.sessions.path}")
     console.print(f"Safety scanner: {'enabled' if config.safety.enabled else 'disabled'}")
+    console.print(
+        f"Identity: {'ready' if identity_diagnostic.ok else 'missing required fields'} "
+        f"({identity_diagnostic.context.subject}, {identity_diagnostic.context.source})"
+    )
+    if not identity_diagnostic.ok:
+        console.print(
+            f"Missing identity fields: {', '.join(identity_diagnostic.missing_fields)}"
+        )
+        raise typer.Exit(code=1)
 
 
 @memory_app.command("list")
@@ -652,9 +828,9 @@ def memory_search(query: Annotated[str, typer.Argument(help="Search query.")]) -
 def memory_shared_search(
     query: Annotated[str, typer.Argument(help="Search query.")],
     tenant_id: Annotated[
-        str,
-        typer.Option("--tenant-id", help="Shared memory tenant."),
-    ] = "default",
+        str | None,
+        typer.Option("--tenant-id", help="Shared memory tenant. Defaults to active identity."),
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", help="Maximum memories to return.")] = 20,
     dry_run: Annotated[
         bool,
@@ -663,10 +839,11 @@ def memory_shared_search(
 ) -> None:
     """Search shared enterprise memory or render the backend search statement."""
     config = load_config()
+    resolved_tenant = tenant_id or _identity().tenant
     result = search_shared_memories(
         config,
         query=query,
-        tenant_id=tenant_id,
+        tenant_id=resolved_tenant,
         limit=limit,
         execute=not dry_run,
     )
@@ -674,7 +851,7 @@ def memory_shared_search(
         "memory.shared_search",
         backend=result.backend,
         query=prompt_preview(query),
-        tenant_id=tenant_id,
+        tenant_id=resolved_tenant,
         executed=result.executed,
         record_count=len(result.records),
     )
@@ -751,8 +928,9 @@ def memory_proposals() -> None:
 def memory_accept_proposal(
     proposal_id: Annotated[str, typer.Argument(help="Memory proposal id.")],
     tenant_id: Annotated[
-        str, typer.Option("--tenant-id", help="Shared memory tenant.")
-    ] = "default",
+        str | None,
+        typer.Option("--tenant-id", help="Shared memory tenant. Defaults to active identity."),
+    ] = None,
     scope_type: Annotated[
         str, typer.Option("--scope-type", help="Shared memory scope type.")
     ] = "org",
@@ -760,11 +938,13 @@ def memory_accept_proposal(
         str, typer.Option("--scope-key", help="Shared memory scope key.")
     ] = "default",
     created_by: Annotated[
-        str, typer.Option("--created-by", help="Shared memory author.")
-    ] = "local-user",
+        str | None,
+        typer.Option("--created-by", help="Shared memory author. Defaults to active identity."),
+    ] = None,
 ) -> None:
     """Accept a proposal into local memory or a shared-memory draft."""
     config = load_config()
+    identity = _identity()
     store = MemoryProposalStore(Path(config.memory.local.path))
     proposal = store.get(proposal_id)
     if proposal is None:
@@ -772,12 +952,12 @@ def memory_accept_proposal(
     if proposal.target == "shared":
         draft = create_shared_memory_draft(
             content=proposal.content,
-            tenant_id=tenant_id,
+            tenant_id=tenant_id or identity.tenant,
             scope_type=scope_type,
             scope_key=scope_key,
             memory_type="fact",
             classification="public-internal",
-            created_by=created_by,
+            created_by=created_by or identity.subject,
         )
         SharedMemoryDraftStore(Path(config.memory.local.path)).stage(draft)
         store.update_status(proposal_id, "accepted_as_shared_draft")
@@ -954,8 +1134,9 @@ def remember(
         bool, typer.Option("--shared", help="Write shared enterprise memory.")
     ] = False,
     tenant_id: Annotated[
-        str, typer.Option("--tenant-id", help="Shared memory tenant.")
-    ] = "default",
+        str | None,
+        typer.Option("--tenant-id", help="Shared memory tenant. Defaults to active identity."),
+    ] = None,
     scope_type: Annotated[
         str, typer.Option("--scope-type", help="Shared memory scope type.")
     ] = "org",
@@ -967,8 +1148,9 @@ def remember(
         str, typer.Option("--classification", help="Shared memory classification.")
     ] = "public-internal",
     created_by: Annotated[
-        str, typer.Option("--created-by", help="Shared memory author.")
-    ] = "local-user",
+        str | None,
+        typer.Option("--created-by", help="Shared memory author. Defaults to active identity."),
+    ] = None,
     allow_sensitive: Annotated[
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
@@ -981,14 +1163,15 @@ def remember(
         allow_sensitive=allow_sensitive,
     )
     if shared:
+        identity = _identity()
         draft = create_shared_memory_draft(
             content=content,
-            tenant_id=tenant_id,
+            tenant_id=tenant_id or identity.tenant,
             scope_type=scope_type,
             scope_key=scope_key,
             memory_type=memory_type,
             classification=classification,
-            created_by=created_by,
+            created_by=created_by or identity.subject,
         )
         SharedMemoryDraftStore(Path(load_config().memory.local.path)).stage(draft)
         _audit().write(
@@ -1652,3 +1835,7 @@ def sessions_show(session_id: Annotated[str, typer.Argument(help="Session ID.")]
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print_json(data=record)
+
+
+def _comma_separated(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]

@@ -12,6 +12,17 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 PermissionDecision = Literal["allow", "ask", "deny"]
+IdentityField = Literal[
+    "subject",
+    "display_name",
+    "organization",
+    "tenant",
+    "groups",
+    "roles",
+    "auth_method",
+    "session_id",
+    "source",
+]
 
 
 class ModelConfig(BaseModel):
@@ -27,6 +38,21 @@ class ModelConfig(BaseModel):
 
 class RuntimeConfig(BaseModel):
     max_steps: int = 5
+
+
+class IdentityConfig(BaseModel):
+    subject: str | None = None
+    display_name: str | None = None
+    organization: str | None = None
+    tenant: str | None = None
+    groups: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    auth_method: str | None = None
+    session_id: str | None = None
+    source: str | None = None
+    environment_enabled: bool = True
+    environment_prefix: str = "LORO_IDENTITY_"
+    required_fields: list[IdentityField] = Field(default_factory=list)
 
 
 class PermissionsConfig(BaseModel):
@@ -98,6 +124,7 @@ class SafetyConfig(BaseModel):
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    identity: IdentityConfig = Field(default_factory=IdentityConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
@@ -139,6 +166,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         if config.model.max_tokens:
             data["max_tokens"] = config.model.max_tokens
         return {"model": data}
+    if section == "identity":
+        return {"identity": config.identity.model_dump(exclude_none=True)}
     if section == "memory.local":
         return {"memory": {"local": config.memory.local.model_dump(exclude_none=True)}}
     if section == "memory.shared":

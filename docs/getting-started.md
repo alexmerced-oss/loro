@@ -84,15 +84,31 @@ variables, not in config files.
 Additional setup wizards configure the rest of the local quick-start surface:
 
 ```bash
+loro setup identity
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
 ```
 
-`loro setup quickstart` runs provider, local memory, shared memory, and Polaris setup in
+`loro setup quickstart` runs provider, identity, local memory, shared memory, and Polaris setup in
 sequence. Use `mock`, disable shared memory, and disable Polaris for a completely local
 no-key/no-service first run.
+
+For a local identity, Loro uses the operating-system username and the `default` tenant. An
+enterprise launcher can instead provide `LORO_IDENTITY_*` variables and require fields through
+managed configuration:
+
+```bash
+export LORO_IDENTITY_SUBJECT="user-123"
+export LORO_IDENTITY_ORGANIZATION="acme"
+export LORO_IDENTITY_TENANT="platform"
+loro identity doctor
+loro identity show
+```
+
+See [Identity Context](identity.md) before treating environment assertions as authenticated
+enterprise identity.
 
 ## Run Agentic Tasks
 

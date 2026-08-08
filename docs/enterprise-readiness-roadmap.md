@@ -21,7 +21,7 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Configuration | Layered config plus non-overridable managed overlays | Implemented; deployment validation needed |
 | Permissions | `allow` / `ask` / `deny`, ordered rules, explicit approval flags | Partial; interactive approvals and richer scopes missing |
 | Audit | Local JSONL events with redacted previews | Partial; durable external sinks and integrity controls missing |
-| Identity | Local process identity only | Not enterprise ready |
+| Identity | Typed local/config/environment context, managed required fields, audit/session propagation | Foundation implemented; corporate assertion verification and authorization binding missing |
 | Isolation | Tool-level policy and working-directory boundaries | Partial; enforceable sandbox profiles missing |
 | Shared memory | Tenant-aware Postgres/Iceberg schema, proposals, explicit commits, citations | Implemented; isolation and lifecycle proof needed |
 | Governed data | Read-only Polaris allowlist and Iceberg integration | MVP complete; authorization evidence and production tests needed |

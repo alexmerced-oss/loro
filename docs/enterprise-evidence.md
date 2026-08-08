@@ -31,12 +31,12 @@ Evidence states:
 
 | ID | Exit item | Owner | Status | Evidence and remaining proof |
 | --- | --- | --- | --- | --- |
-| E1-01 | Trusted identity context is required and propagated | Identity/policy (TBD) | Planned | Batch 2 implementation, `docs/identity.md`, and identity tests TBD. |
+| E1-01 | Trusted identity context is required and propagated | Identity/policy (TBD) | Partial | Typed context, config/environment resolution, managed required fields, CLI diagnostics, propagation, and tests exist in `src/loro/identity.py`, `tests/test_identity.py`, and [Identity Context](identity.md); corporate assertion verification/integration remains TBD. |
 | E1-02 | Managed policy is validated, versioned, and fail-closed | Identity/policy (TBD) | Partial | Managed overlay precedence exists in `src/loro/config.py` and `tests/test_config.py`; integrity/version/failure tests TBD. |
 | E1-03 | Consequential actions use attributable exact approvals | Identity/policy (TBD) | Planned | Batch 3 approval records and UI tests TBD. |
 | E1-04 | Model self-approval, replay, mutation, and expiry fail | Security (TBD) | Planned | Negative approval test suite TBD. |
 | E1-05 | Resource scopes are normalized and explainable | Runtime/security (TBD) | Planned | Batch 4 resource models, bypass corpus, and `loro policy explain` TBD. |
-| E1-06 | Every consequential event contains actor/policy/approval/target | Release/security (TBD) | Planned | Versioned audit schema tests in Batch 5 TBD. |
+| E1-06 | Every consequential event contains actor/policy/approval/target | Release/security (TBD) | Partial | Current CLI/runtime audit events carry actor, tenant, and identity context; policy version, normalized target, attributable approval, and versioned schema remain TBD. |
 | E1-07 | Limited-pilot permission model approved | Security (TBD) | External | Review record and accepted-risk references TBD. |
 
 ## Phase 2: Isolation And Data Protection

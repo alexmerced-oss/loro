@@ -26,6 +26,11 @@ temperature = 0.2
 [runtime]
 max_steps = 5
 
+[identity]
+environment_enabled = true
+environment_prefix = "LORO_IDENTITY_"
+required_fields = []
+
 [permissions]
 default = "ask"
 shell = "ask"
@@ -86,13 +91,16 @@ LORO_CONFIG_CONTENT='[permissions]\nshell = "allow"\n' loro doctor
 
 Managed overlays use the same TOML shape as normal configuration, but they are merged after
 all other layers. Use them for enterprise guardrails such as permission denies, audit
-requirements, shared-memory backend settings, and Polaris defaults.
+requirements, required identity fields, shared-memory backend settings, and Polaris defaults.
 
 ```toml
 # /etc/loro/managed.toml
 [permissions]
 shell = "deny"
 web = "deny"
+
+[identity]
+required_fields = ["subject", "organization", "tenant", "auth_method", "source"]
 
 [[permissions.rules]]
 tool = "git"
@@ -135,20 +143,26 @@ Use setup wizards to create or update `.loro/config.local.toml` without hand-wri
 loro configure
 loro configure --provider openai --model gpt-5.6-luna --small-model gpt-5.4-mini
 loro setup provider
+loro setup identity
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup quickstart
 ```
 
-`loro configure` and `loro setup provider` configure the AI provider. `loro setup memory`
-configures private local memory. `loro setup shared-memory` configures explicit-only shared
-enterprise memory with either Postgres or Iceberg. `loro setup polaris` configures governed
-data discovery through the Polaris CLI. `loro setup quickstart` runs all four in sequence.
+`loro configure` and `loro setup provider` configure the AI provider. `loro setup identity`
+configures local or enterprise-provided identity fields and fail-closed requirements. `loro
+setup memory` configures private local memory. `loro setup shared-memory` configures
+explicit-only shared enterprise memory with either Postgres or Iceberg. `loro setup polaris`
+configures governed data discovery through the Polaris CLI. `loro setup quickstart` runs all
+five in sequence.
 
 All setup commands preserve existing sections in the target config file. They write local
 settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain
 in environment variables.
+
+See [Identity Context](identity.md) for identity precedence, supported environment variables,
+managed requirements, propagation, and current trust limitations.
 
 ## Shared Memory Backend Checks
 
