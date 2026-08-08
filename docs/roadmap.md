@@ -43,8 +43,11 @@
 
 ## Next MVP Work
 
-- Managed enterprise configuration overlays
 - Interactive approval prompts for write, shell, Git mutation, and governed data actions
+
+Managed, non-overridable enterprise configuration overlays are implemented and documented.
+The remaining hardening program is tracked in the
+[Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md).
 
 ## Prioritized Work Batches
 
@@ -142,9 +145,14 @@ verification, smoke checks, and packaging steps.
 
 ## Enterprise Hardening
 
-- Managed non-overridable config
-- SSO/internal model gateway integration
-- Real approval prompts in TUI
-- Sandbox profiles
-- Audit sinks beyond local JSONL
-- Integration tests for Postgres, Iceberg, and Polaris
+- Identity and SSO/internal model gateway integration
+- Attributable interactive approval prompts
+- Enforceable sandbox profiles and data protection
+- Durable audit sinks beyond local JSONL
+- Automated end-to-end integration tests for Postgres, Iceberg, and Polaris
+- Supply-chain controls, operational runbooks, and pilot validation
+
+See the [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md) for phases, acceptance
+gates, evidence requirements, and immediate priorities.
+The near-term execution plan is tracked in
+[Enterprise Next Batches](enterprise-next-batches.md).
