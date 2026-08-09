@@ -21,10 +21,23 @@ provider = "mock"
 model = "mock-agent"
 small_model = "mock-small"
 timeout_seconds = 120
+max_retries = 2
+backoff_seconds = 0.25
+verify_tls = true
+# ca_bundle_env = "LORO_CA_BUNDLE"
+# proxy_env = "LORO_HTTPS_PROXY"
 temperature = 0.2
+input_cost_per_million = 0
+output_cost_per_million = 0
 
 [runtime]
 max_steps = 5
+max_tool_calls = 50
+max_model_input_bytes = 2000000
+max_model_output_bytes = 1000000
+# max_input_tokens = 100000
+# max_output_tokens = 20000
+# max_cost_usd = 5.00
 
 [sandbox]
 enabled = true
@@ -98,6 +111,7 @@ postgres_dsn_env = "LORO_POSTGRES_DSN"
 postgres_schema = "public"
 iceberg_namespace = "agent_memory"
 iceberg_table = "shared_memories"
+retention_days = 365
 
 [polaris]
 enabled = false
@@ -257,6 +271,31 @@ LORO_MANAGED_CONFIG_CONTENT='[permissions]\nshell = "deny"\n' loro doctor
 
 Normal runtime overrides cannot loosen values supplied by managed overlays because managed
 TOML is applied last.
+
+To make managed policy mandatory and digest-pinned, set:
+
+```bash
+export LORO_MANAGED_CONFIG_REQUIRED=true
+export LORO_MANAGED_CONFIG=/opt/loro/managed.toml
+export LORO_MANAGED_CONFIG_SHA256=sha256:<aggregate-digest>
+```
+
+The digest covers each managed source label and its exact bytes in merge order. Loro verifies
+the digest before parsing or applying policy and fails closed on a missing source, malformed
+TOML, or mismatch. Distribution, key management, rotation, and approval of that digest remain
+enterprise configuration-management responsibilities.
+
+## Provider Transport And Budgets
+
+Provider calls retry timeouts, connection failures, HTTP 429, and HTTP 5xx responses with
+bounded exponential backoff. Other HTTP 4xx responses and malformed payloads fail immediately.
+`ca_bundle_env` and `proxy_env` name environment variables; they never store the CA path or proxy
+credential in TOML. Keep `verify_tls = true` in managed deployments.
+
+Runtime usage records provider-reported token counts where available and otherwise uses a
+conservative character estimate. Cost enforcement is active only when the configured model has
+nonzero per-million input/output prices. The limits are per Loro task; organization-wide and
+concurrent tenant quotas require a shared model gateway or another distributed coordinator.
 
 See [Managed Data Protection](data-protection.md) for surface defaults, decision semantics, and
 the remaining enterprise integration requirements.

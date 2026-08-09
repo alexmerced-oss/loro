@@ -22,7 +22,8 @@ def main() -> None:
     if missing:
         raise SystemExit("MCP stdio launcher is missing environment: " + ", ".join(missing))
     environment = {name: os.environ[name] for name in names}
-    os.execve(command[0], command, environment)
+    # This launcher intentionally replaces itself after sandbox policy validates the argv.
+    os.execve(command[0], command, environment)  # nosec B606
 
 
 if __name__ == "__main__":

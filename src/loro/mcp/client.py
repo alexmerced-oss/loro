@@ -444,7 +444,8 @@ class MCPService:
             ),
         }
         if server.transport == "streamable_http":
-            assert server.url is not None
+            if server.url is None:
+                raise MCPClientError("MCP HTTP server is missing its validated URL.")
             return self._http_sdk_client(Client, server, kwargs)
 
         launch = self.prepare_stdio_launch(server)
@@ -509,7 +510,8 @@ class MCPService:
         except ImportError as error:  # pragma: no cover - covered by the main SDK import
             raise MCPDependencyError("The installed MCP SDK is incomplete.") from error
 
-        assert server.url is not None
+        if server.url is None:
+            raise MCPClientError("MCP HTTP server is missing its validated URL.")
         profile = (
             self.config.credential_profiles.get(server.credential_profile)
             if server.credential_profile
@@ -521,7 +523,8 @@ class MCPService:
         if profile is not None:
             values = credential_environment(profile, self.environ)
             if profile.type == "bearer":
-                assert profile.token_env is not None
+                if profile.token_env is None:
+                    raise MCPClientError("MCP bearer profile is missing its token environment.")
                 headers["Authorization"] = f"Bearer {values[profile.token_env]}"
             else:
                 auth = self._oauth_provider(server.url, profile, values)
@@ -552,7 +555,8 @@ class MCPService:
         storage = _MemoryTokenStorage()
         scope = " ".join(profile.scopes) or None
         if profile.type == "oauth_client_credentials":
-            assert profile.client_id_env and profile.client_secret_env
+            if not profile.client_id_env or not profile.client_secret_env:
+                raise MCPClientError("MCP client-credentials profile is incomplete.")
             return ClientCredentialsOAuthProvider(
                 server_url=server_url,
                 storage=storage,
@@ -589,7 +593,8 @@ class MCPService:
             redirect_uris=[profile.redirect_uri],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
-            token_endpoint_auth_method="none",
+            # "none" is the standardized OAuth public-client authentication method.
+            token_endpoint_auth_method="none",  # nosec B106
             scope=scope,
             client_name="Loro CLI",
         )

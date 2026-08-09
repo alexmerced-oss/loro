@@ -32,6 +32,7 @@ flowchart LR
 
 - `loro.cli`: Typer command surface and command-specific orchestration.
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
+- `loro.budgets`: model byte/token/cost and tool-call accounting with fail-closed limits.
 - `loro.config`: layered configuration model and environment overrides.
 - `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
 - `loro.approvals`: identity-bound approval requests/records, expiration, and replay protection.
@@ -77,15 +78,15 @@ boundaries. See [Model Context Protocol](docs/mcp.md) and the
    memory for relevant cited records.
 4. A resumed session receives queued messages as non-authoritative context, and validated Agent
    Skills are activated under the configured context budget.
-5. The runtime emits `runtime.task_started` with identity attribution.
+5. The runtime creates one trace id and emits `runtime.task_started` with identity attribution.
 6. Explicit prompt tool directives are executed before the first model call.
 7. The runtime calls the configured model and parses provider-neutral tool directives from
    the response.
 8. Ask-gated actions create an exact approval request. Trusted interactive approval is recorded
    before the tool executes; model-provided approval fields are not trusted.
 9. Approved tool calls are executed, audited, and sent back to the model as structured text.
-10. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
-   is reached.
+10. The loop repeats until the model responds without tool directives or a step, byte, token,
+    cost, or tool-call budget is reached.
 11. The runtime creates a session summary, including identity, tool execution payloads, and stop
     reason, and persists it to the configured session store.
 12. Delivered messages are acknowledged after the resumed session persists.
@@ -95,7 +96,8 @@ boundaries. See [Model Context Protocol](docs/mcp.md) and the
 
 Audit schema `1.0` promotes identity, trace, action/target, policy, approval, result, and
 redaction metadata into stable top-level fields while retaining legacy details. JSONL is the
-default sink. HTTP delivery retries with exponential backoff, then writes the complete event to
+default sink and uses process locking plus a backward-compatible SHA-256 hash chain. HTTP
+delivery retries with exponential backoff, then writes the complete event to
 a bounded JSONL buffer. Warning mode continues visibly; fail mode raises after buffering.
 `loro audit flush` retries buffered events in order. See
 [Audit Events And Delivery](docs/audit.md).

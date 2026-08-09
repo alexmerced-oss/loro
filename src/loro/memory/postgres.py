@@ -7,6 +7,7 @@ from loro.config import SharedMemoryConfig
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
+    SharedMemoryLifecycleRequest,
     SharedMemorySearchRecord,
     SharedMemoryStatement,
 )
@@ -53,6 +54,10 @@ class PostgresSharedMemoryStore:
                 .replace(
                     "CREATE TABLE IF NOT EXISTS memory_events",
                     f"CREATE TABLE IF NOT EXISTS {self._table('memory_events')}",
+                )
+                .replace(
+                    "ALTER TABLE shared_memories",
+                    f"ALTER TABLE {self._table('shared_memories')}",
                 )
                 .replace("ON shared_memories", f"ON {self._table('shared_memories')}")
             )
@@ -119,7 +124,8 @@ WITH inserted_memory AS (
     source,
     created_by,
     created_at,
-    status
+    status,
+    expires_at
   )
   VALUES (
     %(memory_id)s,
@@ -133,7 +139,8 @@ WITH inserted_memory AS (
     %(source)s::jsonb,
     %(created_by)s,
     %(created_at)s,
-    'active'
+    'active',
+    %(expires_at)s
   )
   RETURNING memory_id
 )
@@ -169,6 +176,7 @@ FROM inserted_memory;
                 "source": json.dumps({"source": "loro.shared_memory_draft"}),
                 "created_by": draft.created_by,
                 "created_at": draft.created_at,
+                "expires_at": draft.expires_at,
                 "event_payload": json.dumps({"draft_id": draft.draft_id}),
             },
         )
@@ -197,6 +205,7 @@ SELECT
 FROM {self._table("shared_memories")}
 WHERE tenant_id = %(tenant_id)s
   AND status = 'active'
+  AND (expires_at IS NULL OR expires_at > now())
   AND (content ILIKE %(query)s OR summary ILIKE %(query)s)
 ORDER BY created_at DESC
 LIMIT %(limit)s;
@@ -205,6 +214,81 @@ LIMIT %(limit)s;
             sql=sql,
             params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
         )
+
+    def render_lifecycle(
+        self, request: SharedMemoryLifecycleRequest
+    ) -> SharedMemoryStatement:
+        self._authorize_tenant(request.tenant_id)
+        assignments = {
+            "correct": (
+                "content = %(content)s, summary = %(summary)s, updated_at = %(requested_at)s"
+            ),
+            "delete": (
+                "status = 'deleted', deleted_at = %(requested_at)s, "
+                "updated_at = %(requested_at)s"
+            ),
+            "expire": "expires_at = %(expires_at)s, updated_at = %(requested_at)s",
+            "hold": "legal_hold = TRUE, updated_at = %(requested_at)s",
+            "release_hold": "legal_hold = FALSE, updated_at = %(requested_at)s",
+        }
+        assignment = assignments[request.action]
+        hold_guard = "AND legal_hold = FALSE" if request.action in {"delete", "expire"} else ""
+        sql = f"""
+WITH updated_memory AS (
+  UPDATE {self._table("shared_memories")}
+  SET {assignment}
+  WHERE memory_id = %(memory_id)s
+    AND tenant_id = %(tenant_id)s
+    {hold_guard}
+  RETURNING memory_id
+)
+INSERT INTO {self._table("memory_events")} (
+  event_id, memory_id, tenant_id, event_type, actor, event_at, payload
+)
+SELECT
+  %(event_id)s, memory_id, %(tenant_id)s, %(event_type)s,
+  %(actor)s, %(requested_at)s, %(event_payload)s::jsonb
+FROM updated_memory;
+""".strip()
+        return SharedMemoryStatement(
+            sql=sql,
+            params={
+                "memory_id": request.memory_id,
+                "tenant_id": request.tenant_id,
+                "event_id": request.event_id,
+                "event_type": f"memory.{request.action}",
+                "actor": request.actor,
+                "requested_at": request.requested_at,
+                "content": request.content,
+                "summary": request.summary,
+                "expires_at": request.expires_at,
+                "event_payload": json.dumps(
+                    {
+                        "reason": request.reason,
+                        "replacement_digest": _content_digest(request.content),
+                    }
+                ),
+            },
+        )
+
+    def apply_lifecycle(self, request: SharedMemoryLifecycleRequest) -> None:
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for Postgres memory lifecycle.") from error
+        statement = self.render_lifecycle(request)
+        with psycopg.connect(dsn) as connection:
+            with connection.cursor() as cursor:
+                self._set_tenant_context(cursor)
+                cursor.execute(statement.sql, statement.params)
+                if cursor.rowcount != 1:
+                    raise RuntimeError(
+                        "Memory lifecycle target was not found or is protected by legal hold."
+                    )
+            connection.commit()
 
     def commit_draft(self, draft: SharedMemoryDraft) -> None:
         dsn = os.environ.get(self.config.postgres_dsn_env)
@@ -290,3 +374,11 @@ LIMIT %(limit)s;
             "SELECT set_config('loro.tenant_id', %s, true)",
             (self.authorized_tenant_id,),
         )
+
+
+def _content_digest(content: str | None) -> str | None:
+    if content is None:
+        return None
+    import hashlib
+
+    return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()

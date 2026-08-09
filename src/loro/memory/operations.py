@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from loro.audit import prompt_preview
 from loro.config import LoroConfig, SharedMemoryConfig
@@ -6,6 +7,7 @@ from loro.identity import resolve_identity
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
+    SharedMemoryLifecycleRequest,
     SharedMemorySearchResult,
     SharedMemoryStatement,
 )
@@ -19,6 +21,14 @@ class SharedMemoryCommitResult:
     draft: SharedMemoryDraft
     executed: bool
     statement: SharedMemoryStatement | None = None
+
+
+@dataclass(frozen=True)
+class SharedMemoryLifecycleResult:
+    backend: str
+    request: SharedMemoryLifecycleRequest
+    executed: bool
+    statement: SharedMemoryStatement
 
 
 def search_shared_memories(
@@ -117,6 +127,7 @@ def create_shared_memory_draft(
     memory_type: str,
     classification: str,
     created_by: str,
+    retention_days: int | None = None,
 ) -> SharedMemoryDraft:
     return SharedMemoryDraft(
         content=content,
@@ -127,6 +138,9 @@ def create_shared_memory_draft(
         memory_type=memory_type,
         classification=classification,
         created_by=created_by,
+        expires_at=(datetime.now(UTC) + timedelta(days=retention_days))
+        if retention_days
+        else None,
     )
 
 
@@ -177,6 +191,47 @@ def render_or_commit_shared_draft(
             statement=store.render_insert(draft),
         )
     raise ValueError(f"Unsupported shared memory backend: {backend}")
+
+
+def apply_shared_memory_lifecycle(
+    config: LoroConfig,
+    request: SharedMemoryLifecycleRequest,
+    *,
+    execute: bool = False,
+) -> SharedMemoryLifecycleResult:
+    _validate_lifecycle_request(request)
+    backend = config.memory.shared.backend
+    authorized_tenant = _authorized_tenant(config, request.tenant_id)
+    if backend == "postgres":
+        store = PostgresSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
+    elif backend == "iceberg":
+        store = IcebergSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
+    else:
+        raise ValueError(f"Unsupported shared memory backend: {backend}")
+    statement = store.render_lifecycle(request)
+    if execute:
+        store.apply_lifecycle(request)
+    return SharedMemoryLifecycleResult(
+        backend=backend,
+        request=request,
+        executed=execute,
+        statement=statement,
+    )
+
+
+def _validate_lifecycle_request(request: SharedMemoryLifecycleRequest) -> None:
+    if not request.memory_id.strip() or not request.tenant_id.strip() or not request.actor.strip():
+        raise ValueError("Memory lifecycle identity fields must be non-empty.")
+    if not request.reason.strip():
+        raise ValueError("Memory lifecycle operations require a reason.")
+    if request.action == "correct" and (not request.content or not request.summary):
+        raise ValueError("Memory correction requires replacement content and summary.")
+    if request.action == "expire" and request.expires_at is None:
+        raise ValueError("Memory expiration requires expires_at.")
 
 
 def _authorized_tenant(config: LoroConfig, requested_tenant: str) -> str | None:

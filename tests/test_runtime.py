@@ -3,7 +3,7 @@ import json
 import pytest
 
 from loro.audit import AuditDeliveryError
-from loro.audit.sinks import AuditSinkError
+from loro.audit.sinks import AuditSinkError, verify_jsonl_audit
 from loro.config import (
     AuditConfig,
     IdentityConfig,
@@ -109,6 +109,53 @@ def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:
     assert len(result.tool_executions) == 2
 
 
+def test_runtime_stops_on_output_token_budget_and_persists_usage(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["This response exceeds the tiny token budget."])
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.runtime.max_output_tokens = 1
+
+    result = AgentRuntime(config).run("Prepare a brief.", mode="run")
+
+    assert result.stop_reason == "budget_output_tokens"
+    assert result.usage["output_tokens"] > 1
+    session = SessionStore(config.sessions).get(result.session_id)
+    assert session["usage"] == result.usage
+    events = [
+        json.loads(line)["event_type"]
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "runtime.budget_exceeded" in events
+
+
+def test_runtime_blocks_initial_tool_directives_over_budget(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["This response must not be reached."])
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.runtime.max_tool_calls = 0
+
+    result = AgentRuntime(config).run(
+        '@tool {"name": "file.read", "args": {"path": "README.md"}}',
+        mode="run",
+    )
+
+    assert result.stop_reason == "budget_tool_calls"
+    assert result.tool_executions == []
+    assert client.messages == []
+
+
+def test_runtime_blocks_input_token_budget_before_provider(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["This response must not be reached."])
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.runtime.max_input_tokens = 1
+
+    result = AgentRuntime(config).run("Prepare a detailed enterprise brief.", mode="run")
+
+    assert result.stop_reason == "budget_input_tokens"
+    assert client.messages == []
+
+
 def test_runtime_recalls_shared_memory_with_citation(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["Final answer with memory."])
     shared_record = SharedMemorySearchRecord(
@@ -190,6 +237,8 @@ def test_runtime_uses_identity_for_shared_memory_audit_and_session(tmp_path, mon
     assert session["identity"]["tenant"] == "platform"
     audit_lines = (tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()
     assert all('"actor": "user-123"' in line for line in audit_lines)
+    trace_ids = {json.loads(line)["trace_id"] for line in audit_lines}
+    assert len(trace_ids) == 1
 
 
 def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeypatch) -> None:
@@ -217,6 +266,49 @@ def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeyp
     assert "approval.requested" in events
     assert "approval.denied" in events
     assert "approval.granted" not in events
+
+
+def test_enterprise_identity_approval_tool_session_and_audit_path(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "approved.txt"
+    client = SequencedModelClient(
+        [
+            '@tool {"name": "file.write", "args": '
+            f'{{"path": "{target}", "content": "approved enterprise output"}}}}',
+            "The approved document is ready.",
+        ]
+    )
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    config = _runtime_config(tmp_path, max_steps=3)
+    config.identity = IdentityConfig(
+        subject="enterprise-user-7",
+        organization="acme",
+        tenant="platform",
+        roles=["analyst"],
+        auth_method="oidc",
+        source="managed-launcher",
+    )
+    config.permissions.version = "enterprise-policy-9"
+    approvals = []
+
+    result = AgentRuntime(
+        config,
+        approval_provider=lambda request: approvals.append(request) or "once",
+    ).run("Create the approved output.", mode="run")
+
+    assert result.stop_reason == "completed"
+    assert target.read_text(encoding="utf-8") == "approved enterprise output"
+    assert len(approvals) == 1
+    session = SessionStore(config.sessions).get(result.session_id)
+    assert session["identity"]["subject"] == "enterprise-user-7"
+    assert session["usage"] == result.usage
+    audit_path = tmp_path / "audit.jsonl"
+    verification = verify_jsonl_audit(audit_path)
+    assert verification.ok is True
+    events = [json.loads(line) for line in audit_path.read_text().splitlines()]
+    assert {event["actor"] for event in events} == {"enterprise-user-7"}
+    assert len({event["trace_id"] for event in events}) == 1
+    assert any(event["event_type"] == "approval.used" for event in events)
+    assert any(event["event_type"] == "runtime.task_completed" for event in events)
 
 
 def test_runtime_fails_closed_after_buffering_required_audit_event(tmp_path, monkeypatch) -> None:

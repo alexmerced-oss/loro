@@ -45,6 +45,11 @@ loro memory schema --backend iceberg
 loro memory backend-check
 loro memory shared-search "launch readiness" --tenant-id acme
 loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory lifecycle <memory-id> --action hold --reason "Litigation hold" --execute
+loro memory lifecycle <memory-id> --action release-hold --reason "Hold released" --execute
+loro memory lifecycle <memory-id> --action correct --content "Corrected text" \
+  --reason "Owner-approved correction" --execute
+loro memory lifecycle <memory-id> --action delete --reason "Approved erasure" --execute
 loro memory propose "Use the enterprise launch readiness template" --target shared
 loro memory accept-proposal <proposal-id> --tenant-id acme --scope-type team --scope-key platform
 ```
@@ -95,6 +100,12 @@ postgres_schema = "public"
 `loro memory backend-check` verifies that the configured DSN environment variable is
 present and that `psycopg` is importable. The adapter only commits explicit user-dictated
 shared memory drafts.
+
+`retention_days` assigns an expiry when a shared draft is staged. Search excludes deleted and
+expired records. Lifecycle changes require an explicit actor, reason, normalized permission,
+approval, and audit event. Legal hold blocks delete and expire until a separate release action.
+Postgres updates current state and appends an immutable memory event; Iceberg appends a new
+memory version plus an event so governed snapshot history remains available.
 
 Postgres draft commits are explicit:
 
@@ -165,3 +176,5 @@ engine.
 - `embedding_ref`
 - `supersedes`
 - `expires_at`
+- `legal_hold`
+- `deleted_at`

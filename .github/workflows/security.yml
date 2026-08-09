@@ -1,0 +1,79 @@
+name: Security Evidence
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "41 7 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install project and pinned security tools
+        run: |
+          python -m pip install pip==26.2.1
+          python -m pip install -e ".[dev]"
+          python -m pip install \
+            pip-audit==2.10.1 \
+            bandit==1.9.4 \
+            detect-secrets==1.5.0 \
+            cyclonedx-bom==7.3.1 \
+            pip-licenses==5.5.5
+
+      - name: Audit dependencies
+        run: python -m pip_audit --local --strict --format json --output security-pip-audit.json
+
+      - name: Static security analysis
+        run: >-
+          bandit -r src/loro -c pyproject.toml -b .bandit-baseline.json
+          -f json -o security-bandit.json
+
+      - name: Verify secret baseline
+        run: |
+          cp .secrets.baseline /tmp/loro-secrets-current.json
+          detect-secrets -c 1 scan --all-files \
+            --exclude-files '(^|/)(\.git|\.venv|dist|build|\.loro|\.mypy_cache|\.pytest_cache|\.ruff_cache)(/|$)|^\.secrets\.baseline$' \
+            --baseline /tmp/loro-secrets-current.json
+          python scripts/check_secret_baseline.py \
+            .secrets.baseline /tmp/loro-secrets-current.json
+
+      - name: Record and enforce licenses
+        run: |
+          pip-licenses --format=json --with-urls --output-file=security-licenses.json
+          python scripts/check_licenses.py security-licenses.json
+
+      - name: Generate CycloneDX SBOM
+        run: cyclonedx-py environment --output-format JSON --output-file security-sbom.cdx.json
+
+      - name: Verify security-critical coverage
+        run: |
+          python -m pytest --cov --cov-report=json:security-coverage.json
+          python scripts/check_security_coverage.py security-coverage.json
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-evidence-${{ github.sha }}
+          path: security-*.json
+          if-no-files-found: warn
+          retention-days: 30

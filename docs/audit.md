@@ -38,8 +38,20 @@ path = ".loro/audit.jsonl"
 include_prompt_preview = true
 ```
 
-Each event is appended as one JSON object per line. Local JSONL is development evidence, not an
-immutable enterprise record.
+Each event is appended as one JSON object per line under a process-safe lock. New events contain
+an SHA-256 integrity envelope binding canonical event content to the preceding hash. When Loro
+encounters an older unchained file, the first chained event also binds the exact legacy prefix.
+
+Verify a file and optionally compare its final hash with an externally retained anchor:
+
+```bash
+loro audit verify
+loro audit verify --anchor sha256:<expected-final-hash>
+```
+
+The local chain detects content mutation, insertion, deletion, and reordering within the
+retained chain. Only an external anchor or immutable destination can prove that the file's tail
+was not truncated.
 
 ## HTTP Collector
 
@@ -121,10 +133,9 @@ events remain.
 
 ## Current Limitations
 
-- The local buffer is bounded but does not yet use cross-process file locking.
 - HTTP delivery is one event per request; batching and collector-specific signing are not yet
   implemented.
-- Loro does not provide local tamper evidence or destination immutability.
+- Loro provides local tamper evidence, not destination immutability or independent timestamping.
 - Bearer-token authentication is the reference method; mTLS and custom signing are future sink
   extensions.
 - Schema completeness depends on call sites supplying action, normalized target, policy, approval,

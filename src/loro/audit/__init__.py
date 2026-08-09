@@ -14,6 +14,7 @@ from loro.audit.sinks import (
     AuditSinkError,
     HttpAuditSink,
     JsonlAuditSink,
+    verify_jsonl_audit,
 )
 from loro.config import AuditConfig, SafetyConfig
 from loro.data_protection import DataProtectionEngine
@@ -45,8 +46,14 @@ class AuditLogger:
         self.buffer = AuditBuffer(config.buffer_path, config.max_buffer_events)
         self.sink = sink or self._configured_sink()
         self.protection = DataProtectionEngine(safety_config) if safety_config else None
+        self.context: dict[str, Any] = {}
+
+    def bind_context(self, **context: Any) -> None:
+        self.context = {key: value for key, value in context.items() if value is not None}
 
     def write(self, event_type: str, **details: Any) -> AuditEvent:
+        for key, value in self.context.items():
+            details.setdefault(key, value)
         if self.identity is not None:
             details.setdefault("actor", self.identity.subject)
             details.setdefault("tenant_id", self.identity.tenant)
@@ -196,4 +203,5 @@ __all__ = [
     "AuditFlushResult",
     "AuditLogger",
     "prompt_preview",
+    "verify_jsonl_audit",
 ]

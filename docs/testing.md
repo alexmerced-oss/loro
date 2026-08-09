@@ -28,7 +28,14 @@ The main GitHub Actions workflow runs on pushes and pull requests to `main`:
 - `python -m pytest --cov --cov-report=term-missing --cov-report=xml`
 - `python -m compileall src tests`
 
-Optional integration tests run through the manual `Integration` workflow.
+The `Integration` workflow runs Postgres and the pinned Polaris `1.5.0` quickstart weekly and can
+also be dispatched manually. The credentialed Polaris CLI job remains manual for a preconfigured
+protected runner.
+
+The `Security Evidence` workflow runs on changes, weekly, and on demand. It enforces dependency,
+static, secret-baseline, license, SBOM, overall coverage, and module-specific branch-aware
+coverage gates. Artifacts are retained for 30 days. Current module floors are encoded in
+`scripts/check_security_coverage.py`.
 
 ## Integration Tests
 
@@ -55,6 +62,8 @@ Current high-value gaps that need external services or workflow infrastructure:
 - Live Iceberg/Polaris governed execution.
 - Bedrock requests with real AWS credentials.
 - Production-gateway MCP authorization and hostile remote-server testing.
+- Corporate secret-baseline adjudication and risk acceptance.
+- Production audit collector load/outage evidence and externally retained hash anchors.
 
 ## MCP Tests
 

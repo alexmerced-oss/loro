@@ -171,7 +171,8 @@ def _server_issues(
     except MCPTransportPolicyError as error:
         issues.append(str(error))
     if server.transport == "stdio":
-        assert server.command is not None
+        if server.command is None:
+            return [*issues, "stdio server is missing its validated command"]
         command = Path(server.command).expanduser()
         if command.parent != Path("."):
             if not command.exists():
@@ -184,7 +185,8 @@ def _server_issues(
         if missing:
             issues.append(f"allowlisted environment variables are missing: {', '.join(missing)}")
     else:
-        assert server.url is not None
+        if server.url is None:
+            return [*issues, "HTTP server is missing its validated URL"]
         parsed = urlsplit(server.url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             issues.append("Streamable HTTP URL must be an absolute http:// or https:// URL.")

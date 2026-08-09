@@ -51,7 +51,8 @@ class PolarisClient:
                 sandbox_os_enforced=result.os_enforced,
                 output_truncated=result.output_truncated,
             )
-        completed: CompletedProcess[str] = run(
+        # Polaris receives a structured argv assembled from typed command components.
+        completed: CompletedProcess[str] = run(  # nosec B603
             command,
             capture_output=True,
             text=True,

@@ -132,6 +132,7 @@ loro setup quickstart
 loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"shell","executable_name":"python"}}'
 loro audit doctor
 loro audit flush
+loro audit verify
 ```
 
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain
@@ -166,6 +167,7 @@ loro remember --shared "Use the enterprise launch readiness template for launche
 loro memory drafts
 loro memory commit-draft <draft-id>
 loro memory shared-search "launch readiness" --tenant-id acme
+loro memory lifecycle <memory-id> --action hold --reason "Approved hold" --execute
 loro memory propose "Use concise launch summaries" --target local
 loro memory propose "Use the enterprise launch readiness template" --target shared
 loro memory accept-proposal <proposal-id>
@@ -200,6 +202,12 @@ Configuration can be layered from `.loro/config.toml`, `LORO_CONFIG`, and
 `LORO_CONFIG_CONTENT`. Enterprise-managed overlays can be supplied through
 `/etc/loro/managed.toml`, `LORO_MANAGED_CONFIG`, or `LORO_MANAGED_CONFIG_CONTENT`; those
 managed values are applied last.
+
+Managed policy can be required and pinned with `LORO_MANAGED_CONFIG_REQUIRED` and
+`LORO_MANAGED_CONFIG_SHA256`. Runtime task budgets cover model bytes/tokens/cost and tool calls;
+provider transport supports bounded retries plus environment-backed enterprise CA/proxy paths.
+See [External Enterprise Requirements](docs/external-enterprise-requirements.md) for deployment,
+identity, database, catalog, audit, and governance evidence that must be supplied outside Loro.
 
 For shell commands, use `--` before the command when passing flags to the child process.
 

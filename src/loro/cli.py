@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -15,7 +16,7 @@ from loro.artifacts.common import ArtifactResult, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
-from loro.audit import AuditLogger, prompt_preview
+from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
 from loro.config import (
     LoroConfig,
     MCPCredentialProfileConfig,
@@ -44,9 +45,11 @@ from loro.mcp import (
 )
 from loro.mcp.extensions import TASKS_EXTENSION_ID
 from loro.mcp.registry import server_endpoint_for_display
+from loro.memory.base import SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import (
+    apply_shared_memory_lifecycle,
     check_shared_memory_backend,
     create_shared_memory_draft,
     render_or_commit_shared_draft,
@@ -1716,6 +1719,25 @@ def audit_flush() -> None:
     raise typer.Exit(code=0 if result.remaining == 0 else 1)
 
 
+@audit_app.command("verify")
+def audit_verify(
+    anchor: Annotated[
+        str | None,
+        typer.Option(
+            "--anchor",
+            help="Expected externally stored final SHA-256 event hash.",
+        ),
+    ] = None,
+) -> None:
+    """Verify the local JSONL audit hash chain and optional external anchor."""
+    config = load_config().audit
+    if config.sink != "jsonl":
+        raise typer.BadParameter("Local hash verification requires the JSONL audit sink.")
+    result = verify_jsonl_audit(config.path, expected_final_hash=anchor)
+    console.print_json(data=result.__dict__)
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
 @mcp_app.command("list")
 def mcp_list() -> None:
     """List configured MCP servers without connecting to them."""
@@ -2569,6 +2591,7 @@ def memory_accept_proposal(
             memory_type="fact",
             classification="public-internal",
             created_by=created_by or identity.subject,
+            retention_days=config.memory.shared.retention_days,
         )
         _shared_draft_store(config).stage(draft)
         store.update_status(proposal_id, "accepted_as_shared_draft")
@@ -2777,6 +2800,117 @@ def memory_commit_draft(
     )
 
 
+@memory_app.command("lifecycle")
+def memory_lifecycle(
+    memory_id: Annotated[str, typer.Argument(help="Shared memory id.")],
+    action: Annotated[
+        str,
+        typer.Option(
+            "--action",
+            help="Lifecycle action: correct, delete, expire, hold, or release_hold.",
+        ),
+    ],
+    reason: Annotated[str, typer.Option("--reason", help="Required operator reason.")],
+    tenant_id: Annotated[
+        str | None,
+        typer.Option("--tenant-id", help="Shared memory tenant. Defaults to active identity."),
+    ] = None,
+    content: Annotated[
+        str | None,
+        typer.Option("--content", help="Replacement content for correction."),
+    ] = None,
+    expires_at: Annotated[
+        str | None,
+        typer.Option("--expires-at", help="ISO-8601 expiration time for expire."),
+    ] = None,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Execute instead of rendering the backend operation."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Non-interactive approval when policy permits."),
+    ] = False,
+) -> None:
+    """Correct, delete, expire, hold, or release a shared memory."""
+    action = action.replace("-", "_")
+    allowed_actions = {"correct", "delete", "expire", "hold", "release_hold"}
+    if action not in allowed_actions:
+        raise typer.BadParameter("Unsupported lifecycle action.")
+    config = load_config()
+    identity = _identity()
+    resolved_tenant = _shared_memory_tenant(config, tenant_id)
+    if content is not None:
+        _enforce_safe_content(content, context="memory.shared.lifecycle")
+    expiration: datetime | None = None
+    if expires_at:
+        try:
+            expiration = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise typer.BadParameter("expires-at must be ISO-8601.") from error
+        if expiration.tzinfo is None:
+            expiration = expiration.replace(tzinfo=UTC)
+    request = SharedMemoryLifecycleRequest(
+        memory_id=memory_id,
+        tenant_id=resolved_tenant,
+        action=action,  # type: ignore[arg-type]
+        actor=identity.subject,
+        reason=reason,
+        content=content,
+        summary=prompt_preview(content, limit=120) if content else None,
+        expires_at=expiration,
+    )
+    if execute:
+        resource = memory_resource(
+            operation=action,
+            tenant=resolved_tenant,
+            scope_type="memory",
+            scope_key=memory_id,
+            backend=config.memory.shared.backend,
+        )
+        _authorize_cli_action(
+            tool="shared_memory",
+            action=action,
+            target=f"{resolved_tenant}/{memory_id}",
+            arguments={
+                "memory_id": memory_id,
+                "tenant_id": resolved_tenant,
+                "action": action,
+                "reason": reason,
+                "content": content,
+                "expires_at": expiration.isoformat() if expiration else None,
+            },
+            risk_reason="Change governed shared-memory lifecycle state.",
+            non_interactive_approved=yes,
+            resource=resource,
+        )
+    try:
+        result = apply_shared_memory_lifecycle(config, request, execute=execute)
+    except (PermissionError, RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.shared_lifecycle",
+        action=action,
+        target=f"{resolved_tenant}/{memory_id}",
+        tenant_id=resolved_tenant,
+        backend=result.backend,
+        executed=result.executed,
+        reason=reason,
+    )
+    if result.executed:
+        console.print(f"Applied shared-memory lifecycle action: {action}")
+        return
+    console.print_json(
+        data={
+            "backend": result.backend,
+            "execute": False,
+            "action": action,
+            "sql": result.statement.sql,
+            "params": jsonable_mapping(result.statement.params),
+        }
+    )
+
+
 @app.command("remember")
 def remember(
     content: Annotated[str, typer.Argument(help="Memory content.")],
@@ -2825,6 +2959,7 @@ def remember(
             memory_type=memory_type,
             classification=classification,
             created_by=created_by or identity.subject,
+            retention_days=config.memory.shared.retention_days,
         )
         _shared_draft_store(config).stage(draft)
         _audit().write(
@@ -2837,7 +2972,7 @@ def remember(
         )
         console.print(
             f"Staged shared memory draft: {draft.draft_id}\n"
-            "Live shared backend commits are not enabled yet."
+            "Review it with `loro memory drafts`, then explicitly commit it."
         )
         return
     if local or not shared:

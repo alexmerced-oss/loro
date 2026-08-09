@@ -1,9 +1,11 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from time import monotonic
 from uuid import uuid4
 
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger, prompt_preview
+from loro.budgets import BudgetExceeded, UsageBudget
 from loro.config import LoroConfig
 from loro.data_protection import DataProtectionEngine
 from loro.identity import IdentityContext, resolve_identity
@@ -30,6 +32,7 @@ class AgentResult:
     tool_executions: list[ToolExecution]
     stop_reason: str
     steps: int
+    usage: dict[str, int | float]
 
 
 class AgentRuntime:
@@ -60,8 +63,13 @@ class AgentRuntime:
             approval_manager=self.approvals,
             approval_provider=approval_provider,
         )
+        self.usage = UsageBudget(config.runtime, config.model)
 
     def run(self, prompt: str, mode: str, *, session_id: str | None = None) -> AgentResult:
+        self.usage = UsageBudget(self.config.runtime, self.config.model)
+        task_started = monotonic()
+        trace_id = str(uuid4())
+        self.audit.bind_context(trace_id=trace_id)
         prompt_decision = self.protection.enforce(prompt, "model_input")
         prompt = prompt_decision.content
         previous_session = self.sessions.get(session_id) if session_id else None
@@ -84,7 +92,21 @@ class AgentRuntime:
         )
         memory_section = _format_memory_section(recalled_memories, recalled_shared_memories)
         tool_executions: list[ToolExecution] = []
-        tool_executions.extend(self._execute_tool_calls(parse_tool_calls(prompt), step=0))
+        initial_calls = parse_tool_calls(prompt)
+        initial_budget_stop: str | None = None
+        try:
+            self.usage.add_tool_calls(len(initial_calls))
+        except BudgetExceeded as error:
+            initial_budget_stop = f"budget_{error.budget}"
+            initial_calls = []
+            self.audit.write(
+                "runtime.budget_exceeded",
+                mode=mode,
+                step=0,
+                budget=error.budget,
+                usage=self.usage.payload(),
+            )
+        tool_executions.extend(self._execute_tool_calls(initial_calls, step=0))
 
         initial_content = _initial_model_prompt(
             prompt=prompt,
@@ -123,15 +145,30 @@ class AgentRuntime:
         )
         client = create_model_client(self.config.model)
         model_response_content = ""
-        stop_reason = "completed"
+        stop_reason = initial_budget_stop or "completed"
         steps = 0
 
-        for step in range(1, self.config.runtime.max_steps + 1):
+        step_range = range(1, self.config.runtime.max_steps + 1) if not initial_budget_stop else ()
+        for step in step_range:
             steps = step
             try:
+                model_started = monotonic()
+                self.usage.before_model(messages)
                 model_response = client.complete(messages)
+                self.usage.after_model(model_response)
                 output_decision = self.protection.enforce(model_response.content, "model_output")
                 model_response_content = output_decision.content
+            except BudgetExceeded as error:
+                model_response_content = str(error)
+                stop_reason = f"budget_{error.budget}"
+                self.audit.write(
+                    "runtime.budget_exceeded",
+                    mode=mode,
+                    step=step,
+                    budget=error.budget,
+                    usage=self.usage.payload(),
+                )
+                break
             except ModelProviderError as error:
                 model_response_content = f"Provider error: {error}"
                 stop_reason = "provider_error"
@@ -142,13 +179,32 @@ class AgentRuntime:
                     error=str(error),
                 )
                 break
-            self.audit.write("runtime.model_completed", mode=mode, step=step)
+            self.audit.write(
+                "runtime.model_completed",
+                mode=mode,
+                step=step,
+                latency_ms=round((monotonic() - model_started) * 1000, 3),
+                usage=self.usage.payload(),
+            )
             tool_calls = [
                 *_tool_calls_from_model_response(model_response.tool_calls),
                 *parse_tool_calls(model_response_content, origin="model"),
             ]
             if not tool_calls:
                 stop_reason = "completed"
+                break
+            try:
+                self.usage.add_tool_calls(len(tool_calls))
+            except BudgetExceeded as error:
+                model_response_content = str(error)
+                stop_reason = f"budget_{error.budget}"
+                self.audit.write(
+                    "runtime.budget_exceeded",
+                    mode=mode,
+                    step=step,
+                    budget=error.budget,
+                    usage=self.usage.payload(),
+                )
                 break
             step_executions = self._execute_tool_calls(tool_calls, step=step)
             tool_executions.extend(step_executions)
@@ -166,7 +222,8 @@ class AgentRuntime:
                 )
             )
         else:
-            stop_reason = "max_steps"
+            if initial_budget_stop is None:
+                stop_reason = "max_steps"
 
         tool_section = _format_tool_section(tool_executions)
         summary = (
@@ -193,6 +250,7 @@ class AgentRuntime:
                 inbound_message_ids=[message.message_id for message in inbound_messages],
                 identity=self.identity.to_payload(),
                 stop_reason=stop_reason,
+                usage=self.usage.payload(),
                 session_id=active_session_id,
             )
         )
@@ -214,6 +272,8 @@ class AgentRuntime:
             tool_execution_count=len(tool_executions),
             stop_reason=stop_reason,
             steps=steps,
+            usage=self.usage.payload(),
+            latency_ms=round((monotonic() - task_started) * 1000, 3),
         )
         return AgentResult(
             summary=summary,
@@ -224,6 +284,7 @@ class AgentRuntime:
             tool_executions=tool_executions,
             stop_reason=stop_reason,
             steps=steps,
+            usage=self.usage.payload(),
         )
 
     def _recall_shared_memories(self, prompt: str) -> list[SharedMemorySearchRecord]:
@@ -269,14 +330,18 @@ class AgentRuntime:
         return result.records
 
     def _execute_tool_calls(self, calls: list[ToolCall], *, step: int) -> list[ToolExecution]:
-        executions = [self.tools.execute(call) for call in calls]
-        for execution in executions:
+        executions: list[ToolExecution] = []
+        for call in calls:
+            started = monotonic()
+            execution = self.tools.execute(call)
+            executions.append(execution)
             self.audit.write(
                 "runtime.tool_executed",
                 tool=execution.call.name,
                 ok=execution.ok,
                 step=step,
                 tool_identity=_tool_identity_payload(self.identity),
+                latency_ms=round((monotonic() - started) * 1000, 3),
                 **execution.metadata,
             )
         return executions

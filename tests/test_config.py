@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from loro.config import load_config
+from loro.config import ManagedConfigIntegrityError, load_config, managed_config_digest
 from loro.identity import IdentityConfigurationError, resolve_identity
 
 
@@ -45,6 +45,31 @@ def test_managed_config_content_is_non_overridable(monkeypatch) -> None:
 
     assert config.permissions.shell == "deny"
     assert config.permissions.web == "deny"
+
+
+def test_managed_config_digest_is_verified_before_merge(monkeypatch) -> None:
+    content = b'[permissions]\nshell = "deny"\n'
+    label = "environment:LORO_MANAGED_CONFIG_CONTENT"
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_CONTENT", content.decode())
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_SHA256",
+        managed_config_digest([(label, content)]),
+    )
+    assert load_config(Path.cwd()).permissions.shell == "deny"
+
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_SHA256", "sha256:" + "0" * 64)
+    with pytest.raises(ManagedConfigIntegrityError, match="digest mismatch"):
+        load_config(Path.cwd())
+
+
+def test_required_managed_config_fails_closed(monkeypatch) -> None:
+    monkeypatch.delenv("LORO_MANAGED_CONFIG", raising=False)
+    monkeypatch.delenv("LORO_MANAGED_CONFIG_CONTENT", raising=False)
+    monkeypatch.delenv("LORO_MANAGED_CONFIG_SHA256", raising=False)
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_REQUIRED", "true")
+
+    with pytest.raises(ManagedConfigIntegrityError, match="required"):
+        load_config(Path.cwd())
 
 
 def test_managed_config_file_is_applied_after_runtime_config(tmp_path, monkeypatch) -> None:

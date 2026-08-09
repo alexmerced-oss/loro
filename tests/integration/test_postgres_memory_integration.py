@@ -1,9 +1,10 @@
 import os
+from datetime import UTC, datetime
 
 import pytest
 
 from loro.config import SharedMemoryConfig
-from loro.memory.base import SharedMemoryDraft
+from loro.memory.base import SharedMemoryDraft, SharedMemoryLifecycleRequest
 from loro.memory.postgres import PostgresSharedMemoryStore
 
 pytestmark = pytest.mark.integration
@@ -14,7 +15,7 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
         pytest.skip("Set LORO_INTEGRATION_POSTGRES=1 to run Postgres container tests.")
     try:
         import psycopg
-        from testcontainers.postgres import PostgresContainer
+        from testcontainers.community.postgres import PostgresContainer
     except ModuleNotFoundError as error:
         pytest.skip(f"Missing integration dependency: {error.name}")
 
@@ -46,6 +47,11 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
                 )
                 memory_row = cursor.fetchone()
                 cursor.execute(
+                    "SELECT memory_id FROM shared_memories WHERE tenant_id = %s",
+                    ("acme",),
+                )
+                memory_id = str(cursor.fetchone()[0])
+                cursor.execute(
                     """
                     SELECT event_type, actor
                     FROM memory_events
@@ -60,6 +66,46 @@ def test_postgres_shared_memory_commit_with_container(monkeypatch) -> None:
         assert len(search_results) == 1
         assert search_results[0].content == "Use the launch readiness template"
         assert search_results[0].citation.startswith("postgres:acme/")
+
+        store.apply_lifecycle(
+            SharedMemoryLifecycleRequest(
+                memory_id=memory_id,
+                tenant_id="acme",
+                action="hold",
+                actor="integration-test",
+                reason="Preserve during investigation",
+            )
+        )
+        with pytest.raises(RuntimeError, match="legal hold"):
+            store.apply_lifecycle(
+                SharedMemoryLifecycleRequest(
+                    memory_id=memory_id,
+                    tenant_id="acme",
+                    action="delete",
+                    actor="integration-test",
+                    reason="Deletion request",
+                )
+            )
+        store.apply_lifecycle(
+            SharedMemoryLifecycleRequest(
+                memory_id=memory_id,
+                tenant_id="acme",
+                action="release_hold",
+                actor="integration-test",
+                reason="Investigation complete",
+            )
+        )
+        store.apply_lifecycle(
+            SharedMemoryLifecycleRequest(
+                memory_id=memory_id,
+                tenant_id="acme",
+                action="expire",
+                actor="integration-test",
+                reason="Retention elapsed",
+                expires_at=datetime.now(UTC),
+            )
+        )
+        assert store.search(tenant_id="acme", query="launch", limit=5) == []
     finally:
         container.stop()
 

@@ -4,7 +4,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from loro.audit import AUDIT_SCHEMA_VERSION, AuditDeliveryError, AuditLogger
+from loro.audit import (
+    AUDIT_SCHEMA_VERSION,
+    AuditDeliveryError,
+    AuditLogger,
+    verify_jsonl_audit,
+)
 from loro.audit.sinks import AuditSinkError, HttpAuditSink
 from loro.config import AuditConfig
 from loro.identity import IdentityContext
@@ -25,7 +30,35 @@ def test_audit_logger_writes_jsonl(tmp_path: Path) -> None:
     assert payload["action"] == "test.event"
     assert payload["redaction"] == {"applied": False, "fields": []}
     assert payload["details"]["answer"] == 42
+    assert payload["integrity"]["algorithm"] == "sha256"
+    assert payload["integrity"]["previous_hash"] is None
     assert event.delivery_status == "delivered"
+
+
+def test_audit_hash_chain_detects_mutation_and_external_anchor_mismatch(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    logger = AuditLogger(AuditConfig(path=str(path)))
+    logger.write("first.event", answer=1)
+    logger.write("second.event", answer=2)
+
+    valid = verify_jsonl_audit(path)
+    assert valid.ok is True
+    assert valid.events == 2
+    assert valid.final_hash is not None
+    assert verify_jsonl_audit(path, expected_final_hash=valid.final_hash).ok is True
+    anchored = verify_jsonl_audit(path, expected_final_hash="sha256:wrong")
+    assert anchored.ok is False
+    assert "external anchor" in str(anchored.issue)
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    first = json.loads(lines[0])
+    first["details"]["answer"] = 99
+    lines[0] = json.dumps(first)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    invalid = verify_jsonl_audit(path)
+    assert invalid.ok is False
+    assert invalid.line == 1
+    assert "Event hash" in str(invalid.issue)
 
 
 def test_audit_logger_adds_identity_context(tmp_path: Path) -> None:

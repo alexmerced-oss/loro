@@ -7,7 +7,8 @@ Use this checklist before tagging or publishing Loro.
 ```bash
 python -m pip install -e ".[dev]"
 python -m ruff check .
-python -m pytest --cov --cov-report=term-missing
+python -m pytest --cov --cov-report=term-missing --cov-report=json:security-coverage.json
+python scripts/check_security_coverage.py security-coverage.json
 python -m compileall src tests
 ```
 
@@ -70,6 +71,18 @@ rm -rf dist build
 python -m build
 python -m twine check dist/*
 ```
+
+Tags and manual dispatches run `Release Evidence`, which builds distributions in protected CI,
+generates SHA-256 checksums, creates GitHub/Sigstore build-provenance attestations, and retains
+the artifact bundle. Verify an attested artifact with:
+
+```bash
+gh attestation verify dist/loro_agent-*.whl --repo alexmerced-oss/loro
+sha256sum --check dist/SHA256SUMS
+```
+
+The workflow intentionally does not upload to PyPI. Publication still requires release-owner
+approval after all protected checks and external evidence gates pass.
 
 ## Publish To PyPI
 

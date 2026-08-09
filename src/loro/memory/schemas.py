@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS shared_memories (
   review JSONB,
   embedding_ref TEXT,
   supersedes UUID[] NOT NULL DEFAULT '{}',
-  expires_at TIMESTAMPTZ
+  expires_at TIMESTAMPTZ,
+  legal_hold BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS memory_events (
@@ -38,6 +40,9 @@ CREATE TABLE IF NOT EXISTS memory_events (
   event_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   payload JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+
+ALTER TABLE shared_memories ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE shared_memories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_shared_memories_scope
   ON shared_memories (tenant_id, scope_type, scope_key, status);
@@ -67,7 +72,9 @@ CREATE TABLE IF NOT EXISTS agent_memory.shared_memories (
   review STRING,
   embedding_ref STRING,
   supersedes ARRAY<STRING>,
-  expires_at TIMESTAMP
+  expires_at TIMESTAMP,
+  legal_hold BOOLEAN,
+  deleted_at TIMESTAMP
 )
 USING iceberg
 PARTITIONED BY (tenant_id, scope_type);

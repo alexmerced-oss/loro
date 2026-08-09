@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 
@@ -23,6 +23,7 @@ class SharedMemoryDraft:
     classification: str = "public-internal"
     created_by: str = "unknown"
     status: str = "draft"
+    expires_at: datetime | None = None
     draft_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -31,6 +32,23 @@ class SharedMemoryDraft:
 class SharedMemoryStatement:
     sql: str
     params: dict[str, Any]
+
+
+SharedMemoryLifecycleAction = Literal["correct", "delete", "expire", "hold", "release_hold"]
+
+
+@dataclass(frozen=True)
+class SharedMemoryLifecycleRequest:
+    memory_id: str
+    tenant_id: str
+    action: SharedMemoryLifecycleAction
+    actor: str
+    reason: str
+    content: str | None = None
+    summary: str | None = None
+    expires_at: datetime | None = None
+    event_id: str = field(default_factory=lambda: str(uuid4()))
+    requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)

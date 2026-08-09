@@ -248,7 +248,8 @@ def _bubblewrap_usable(profile: SandboxProfileConfig) -> bool:
         command.append("--unshare-net")
     command.extend(["--", "/bin/true"])
     try:
-        result = subprocess.run(
+        # Fixed Bubblewrap capability probe; no user-controlled shell is involved.
+        result = subprocess.run(  # nosec B603
             command,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -270,7 +271,8 @@ def _run_bounded(
     output_limit: int,
     profile_name: str,
 ) -> tuple[int, str, str, bool]:
-    process = subprocess.Popen(
+    # The sandbox validates executable, cwd, environment, limits, and structured argv first.
+    process = subprocess.Popen(  # nosec B603
         command,
         cwd=cwd,
         env=dict(environment),

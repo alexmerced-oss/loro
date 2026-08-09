@@ -23,6 +23,7 @@ class SessionRecord:
     activated_skills: list[dict[str, Any]] = field(default_factory=list)
     inbound_message_ids: list[str] = field(default_factory=list)
     identity: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, int | float] = field(default_factory=dict)
     stop_reason: str = "completed"
     session_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -40,6 +41,7 @@ class SessionRecord:
             "activated_skills": self.activated_skills,
             "inbound_message_ids": self.inbound_message_ids,
             "identity": self.identity,
+            "usage": self.usage,
             "stop_reason": self.stop_reason,
         }
 

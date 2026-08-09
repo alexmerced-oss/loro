@@ -1,15 +1,20 @@
 import builtins
 import sys
 import types
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from loro.config import IdentityConfig, LoroConfig, MemoryConfig, SharedMemoryConfig
-from loro.memory.base import SharedMemoryDraft
+from loro.memory.base import SharedMemoryDraft, SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
-from loro.memory.operations import search_shared_memories
+from loro.memory.operations import (
+    apply_shared_memory_lifecycle,
+    create_shared_memory_draft,
+    search_shared_memories,
+)
 from loro.memory.postgres import PostgresSharedMemoryStore
 from loro.memory.proposals import MemoryProposal, MemoryProposalStore
 from loro.memory.schemas import shared_memory_schema
@@ -111,7 +116,53 @@ def test_postgres_shared_memory_search_sql() -> None:
     )
     assert "FROM public.shared_memories" in statement.sql
     assert "ILIKE %(query)s" in statement.sql
+    assert "expires_at > now()" in statement.sql
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 5}
+
+
+@pytest.mark.parametrize("action", ["correct", "delete", "expire", "hold", "release_hold"])
+def test_postgres_memory_lifecycle_renders_event_and_guards_hold(action) -> None:
+    request = SharedMemoryLifecycleRequest(
+        memory_id="2c0e6f41-b2f9-4e62-bcdc-0532dc18dc39",
+        tenant_id="acme",
+        action=action,
+        actor="alex",
+        reason="Policy lifecycle test",
+        content="Corrected content" if action == "correct" else None,
+        summary="Corrected" if action == "correct" else None,
+        expires_at=datetime.now(UTC) if action == "expire" else None,
+    )
+    statement = PostgresSharedMemoryStore(SharedMemoryConfig()).render_lifecycle(request)
+
+    assert "INSERT INTO public.memory_events" in statement.sql
+    assert statement.params["event_type"] == f"memory.{action}"
+    if action in {"delete", "expire"}:
+        assert "AND legal_hold = FALSE" in statement.sql
+
+
+def test_memory_retention_and_lifecycle_validation() -> None:
+    before = datetime.now(UTC) + timedelta(days=29)
+    draft = create_shared_memory_draft(
+        "Retained memory",
+        tenant_id="acme",
+        scope_type="org",
+        scope_key="default",
+        memory_type="fact",
+        classification="internal",
+        created_by="alex",
+        retention_days=30,
+    )
+    assert draft.expires_at is not None and draft.expires_at > before
+
+    request = SharedMemoryLifecycleRequest(
+        memory_id="memory-1",
+        tenant_id="acme",
+        action="correct",
+        actor="alex",
+        reason="Correct stale guidance",
+    )
+    with pytest.raises(ValueError, match="replacement content"):
+        apply_shared_memory_lifecycle(LoroConfig(), request)
 
 
 def test_postgres_identity_isolation_rejects_cross_tenant_and_renders_rls() -> None:
@@ -204,6 +255,7 @@ def test_iceberg_shared_memory_search_sql() -> None:
     statement = store.render_search(tenant_id="acme", query="launch", limit=10)
     assert "FROM enterprise_memory.agent_facts" in statement.sql
     assert "LOWER(content) LIKE LOWER(:query)" in statement.sql
+    assert "ROW_NUMBER() OVER" in statement.sql
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 10}
 
 
@@ -281,7 +333,90 @@ def test_search_shared_memories_executes_iceberg(monkeypatch) -> None:
     assert result.records[0].memory_id == "mem-1"
     assert result.records[0].citation == "iceberg:acme/team/platform/mem-1"
     scan_options = fake_catalog.tables["enterprise_memory.agent_facts"].scan_options
-    assert scan_options["row_filter"] == "tenant_id = 'acme' AND status = 'active'"
+    assert scan_options["row_filter"] == "tenant_id = 'acme'"
+
+
+def test_iceberg_lifecycle_appends_version_and_event(monkeypatch) -> None:
+    created = datetime(2026, 7, 1, tzinfo=UTC)
+    fake_catalog = install_fake_iceberg_modules(
+        monkeypatch,
+        rows=[
+            {
+                "memory_id": "mem-1",
+                "tenant_id": "acme",
+                "scope_type": "team",
+                "scope_key": "platform",
+                "memory_type": "fact",
+                "content": "Old",
+                "summary": "Old",
+                "tags": [],
+                "classification": "internal",
+                "source": "{}",
+                "created_by": "alex",
+                "created_at": created,
+                "updated_at": None,
+                "status": "active",
+                "confidence": None,
+                "review": None,
+                "embedding_ref": None,
+                "supersedes": [],
+                "expires_at": None,
+                "legal_hold": False,
+                "deleted_at": None,
+            }
+        ],
+    )
+    request = SharedMemoryLifecycleRequest(
+        memory_id="mem-1",
+        tenant_id="acme",
+        action="correct",
+        actor="reviewer",
+        reason="Updated guidance",
+        content="New",
+        summary="New summary",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(
+            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
+        )
+    )
+    store.apply_lifecycle(request)
+
+    version = fake_catalog.tables["enterprise_memory.agent_facts"].appended[0].to_pylist()[0]
+    event = fake_catalog.tables["enterprise_memory.memory_events"].appended[0].to_pylist()[0]
+    assert version["content"] == "New"
+    assert version["updated_at"] is not None
+    assert event["event_type"] == "memory.correct"
+
+
+def test_iceberg_lifecycle_blocks_delete_under_legal_hold(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(
+        monkeypatch,
+        rows=[
+            {
+                "memory_id": "mem-1",
+                "tenant_id": "acme",
+                "created_at": datetime(2026, 7, 1, tzinfo=UTC),
+                "legal_hold": True,
+            }
+        ],
+    )
+    request = SharedMemoryLifecycleRequest(
+        memory_id="mem-1",
+        tenant_id="acme",
+        action="delete",
+        actor="reviewer",
+        reason="Deletion request",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(
+            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="legal hold"):
+        store.apply_lifecycle(request)
+    assert not fake_catalog.tables["enterprise_memory.agent_facts"].appended
 
 
 def test_iceberg_commit_draft_appends_memory_and_event(monkeypatch) -> None:

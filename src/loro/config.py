@@ -1,5 +1,7 @@
+import hashlib
 import os
 import re
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -27,6 +29,10 @@ IdentityField = Literal[
 ]
 
 
+class ManagedConfigIntegrityError(ValueError):
+    """Raised when a required or digest-pinned managed policy cannot be verified."""
+
+
 class ModelConfig(BaseModel):
     provider: str = "mock"
     model: str = "mock-agent"
@@ -34,12 +40,25 @@ class ModelConfig(BaseModel):
     api_key_env: str | None = None
     base_url: str | None = None
     timeout_seconds: int = 120
+    max_retries: int = Field(default=2, ge=0, le=10)
+    backoff_seconds: float = Field(default=0.25, ge=0, le=60)
+    verify_tls: bool = True
+    ca_bundle_env: str | None = None
+    proxy_env: str | None = None
     temperature: float = 0.2
     max_tokens: int | None = None
+    input_cost_per_million: float = Field(default=0, ge=0)
+    output_cost_per_million: float = Field(default=0, ge=0)
 
 
 class RuntimeConfig(BaseModel):
     max_steps: int = 5
+    max_tool_calls: int = Field(default=50, ge=0, le=10_000)
+    max_model_input_bytes: int = Field(default=2_000_000, ge=1024, le=100_000_000)
+    max_model_output_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    max_input_tokens: int | None = Field(default=None, ge=1)
+    max_output_tokens: int | None = Field(default=None, ge=1)
+    max_cost_usd: float | None = Field(default=None, gt=0)
 
 
 class SandboxProfileConfig(BaseModel):
@@ -216,6 +235,7 @@ class SharedMemoryConfig(BaseModel):
     tenant_isolation: Literal["disabled", "identity"] = "disabled"
     write_policy: str = "explicit_user_dictation_only"
     read_policy: str = "semantic_retrieval_with_citations"
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
     postgres_dsn_env: str = "LORO_POSTGRES_DSN"
     postgres_schema: str = "public"
     iceberg_catalog_name: str = "default"
@@ -699,14 +719,25 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
             "model": config.model.model,
             "small_model": config.model.small_model,
             "timeout_seconds": config.model.timeout_seconds,
+            "max_retries": config.model.max_retries,
+            "backoff_seconds": config.model.backoff_seconds,
+            "verify_tls": config.model.verify_tls,
             "temperature": config.model.temperature,
         }
         if config.model.api_key_env:
             data["api_key_env"] = config.model.api_key_env
         if config.model.base_url:
             data["base_url"] = config.model.base_url
+        if config.model.ca_bundle_env:
+            data["ca_bundle_env"] = config.model.ca_bundle_env
+        if config.model.proxy_env:
+            data["proxy_env"] = config.model.proxy_env
         if config.model.max_tokens:
             data["max_tokens"] = config.model.max_tokens
+        if config.model.input_cost_per_million:
+            data["input_cost_per_million"] = config.model.input_cost_per_million
+        if config.model.output_cost_per_million:
+            data["output_cost_per_million"] = config.model.output_cost_per_million
         return {"model": data}
     if section == "identity":
         return {"identity": config.identity.model_dump(exclude_none=True)}
@@ -776,14 +807,57 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
     env_content = os.environ.get("LORO_CONFIG_CONTENT")
     if env_content:
         data = _merge(data, tomllib.loads(env_content))
-    managed_data: dict[str, Any] = {}
+    managed_sources: list[tuple[str, bytes]] = []
     for path in managed_config_paths():
-        managed_data = _merge(managed_data, _read_toml(path))
+        if path.exists():
+            managed_sources.append((str(path), path.read_bytes()))
     managed_env_config = os.environ.get("LORO_MANAGED_CONFIG")
     if managed_env_config:
-        managed_data = _merge(managed_data, _read_toml(Path(managed_env_config).expanduser()))
+        path = Path(managed_env_config).expanduser()
+        if not path.exists():
+            raise ManagedConfigIntegrityError(f"Managed config does not exist: {path}")
+        managed_sources.append((str(path), path.read_bytes()))
     managed_env_content = os.environ.get("LORO_MANAGED_CONFIG_CONTENT")
     if managed_env_content:
-        managed_data = _merge(managed_data, tomllib.loads(managed_env_content))
+        managed_sources.append(
+            ("environment:LORO_MANAGED_CONFIG_CONTENT", managed_env_content.encode())
+        )
+    _verify_managed_sources(managed_sources)
+    managed_data: dict[str, Any] = {}
+    for label, content in managed_sources:
+        try:
+            parsed = tomllib.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise ManagedConfigIntegrityError(f"Invalid managed config: {label}") from error
+        managed_data = _merge(managed_data, parsed)
     data = _merge(data, managed_data)
     return LoroConfig.model_validate(data)
+
+
+def managed_config_digest(sources: list[tuple[str, bytes]]) -> str:
+    digest = hashlib.sha256()
+    for label, content in sources:
+        digest.update(label.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def _verify_managed_sources(sources: list[tuple[str, bytes]]) -> None:
+    required = os.environ.get("LORO_MANAGED_CONFIG_REQUIRED", "").casefold() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if required and not sources:
+        raise ManagedConfigIntegrityError("Managed policy is required but no source was found.")
+    expected = os.environ.get("LORO_MANAGED_CONFIG_SHA256")
+    if expected is None:
+        return
+    normalized = expected if expected.startswith("sha256:") else f"sha256:{expected}"
+    actual = managed_config_digest(sources)
+    if not sources or not secrets.compare_digest(actual, normalized):
+        raise ManagedConfigIntegrityError(
+            f"Managed policy digest mismatch (expected {normalized}, got {actual})."
+        )

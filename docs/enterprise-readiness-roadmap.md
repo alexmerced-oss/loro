@@ -224,6 +224,13 @@ Exit gate:
 - The reference deployment passes end-to-end, isolation, upgrade, rollback, and recovery tests.
 - Critical and high security findings are resolved or formally risk accepted before release.
 
+Repository status as of August 9, 2026: scheduled ephemeral integration, hermetic
+identity-to-audit E2E, security-module coverage floors, pinned vulnerability/static/secret/
+license scans, CycloneDX generation, checksums, and CI provenance attestation are implemented.
+The clean protected runs, secret-candidate adjudication, production-like deployment exercise,
+trusted publishing, and release sign-off are external gates described in
+[External Enterprise Requirements](external-enterprise-requirements.md).
+
 ## Phase 5: Pilot And General Availability
 
 **Goal:** validate the controls with real users, then establish a supportable GA boundary.
@@ -271,17 +278,18 @@ report:
 The concrete near-term batch plan is tracked in
 [Enterprise Next Batches](enterprise-next-batches.md).
 
-The next implementation sequence should be:
+The remaining sequence is externally led:
 
 1. Assign accountable owners and obtain corporate review of the threat model, classification
    mapping, provider flows, and reference deployment.
-2. Enforce tenant boundaries in storage authorization and add cross-tenant integration tests.
-3. Implement memory retention, correction, deletion, legal hold, and provenance lifecycle rules.
-4. Establish the Postgres-based end-to-end enterprise test path, then extend the same contract
-   to Polaris/Iceberg.
-5. Produce production Bubblewrap, corporate DLP, audit-destination, and protected MCP conformance
+2. Provision production Postgres and Polaris/Iceberg authorization, then attach live
+   cross-tenant, lifecycle, backup/restore, and encryption evidence.
+3. Produce production Bubblewrap, corporate DLP, audit-destination, and protected MCP conformance
    evidence.
-6. Add supply-chain controls, operational telemetry/runbooks, and pilot validation.
+4. Protect branches/tags, adjudicate scanner candidates, verify release attestations, and
+   approve trusted publication.
+5. Exercise operational telemetry/runbooks, incident response, offboarding, disaster recovery,
+   and pilot validation.
 
 ## Deferred Until After The First Enterprise Release
 

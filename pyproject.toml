@@ -97,6 +97,10 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B404"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

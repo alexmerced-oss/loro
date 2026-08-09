@@ -122,6 +122,24 @@ def test_audit_flush_retries_buffered_events(tmp_path, monkeypatch) -> None:
     assert buffer_path.read_text(encoding="utf-8") == ""
 
 
+def test_audit_verify_reports_valid_chain(tmp_path, monkeypatch) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{audit_path}"\n'
+        f'[sessions]\npath = "{tmp_path / "sessions"}"\n',
+    )
+    assert CliRunner().invoke(app, ["plan", "Prepare a short plan."]).exit_code == 0
+
+    result = CliRunner().invoke(app, ["audit", "verify"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["events"] > 0
+    assert payload["final_hash"].startswith("sha256:")
+
+
 def test_plan_scaffold() -> None:
     result = CliRunner().invoke(app, ["plan", "Draft a rollout plan"])
     assert result.exit_code == 0
@@ -546,6 +564,32 @@ def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert '"backend": "postgres"' in result.stdout
     assert "FROM public.shared_memories" in result.stdout
+
+
+def test_shared_memory_lifecycle_accepts_release_hold_alias(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "lifecycle",
+            "memory-1",
+            "--action",
+            "release-hold",
+            "--reason",
+            "approved release",
+            "--tenant-id",
+            "acme",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "release_hold"
+    assert "legal_hold = FALSE" in payload["sql"]
 
 
 def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:

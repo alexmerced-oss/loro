@@ -66,6 +66,18 @@ class FakeErrorHttpClient(FakeHttpClient):
         return FakeStatusResponse()
 
 
+class FakeTransientHttpClient(FakeHttpClient):
+    attempts = 0
+
+    def request(self, method, url, headers, json):
+        self.__class__.attempts += 1
+        if self.__class__.attempts == 1:
+            request = httpx.Request("POST", url)
+            response = httpx.Response(503, text="unavailable", request=request)
+            raise httpx.HTTPStatusError("retry", request=request, response=response)
+        return FakeResponse({"choices": [{"message": {"content": "recovered"}}]})
+
+
 def test_mock_model_client_complete() -> None:
     client = MockModelClient(ModelConfig())
     response = client.complete([ModelMessage(role="user", content="hello")])
@@ -133,6 +145,37 @@ def test_openai_compatible_normalizes_http_status(monkeypatch: pytest.MonkeyPatc
         ModelConfig(provider="openai", model="gpt-test", base_url="https://example.com/v1")
     )
     with pytest.raises(ModelProviderError, match="HTTP 401"):
+        client.complete([ModelMessage(role="user", content="hello")])
+
+
+def test_openai_compatible_retries_transient_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeTransientHttpClient.attempts = 0
+    monkeypatch.setattr("loro.models.httpx.Client", FakeTransientHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="gpt-test",
+            base_url="https://example.com/v1",
+            max_retries=1,
+            backoff_seconds=0,
+        )
+    )
+
+    assert client.complete([ModelMessage(role="user", content="hello")]).content == "recovered"
+    assert FakeTransientHttpClient.attempts == 2
+
+
+def test_model_transport_requires_configured_ca_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LORO_TEST_CA_BUNDLE", raising=False)
+    client = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="gpt-test",
+            ca_bundle_env="LORO_TEST_CA_BUNDLE",
+        )
+    )
+
+    with pytest.raises(ModelProviderError, match="CA bundle"):
         client.complete([ModelMessage(role="user", content="hello")])
 
 

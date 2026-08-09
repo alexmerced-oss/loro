@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -9,6 +9,7 @@ from loro.config import SharedMemoryConfig
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
+    SharedMemoryLifecycleRequest,
     SharedMemorySearchRecord,
     SharedMemoryStatement,
 )
@@ -66,7 +67,9 @@ CREATE TABLE IF NOT EXISTS {self.memory_table} (
   review STRING,
   embedding_ref STRING,
   supersedes ARRAY<STRING>,
-  expires_at TIMESTAMP
+  expires_at TIMESTAMP,
+  legal_hold BOOLEAN,
+  deleted_at TIMESTAMP
 )
 USING iceberg
 PARTITIONED BY (tenant_id, scope_type);
@@ -108,7 +111,9 @@ INSERT INTO {self.memory_table} (
   review,
   embedding_ref,
   supersedes,
-  expires_at
+  expires_at,
+  legal_hold,
+  deleted_at
 )
 VALUES (
   :memory_id,
@@ -129,6 +134,8 @@ VALUES (
   NULL,
   NULL,
   ARRAY(),
+  :expires_at,
+  FALSE,
   NULL
 );
 
@@ -166,6 +173,7 @@ VALUES (
                 "source": json.dumps({"source": "loro.shared_memory_draft"}),
                 "created_by": draft.created_by,
                 "created_at": draft.created_at,
+                "expires_at": draft.expires_at,
                 "event_payload": json.dumps({"draft_id": draft.draft_id}),
             },
         )
@@ -179,6 +187,13 @@ VALUES (
     ) -> SharedMemoryStatement:
         self._authorize_tenant(tenant_id)
         sql = f"""
+WITH latest AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY memory_id ORDER BY COALESCE(updated_at, created_at) DESC
+  ) AS version_rank
+  FROM {self.memory_table}
+  WHERE tenant_id = :tenant_id
+)
 SELECT
   memory_id,
   tenant_id,
@@ -191,9 +206,10 @@ SELECT
   created_by,
   created_at,
   status
-FROM {self.memory_table}
-WHERE tenant_id = :tenant_id
+FROM latest
+WHERE version_rank = 1
   AND status = 'active'
+  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
   AND (LOWER(content) LIKE LOWER(:query) OR LOWER(summary) LIKE LOWER(:query))
 ORDER BY created_at DESC
 LIMIT :limit;
@@ -201,6 +217,56 @@ LIMIT :limit;
         return SharedMemoryStatement(
             sql=sql,
             params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
+        )
+
+    def render_lifecycle(
+        self, request: SharedMemoryLifecycleRequest
+    ) -> SharedMemoryStatement:
+        self._authorize_tenant(request.tenant_id)
+        status = "'deleted'" if request.action == "delete" else "status"
+        content = ":content" if request.action == "correct" else "content"
+        summary = ":summary" if request.action == "correct" else "summary"
+        expires_at = ":expires_at" if request.action == "expire" else "expires_at"
+        legal_hold = {
+            "hold": "TRUE",
+            "release_hold": "FALSE",
+        }.get(request.action, "legal_hold")
+        deleted_at = ":requested_at" if request.action == "delete" else "deleted_at"
+        hold_guard = "AND legal_hold = FALSE" if request.action in {"delete", "expire"} else ""
+        sql = f"""
+INSERT INTO {self.memory_table}
+SELECT
+  memory_id, tenant_id, scope_type, scope_key, memory_type,
+  {content}, {summary}, tags, classification, source, created_by, created_at,
+  :requested_at, {status}, confidence, review, embedding_ref, supersedes,
+  {expires_at}, {legal_hold}, {deleted_at}
+FROM {self.memory_table}
+WHERE memory_id = :memory_id AND tenant_id = :tenant_id
+  {hold_guard}
+ORDER BY COALESCE(updated_at, created_at) DESC
+LIMIT 1;
+
+INSERT INTO {self.events_table} (
+  event_id, memory_id, tenant_id, event_type, actor, event_at, payload
+)
+VALUES (
+  :event_id, :memory_id, :tenant_id, :event_type, :actor, :requested_at, :event_payload
+);
+""".strip()
+        return SharedMemoryStatement(
+            sql=sql,
+            params={
+                "memory_id": request.memory_id,
+                "tenant_id": request.tenant_id,
+                "event_id": request.event_id,
+                "event_type": f"memory.{request.action}",
+                "actor": request.actor,
+                "requested_at": request.requested_at,
+                "content": request.content,
+                "summary": request.summary,
+                "expires_at": request.expires_at,
+                "event_payload": json.dumps({"reason": request.reason}),
+            },
         )
 
     def check(self) -> SharedMemoryBackendCheck:
@@ -261,7 +327,9 @@ LIMIT :limit;
             "review": None,
             "embedding_ref": None,
             "supersedes": [],
-            "expires_at": None,
+            "expires_at": _iceberg_value(draft.expires_at),
+            "legal_hold": False,
+            "deleted_at": None,
         }
         event_row = {
             "event_id": memory_statement.params["event_id"],
@@ -282,6 +350,58 @@ LIMIT :limit;
             pa.Table.from_pylist([event_row], schema=events_table.schema().as_arrow())
         )
 
+    def apply_lifecycle(self, request: SharedMemoryLifecycleRequest) -> None:
+        self._authorize_tenant(request.tenant_id)
+        try:
+            import pyarrow as pa
+        except ModuleNotFoundError as error:
+            raise RuntimeError("pyarrow is required for Iceberg memory lifecycle.") from error
+        catalog = self._load_catalog()
+        memory_table = catalog.load_table(self.memory_table)
+        events_table = catalog.load_table(self.events_table)
+        escaped_tenant = request.tenant_id.replace("'", "''")
+        escaped_memory = request.memory_id.replace("'", "''")
+        rows = memory_table.scan(
+            row_filter=(
+                f"tenant_id = '{escaped_tenant}' AND memory_id = '{escaped_memory}'"
+            )
+        ).to_arrow().to_pylist()
+        candidates = [row for row in rows if isinstance(row, dict)]
+        if not candidates:
+            raise RuntimeError("Memory lifecycle target was not found.")
+        current = max(candidates, key=_memory_version_time)
+        if request.action in {"delete", "expire"} and current.get("legal_hold") is True:
+            raise RuntimeError("Memory lifecycle target is protected by legal hold.")
+        updated = dict(current)
+        updated["updated_at"] = _iceberg_value(request.requested_at)
+        if request.action == "correct":
+            updated["content"] = request.content
+            updated["summary"] = request.summary
+        elif request.action == "delete":
+            updated["status"] = "deleted"
+            updated["deleted_at"] = _iceberg_value(request.requested_at)
+        elif request.action == "expire":
+            updated["expires_at"] = _iceberg_value(request.expires_at)
+        elif request.action == "hold":
+            updated["legal_hold"] = True
+        elif request.action == "release_hold":
+            updated["legal_hold"] = False
+        memory_table.append(
+            pa.Table.from_pylist([updated], schema=memory_table.schema().as_arrow())
+        )
+        event = {
+            "event_id": request.event_id,
+            "memory_id": request.memory_id,
+            "tenant_id": request.tenant_id,
+            "event_type": f"memory.{request.action}",
+            "actor": request.actor,
+            "event_at": _iceberg_value(request.requested_at),
+            "payload": json.dumps({"reason": request.reason}),
+        }
+        events_table.append(
+            pa.Table.from_pylist([event], schema=events_table.schema().as_arrow())
+        )
+
     def search(
         self,
         *,
@@ -298,7 +418,7 @@ LIMIT :limit;
         table = catalog.load_table(self.memory_table)
         escaped_tenant = tenant_id.replace("'", "''")
         arrow_table = table.scan(
-            row_filter=f"tenant_id = '{escaped_tenant}' AND status = 'active'",
+            row_filter=f"tenant_id = '{escaped_tenant}'",
             selected_fields=(
                 "memory_id",
                 "tenant_id",
@@ -311,19 +431,36 @@ LIMIT :limit;
                 "created_by",
                 "created_at",
                 "status",
+                "updated_at",
+                "expires_at",
             ),
         ).to_arrow()
         if not isinstance(arrow_table, pa.Table):
             raise RuntimeError("PyIceberg search did not return a PyArrow table.")
         needle = query.lower()
         records: list[SharedMemorySearchRecord] = []
+        latest: dict[str, dict[str, Any]] = {}
         for row in arrow_table.to_pylist():
+            if not isinstance(row, dict) or row.get("tenant_id") != tenant_id:
+                continue
+            memory_id = str(row.get("memory_id") or "")
+            if memory_id not in latest or _memory_version_time(row) > _memory_version_time(
+                latest[memory_id]
+            ):
+                latest[memory_id] = row
+        now = datetime.now(UTC)
+        for row in sorted(latest.values(), key=_memory_version_time, reverse=True):
             if len(records) >= limit:
                 break
-            if not isinstance(row, dict):
-                continue
             if row.get("tenant_id") != tenant_id or row.get("status") != "active":
                 continue
+            expires_at_value = row.get("expires_at")
+            if isinstance(expires_at_value, datetime):
+                comparable = expires_at_value
+                if comparable.tzinfo is None:
+                    comparable = comparable.replace(tzinfo=UTC)
+                if comparable <= now:
+                    continue
             content = str(row.get("content") or "")
             summary = str(row.get("summary") or "")
             if needle not in content.lower() and needle not in summary.lower():
@@ -392,3 +529,16 @@ def _created_at_text(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value or "")
+
+
+def _memory_version_time(row: dict[str, Any]) -> datetime:
+    value = row.get("updated_at") or row.get("created_at")
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+            return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+        except ValueError:
+            pass
+    return datetime.min.replace(tzinfo=UTC)

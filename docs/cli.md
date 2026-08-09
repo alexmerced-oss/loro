@@ -208,11 +208,14 @@ and normalized resource. See [Normalized Resource Policy](policy.md).
 loro setup audit
 loro audit doctor
 loro audit flush
+loro audit verify
+loro audit verify --anchor sha256:EXPECTED_FINAL_HASH
 ```
 
 `audit doctor` validates the schema, sink settings, credential environment, and local backlog.
 `audit flush` retries buffered HTTP events in order and exits nonzero if delivery remains
-incomplete. See [Audit Events And Delivery](audit.md).
+incomplete. `audit verify` validates the local SHA-256 chain and can compare its final hash to an
+external anchor. See [Audit Events And Delivery](audit.md).
 
 ## Memory
 
@@ -222,6 +225,11 @@ loro memory list
 loro memory search "status briefs"
 loro memory shared-search "launch readiness" --tenant-id acme
 loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory lifecycle <memory-id> --action correct --content "Corrected text" \
+  --reason "Owner-approved correction" --execute
+loro memory lifecycle <memory-id> --action hold --reason "Legal hold" --execute
+loro memory lifecycle <memory-id> --action release-hold --reason "Hold released" --execute
+loro memory lifecycle <memory-id> --action delete --reason "Approved erasure" --execute
 loro memory propose "Use concise status summaries" --target local
 loro memory propose "Use the enterprise launch readiness template" --target shared
 loro memory proposals

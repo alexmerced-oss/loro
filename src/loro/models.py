@@ -1,4 +1,5 @@
 import os
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -61,34 +62,73 @@ class BaseModelClient:
         return [message.__dict__ for message in messages]
 
     def _send(self, request: ModelRequest) -> dict[str, Any]:
-        try:
-            with httpx.Client(timeout=self.config.timeout_seconds) as client:
-                response = client.request(
-                    request.method,
-                    request.url,
-                    headers=request.headers,
-                    json=request.json,
+        client_options: dict[str, Any] = {"timeout": self.config.timeout_seconds}
+        if not self.config.verify_tls:
+            client_options["verify"] = False
+        if self.config.ca_bundle_env:
+            ca_bundle = os.environ.get(self.config.ca_bundle_env)
+            if not ca_bundle:
+                raise ModelProviderError(
+                    f"Configured CA bundle environment variable is missing: "
+                    f"{self.config.ca_bundle_env}"
                 )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.TimeoutException as error:
-            raise ModelProviderError(
-                f"{self.config.provider} request timed out after "
-                f"{self.config.timeout_seconds} seconds."
-            ) from error
-        except httpx.HTTPStatusError as error:
-            status = error.response.status_code
-            raise ModelProviderError(
-                f"{self.config.provider} returned HTTP {status}: "
-                f"{_response_preview(error.response.text)}"
-            ) from error
-        except httpx.RequestError as error:
-            raise ModelProviderError(f"{self.config.provider} request failed: {error}") from error
-        except ValueError as error:
-            raise ModelProviderError(f"{self.config.provider} returned malformed JSON.") from error
+            client_options["verify"] = ca_bundle
+        if self.config.proxy_env:
+            proxy = os.environ.get(self.config.proxy_env)
+            if not proxy:
+                raise ModelProviderError(
+                    f"Configured proxy environment variable is missing: {self.config.proxy_env}"
+                )
+            client_options["proxy"] = proxy
+
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                with httpx.Client(**client_options) as client:
+                    response = client.request(
+                        request.method,
+                        request.url,
+                        headers=request.headers,
+                        json=request.json,
+                    )
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except httpx.TimeoutException as error:
+                if attempt < self.config.max_retries:
+                    self._retry_pause(attempt)
+                    continue
+                raise ModelProviderError(
+                    f"{self.config.provider} request timed out after "
+                    f"{self.config.timeout_seconds} seconds."
+                ) from error
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                if (status == 429 or status >= 500) and attempt < self.config.max_retries:
+                    self._retry_pause(attempt)
+                    continue
+                raise ModelProviderError(
+                    f"{self.config.provider} returned HTTP {status}: "
+                    f"{_response_preview(error.response.text)}"
+                ) from error
+            except httpx.RequestError as error:
+                if attempt < self.config.max_retries:
+                    self._retry_pause(attempt)
+                    continue
+                raise ModelProviderError(
+                    f"{self.config.provider} request failed: {error}"
+                ) from error
+            except ValueError as error:
+                raise ModelProviderError(
+                    f"{self.config.provider} returned malformed JSON."
+                ) from error
         if not isinstance(payload, dict):
             raise ModelProviderError(f"{self.config.provider} returned a non-object JSON payload.")
         return payload
+
+    def _retry_pause(self, attempt: int) -> None:
+        delay = self.config.backoff_seconds * (2**attempt)
+        if delay:
+            time.sleep(delay)
 
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
         yield self.complete(messages).content

@@ -221,7 +221,10 @@ remain evidence gates.
 
 ## Recommended Next Work
 
-Batches 1 through 8 are implemented in the repository for the current application surface. The
-next work should prioritize memory retention, correction, deletion, legal-hold, and provenance
-behavior before broader pilot use. Production database isolation, Bubblewrap, corporate
-DLP/provider approvals, and protected MCP conformance artifacts remain evidence gates.
+Batches 1 through 8 and the remaining code-side lifecycle, budget, audit-integrity, provider
+transport, scheduled integration, E2E, coverage, scan, SBOM, and provenance work are implemented
+for the current application surface. Further honest progress now depends primarily on the named
+organizational and production-environment work in
+[External Enterprise Requirements](external-enterprise-requirements.md). Repository follow-up
+should respond to those exercises, scanner findings, dependency advisories, and pilot defects
+rather than claiming external assurance through additional local mocks.

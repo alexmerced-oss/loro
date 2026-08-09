@@ -153,8 +153,10 @@ verification, smoke checks, and packaging steps.
 - Production sandbox proof and corporate DLP/provider policy evidence (the repository-level
   sandbox and managed data-protection contracts are implemented)
 - Audit destination immutability, stronger authentication, and production outage evidence
-- Automated end-to-end integration tests for Postgres, Iceberg, and Polaris
-- Supply-chain controls, operational runbooks, and pilot validation
+- Protected production-like end-to-end evidence for Postgres, Iceberg, and Polaris (scheduled
+  ephemeral Postgres and Polaris service-smoke CI are implemented)
+- Production operational runbooks and pilot validation (repository supply-chain automation is
+  implemented)
 
 See the [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md) for phases, acceptance
 gates, evidence requirements, and immediate priorities.

@@ -25,7 +25,8 @@ def enforce_server_policy(
     if server.transport == "stdio":
         _enforce_stdio_policy(policy, server)
         return
-    assert server.url is not None
+    if server.url is None:
+        raise MCPTransportPolicyError("MCP HTTP server is missing its validated URL.")
     parsed = urlsplit(server.url)
     hostname = (parsed.hostname or "").rstrip(".").casefold()
     is_loopback = _hostname_is_loopback(hostname)
@@ -86,7 +87,8 @@ def dynamic_registration_guard(
 def _enforce_stdio_policy(policy: MCPConfig, server: MCPServerConfig) -> None:
     if not policy.allowed_stdio_commands:
         return
-    assert server.command is not None
+    if server.command is None:
+        raise MCPTransportPolicyError("MCP stdio server is missing its validated command.")
     resolved = shutil.which(server.command) or server.command
     candidates = {server.command, resolved}
     if not any(
