@@ -54,6 +54,11 @@ Recent patch releases:
 - `0.1.3`: omitted deprecated Gemini sampling config for `gemini-3.6-flash` and
   `gemini-3.5-flash-lite`.
 
+Release `0.2.0` adds governed shared-memory lifecycle controls, tamper-evident audit chains,
+managed-policy integrity pinning, task budgets, resilient provider transport, scheduled
+ephemeral integration testing, security/SBOM automation, and CI build-provenance attestations.
+See [Loro 0.2.0](releases/0.2.0.md) for the complete release notes and external deployment gates.
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
