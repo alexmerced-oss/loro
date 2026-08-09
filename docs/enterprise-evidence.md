@@ -50,7 +50,7 @@ Evidence states:
 | E2-05 | Memory retention, correction, deletion, hold, and provenance work | Memory/data (TBD) | Partial | Schema contains provenance/status/expiry fields; lifecycle execution and tests TBD. |
 | E2-06 | Encryption and key ownership documented and verified | Operations/security (TBD) | External | TLS/storage/KMS configuration and verification report TBD. |
 | E2-07 | Adversarial injection, poisoning, symlink, archive, and output tests pass | Security/runtime (TBD) | Planned | Adversarial suite and production-like result TBD. |
-| E2-08 | MCP and Agent Skills cannot bypass sandbox, credentials, policy, or approval | Security/runtime (TBD) | Partial | MCP normalized policy, exact approval, stdio environment allowlisting, audit metadata, and model self-approval tests exist; managed host/auth controls, malicious-server fixtures, Agent Skills, sandbox proof, and enterprise review remain. See [MCP](mcp.md). |
+| E2-08 | MCP and Agent Skills cannot bypass sandbox, credentials, policy, or approval | Security/runtime (TBD) | Partial | MCP normalized policy, exact approval, stdio environment allowlisting, managed host/auth controls, inert unknown extensions, task-input approval, audit metadata, and model self-approval tests exist; malicious-server fixtures, Agent Skills, sandbox proof, and enterprise review remain. See [MCP](mcp.md). |
 
 ## Phase 3: Audit, Operations, And Reliability
 

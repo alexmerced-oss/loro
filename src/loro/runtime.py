@@ -80,10 +80,10 @@ class AgentRuntime:
                     prompt=prompt,
                     mode=mode,
                     memory_section=memory_section,
-                tool_executions=tool_executions,
-                mcp_server_ids=(
-                    sorted(self.config.mcp.servers) if self.config.mcp.enabled else []
-                ),
+                    tool_executions=tool_executions,
+                    mcp_server_ids=(
+                        sorted(self.config.mcp.servers) if self.config.mcp.enabled else []
+                    ),
                 ),
             )
         ]
@@ -277,7 +277,8 @@ def _initial_model_prompt(
             " Configured MCP servers: "
             + ", ".join(mcp_server_ids)
             + ". MCP runtime tools are mcp.tools, mcp.call, mcp.resources, mcp.read, "
-            "mcp.prompts, and mcp.prompt; every remote operation requires Loro policy approval."
+            "mcp.prompts, mcp.prompt, mcp.task_start, mcp.task_get, mcp.task_update, "
+            "and mcp.task_cancel; every remote operation requires Loro policy approval."
         )
     tool_section = _format_tool_section(tool_executions)
     return (

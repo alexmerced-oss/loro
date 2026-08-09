@@ -8,9 +8,9 @@ the optional extra before connecting:
 python -m pip install "loro-agent[mcp]"
 ```
 
-Agent Skills, Tasks, subscriptions, MCP Apps, legacy HTTP+SSE, and Loro MCP server mode are not
-implemented yet. OAuth and enterprise transport policy are implemented; later capability work
-remains in the [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md).
+OAuth, enterprise transport policy, a deny-by-default extension registry, experimental Tasks,
+and bounded modern subscriptions are implemented. Agent Skills, MCP Apps, legacy HTTP+SSE, and
+Loro MCP server mode remain in the [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md).
 
 ## Configure A Server
 
@@ -21,6 +21,9 @@ loro setup mcp
 loro mcp list
 loro mcp doctor
 ```
+
+The wizard can register and attach the experimental Tasks extension when the server uses modern
+or automatic protocol negotiation.
 
 Or configure a stdio server directly:
 
@@ -112,6 +115,9 @@ max_output_bytes = 1000000
 max_pagination_pages = 20
 allow_input_required = false
 input_required_max_rounds = 3
+task_store_path = ".loro/mcp-tasks"
+subscription_max_events = 100
+subscription_max_seconds = 30
 
 [mcp.credential_profiles.enterprise]
 type = "bearer"
@@ -186,6 +192,67 @@ The approval displays the exact call. Audit records contain an argument digest a
 names, not raw argument values. `--yes` is available only when non-interactive approvals are
 allowed; managed enterprise configuration should normally disable it.
 
+## Extensions And Tasks
+
+Extensions must be configured globally, attached to a server, accepted by the managed
+`allowed_extensions` list when one is present, implemented by a trusted Loro adapter, and
+advertised by the remote server. Unknown identifiers and adapters remain visible but inert.
+
+Register and attach the experimental Tasks extension:
+
+```bash
+loro mcp extension-add io.modelcontextprotocol/tasks \
+  --version draft --adapter tasks
+loro mcp add tasks-server --command tasks-mcp \
+  --extension io.modelcontextprotocol/tasks
+loro mcp extensions tasks-server
+```
+
+Equivalent configuration:
+
+```toml
+[mcp]
+allowed_extensions = ["io.modelcontextprotocol/tasks"]
+task_store_path = ".loro/mcp-tasks"
+
+[mcp.extensions."io.modelcontextprotocol/tasks"]
+enabled = true
+version = "draft"
+adapter = "tasks"
+settings = {}
+
+[mcp.servers.tasks-server]
+command = "tasks-mcp"
+extensions = ["io.modelcontextprotocol/tasks"]
+allowed_protocol_versions = ["2026-07-28"]
+```
+
+Tasks are currently an experimental MCP extension and are available only with modern MCP
+`2026-07-28`. Loro persists opaque task handles locally so a later process can reconnect and
+poll. The store does not contain MCP credentials. Task input and cooperative cancellation each
+require a fresh policy/approval decision; duplicate or unknown input keys fail before network
+transmission. Cancellation acknowledgment records intent and does not claim the task is
+cancelled until a later `task-get` reports that terminal state.
+
+```bash
+loro mcp task-start tasks-server build_report --arguments '{"quarter":"Q2"}'
+loro mcp tasks --server-id tasks-server
+loro mcp task-get tasks-server TASK_ID
+loro mcp task-update tasks-server TASK_ID --responses '{"format":"pptx"}'
+loro mcp task-cancel tasks-server TASK_ID
+```
+
+Modern change subscriptions are always bounded by configuration and optional lower command
+limits:
+
+```bash
+loro mcp listen tasks-server --tools --max-events 10 --max-seconds 15
+loro mcp listen tasks-server --resource-uri catalog://reports/Q2
+```
+
+MCP Apps are intentionally unsupported. Loro will not render extension-provided applications
+until a sandboxed application host, capability policy, and adversarial test suite exist.
+
 ## Agent Runtime
 
 When MCP is enabled, Loro exposes protocol-neutral runtime tools:
@@ -196,6 +263,10 @@ When MCP is enabled, Loro exposes protocol-neutral runtime tools:
 - `mcp.read`: `{"server_id":"filesystem","uri":"file:///work/repos/README.md"}`
 - `mcp.prompts`: `{"server_id":"filesystem"}`
 - `mcp.prompt`: `{"server_id":"filesystem","prompt_name":"summarize","arguments":{}}`
+- `mcp.task_start`: `{"server_id":"tasks-server","tool_name":"build_report","arguments":{}}`
+- `mcp.task_get`: `{"server_id":"tasks-server","task_id":"TASK_ID"}`
+- `mcp.task_update`: `{"server_id":"tasks-server","task_id":"TASK_ID","responses":{}}`
+- `mcp.task_cancel`: `{"server_id":"tasks-server","task_id":"TASK_ID"}`
 
 Every model-originated MCP operation enters the ordinary Loro permission and approval path. A
 model-provided `approved=true` value is rejected. Connection metadata in runtime audit events
@@ -235,10 +306,12 @@ implicit approval.
 
 ## Current Verification
 
-- Hermetic tests cover configuration, registry behavior, pagination, protocol allowlists,
+- Hermetic tests cover configuration, registry behavior, inert extensions, durable task restart,
+  input deduplication, cooperative cancellation, bounded subscriptions, pagination, protocol allowlists,
   downgrade rejection, host/TLS/DNS policy, DCR denial, credential isolation, output bounds,
   permission denial, explicit approval, redacted audit, and runtime use.
 - Official SDK in-process tests exercise both `auto` stateless and `legacy` handshake modes.
+- SDK adapter tests verify the Tasks extension claim and `Mcp-Name` task routing aliases.
 - stdio and Streamable HTTP use SDK-provided transports.
 - `2024-11-05` remains a compatibility target; it is not yet an advertised conformance-tested
   combination.

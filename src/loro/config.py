@@ -138,6 +138,7 @@ class MCPServerConfig(BaseModel):
     minimum_protocol_version: str | None = None
     timeout_seconds: float = Field(default=30, gt=0, le=300)
     credential_profile: str | None = None
+    extensions: list[str] = Field(default_factory=list)
 
     @field_validator("command", "url", "cwd", "credential_profile")
     @classmethod
@@ -168,6 +169,11 @@ class MCPServerConfig(BaseModel):
         if any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None for value in normalized):
             raise ValueError("MCP protocol versions must use YYYY-MM-DD format.")
         return normalized
+
+    @field_validator("extensions")
+    @classmethod
+    def _normalize_extensions(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
 
     @field_validator("protocol_mode")
     @classmethod
@@ -264,10 +270,28 @@ class MCPCredentialProfileConfig(BaseModel):
         return self
 
 
+class MCPExtensionConfig(BaseModel):
+    enabled: bool = True
+    version: str
+    adapter: Literal["tasks"] | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+    settings_schema: dict[str, Any] | None = None
+
+    @field_validator("version")
+    @classmethod
+    def _normalize_version(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("MCP extension version cannot be empty.")
+        return normalized
+
+
 class MCPConfig(BaseModel):
     enabled: bool = False
     servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     credential_profiles: dict[str, MCPCredentialProfileConfig] = Field(default_factory=dict)
+    extensions: dict[str, MCPExtensionConfig] = Field(default_factory=dict)
+    allowed_extensions: list[str] = Field(default_factory=list)
     allowed_hosts: list[str] = Field(default_factory=list)
     require_https: bool = False
     allow_loopback_http: bool = True
@@ -278,6 +302,17 @@ class MCPConfig(BaseModel):
     max_pagination_pages: int = Field(default=20, ge=1, le=1000)
     allow_input_required: bool = False
     input_required_max_rounds: int = Field(default=3, ge=1, le=20)
+    task_store_path: str = ".loro/mcp-tasks"
+    subscription_max_events: int = Field(default=100, ge=1, le=10_000)
+    subscription_max_seconds: float = Field(default=30, gt=0, le=3600)
+
+    @field_validator("task_store_path")
+    @classmethod
+    def _validate_task_store_path(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("MCP task_store_path cannot be empty.")
+        return normalized
 
     @field_validator("servers")
     @classmethod
@@ -306,6 +341,25 @@ class MCPConfig(BaseModel):
                 )
         return profiles
 
+    @field_validator("extensions")
+    @classmethod
+    def _validate_extension_ids(
+        cls, extensions: dict[str, MCPExtensionConfig]
+    ) -> dict[str, MCPExtensionConfig]:
+        for extension_id in extensions:
+            if (
+                not extension_id
+                or "/" not in extension_id
+                or re.fullmatch(r"[A-Za-z0-9._/-]+", extension_id) is None
+            ):
+                raise ValueError("MCP extension ids must be namespaced identifiers containing '/'.")
+        return extensions
+
+    @field_validator("allowed_extensions")
+    @classmethod
+    def _normalize_allowed_extensions(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
     @model_validator(mode="after")
     def _validate_server_profiles(self) -> "MCPConfig":
         missing = sorted(
@@ -318,6 +372,18 @@ class MCPConfig(BaseModel):
         )
         if missing:
             raise ValueError("Unknown MCP credential profiles: " + ", ".join(missing))
+        missing_extensions = sorted(
+            {
+                extension_id
+                for server in self.servers.values()
+                for extension_id in server.extensions
+                if extension_id not in self.extensions
+            }
+        )
+        if missing_extensions:
+            raise ValueError(
+                "Unknown MCP extension configurations: " + ", ".join(missing_extensions)
+            )
         return self
 
 

@@ -83,6 +83,7 @@ loro setup quickstart
 - AI provider profiles and `loro configure` setup wizard.
 - Native tool-call normalization for OpenAI-compatible, Anthropic, Gemini, and Bedrock providers.
 - Dual-era MCP client support for tools, resources, and prompts through stdio or Streamable HTTP.
+- Deny-by-default MCP extensions, durable experimental Tasks, and bounded modern subscriptions.
 
 ## Configure A Provider
 
@@ -196,6 +197,31 @@ managed values are applied last.
 For shell commands, use `--` before the command when passing flags to the child process.
 
 Memory and artifact commands scan for obvious secrets by default. Use `--allow-sensitive` only when enterprise policy allows that content to be persisted.
+
+## MCP Quick Start
+
+Install the optional SDK, run the wizard, and verify the configured server:
+
+```bash
+python -m pip install "loro-agent[mcp]"
+loro setup mcp
+loro mcp list
+loro mcp doctor SERVER_ID
+loro mcp test SERVER_ID
+```
+
+The wizard can attach experimental modern MCP Tasks. Task handles are durable across Loro
+processes, while input and cooperative cancellation remain permission and approval gated:
+
+```bash
+loro mcp task-start SERVER_ID TOOL_NAME --arguments '{}'
+loro mcp tasks --server-id SERVER_ID
+loro mcp task-get SERVER_ID TASK_ID
+```
+
+Unknown MCP extensions remain inert. Modern subscriptions are bounded by configured event,
+duration, and output limits. See the [MCP guide](docs/mcp.md) for authentication, managed policy,
+task input/cancellation, and compatibility details.
 
 ## Documentation
 

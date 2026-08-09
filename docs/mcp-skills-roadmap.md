@@ -2,8 +2,8 @@
 
 ## Status And Scope
 
-MCP Batches 1 and 2 are implemented. Extensions, server mode, release conformance, and Agent
-Skills remain planned. This roadmap defines the compatibility, security, implementation, and
+MCP Batches 1 through 3 are implemented. Server mode, release conformance, and Agent Skills
+remain planned. This roadmap defines the compatibility, security, implementation, and
 verification work required before the broader capability set can be advertised as
 enterprise-ready.
 
@@ -202,7 +202,7 @@ Implemented in `src/loro/mcp/security.py`, typed MCP credential profiles, the of
 providers, custom no-redirect HTTP clients, bounded pagination/results, and callback-deny
 defaults. Authorization-code profiles use SDK discovery, issuer/resource validation, and CIMD;
 DCR requires explicit legacy opt-in. Managed DNS preflight is defense in depth and does not
-replace enterprise egress enforcement. Batch 3 is the next implementation batch.
+replace enterprise egress enforcement.
 
 ### Batch 3: Extensions And Long-Running Work
 
@@ -213,6 +213,16 @@ replace enterprise egress enforcement. Batch 3 is the next implementation batch.
 
 Exit: unknown extensions are inert, task inputs require approval, and reconnect/cancellation
 tests pass without losing audit continuity.
+
+Implemented in `src/loro/mcp/extensions.py` and `src/loro/mcp/tasks.py`, with explicit CLI and
+runtime operations. Configured extensions carry identifiers, versions, optional settings and
+JSON Schemas, trusted adapter names, server attachment, and a managed allowlist. Unknown or
+disallowed extensions remain inert. The experimental Tasks adapter supports create/get/update/
+cancel, durable local resumption, preflight input deduplication, and cooperative cancellation.
+Modern `subscriptions/listen` streams are bounded by event count, duration, and output size.
+Tests cover SDK aliases, restart/reconnect, trusted approval, cancellation intent, bounded event
+collection, and audit continuity. MCP Apps remain explicitly unsupported pending sandbox work.
+Batch 4 is the next implementation batch.
 
 ### Batch 4: MCP Server Mode
 

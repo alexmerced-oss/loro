@@ -151,9 +151,7 @@ class ToolRegistry:
             approved=True,
         )
         matches = self.files.search(root=root, query=query, limit=limit)
-        output = "\n".join(
-            f"{match.path}:{match.line_number}: {match.line}" for match in matches
-        )
+        output = "\n".join(f"{match.path}:{match.line_number}: {match.line}" for match in matches)
         return ToolExecution(call=call, ok=True, output=output or "No matches.")
 
     def _write_file(self, call: ToolCall) -> ToolExecution:
@@ -249,9 +247,7 @@ class ToolRegistry:
             )
             cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(
-                    tool="git", action="status", target=str(cwd), resource=resource
-                ),
+                PermissionRequest(tool="git", action="status", target=str(cwd), resource=resource),
                 approved=True,
             )
             result = self.git.status(cwd=cwd, timeout=timeout)
@@ -263,9 +259,7 @@ class ToolRegistry:
             )
             cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(
-                    tool="git", action="diff", target=str(cwd), resource=resource
-                ),
+                PermissionRequest(tool="git", action="diff", target=str(cwd), resource=resource),
                 approved=True,
             )
             result = self.git.diff(cwd=cwd, timeout=timeout)
@@ -279,9 +273,7 @@ class ToolRegistry:
             )
             cwd = Path(str(resource.fields["repository"]))
             self.permissions.require_allowed(
-                PermissionRequest(
-                    tool="git", action="show", target=revision, resource=resource
-                ),
+                PermissionRequest(tool="git", action="show", target=revision, resource=resource),
                 approved=True,
             )
             result = self.git.show(revision, cwd=cwd, timeout=timeout)
@@ -317,9 +309,7 @@ class ToolRegistry:
             cwd = Path(str(resource.fields["repository"]))
             self._authorize(
                 call,
-                PermissionRequest(
-                    tool="git", action="commit", target=message, resource=resource
-                ),
+                PermissionRequest(tool="git", action="commit", target=message, resource=resource),
                 approval_target=resource.target,
                 risk_reason="Create a Git commit in the target repository.",
             )
@@ -374,9 +364,7 @@ class ToolRegistry:
             return ToolExecution(call=call, ok=False, output="Local memory is disabled.")
         store = LocalMemoryStore.from_config(self.config.memory.local)
         memories = store.search(query)[:limit]
-        output = "\n".join(
-            f"{memory.memory_id}: {memory.content}" for memory in memories
-        )
+        output = "\n".join(f"{memory.memory_id}: {memory.content}" for memory in memories)
         return ToolExecution(call=call, ok=True, output=output or "No matching local memories.")
 
     def _search_shared_memory(self, call: ToolCall) -> ToolExecution:
@@ -485,10 +473,31 @@ class ToolRegistry:
                 raise ValueError("mcp.prompt requires string-valued arguments.")
             arguments = raw_arguments
             action = "get prompt"
+        elif operation == "task_start":
+            name = str(call.args["tool_name"])
+            raw_arguments = call.args.get("arguments", {})
+            if not isinstance(raw_arguments, dict):
+                raise ValueError("mcp.task_start requires arguments as an object.")
+            arguments = raw_arguments
+            action = "start task"
+        elif operation == "task_get":
+            name = str(call.args["task_id"])
+            action = "get task"
+        elif operation == "task_update":
+            name = str(call.args["task_id"])
+            raw_arguments = call.args.get("responses", {})
+            if not isinstance(raw_arguments, dict):
+                raise ValueError("mcp.task_update requires responses as an object.")
+            arguments = raw_arguments
+            action = "update task"
+        elif operation == "task_cancel":
+            name = str(call.args["task_id"])
+            action = "cancel task"
         else:
             raise ValueError(
                 "MCP tool must be one of: mcp.tools, mcp.call, mcp.resources, "
-                "mcp.read, mcp.prompts, mcp.prompt."
+                "mcp.read, mcp.prompts, mcp.prompt, mcp.task_start, "
+                "mcp.task_get, mcp.task_update, mcp.task_cancel."
             )
         resource = mcp_resource(
             operation=operation,
@@ -548,7 +557,15 @@ class ToolRegistry:
             return await self.mcp.read_resource(server_id, name)
         if operation == "prompts":
             return await self.mcp.list_prompts(server_id)
-        return await self.mcp.get_prompt(server_id, name, arguments)
+        if operation == "prompt":
+            return await self.mcp.get_prompt(server_id, name, arguments)
+        if operation == "task_start":
+            return await self.mcp.start_task(server_id, name, arguments)
+        if operation == "task_get":
+            return await self.mcp.get_task(server_id, name)
+        if operation == "task_update":
+            return await self.mcp.update_task(server_id, name, arguments, user_approved=True)
+        return await self.mcp.cancel_task(server_id, name, user_approved=True)
 
     def _assert_safe_write(self, content: str, *, allow_sensitive: bool) -> None:
         findings = self.safety.scan(content)
@@ -614,9 +631,7 @@ class ToolRegistry:
             self.approvals.deny(request)
             raise PermissionError("Model-provided approval arguments are not trusted.")
         self.approvals.deny(request)
-        raise PermissionError(
-            f"{permission_request.tool} requires approval from a trusted user."
-        )
+        raise PermissionError(f"{permission_request.tool} requires approval from a trusted user.")
 
 
 def parse_tool_calls(

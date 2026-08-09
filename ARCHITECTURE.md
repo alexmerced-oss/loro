@@ -54,9 +54,12 @@ environment, credential-profile, pagination, and output policy before untrusted 
 adapter boundary. Streamable HTTP always uses a Loro-owned SDK HTTP client so authentication and
 redirect behavior cannot inherit permissive SDK defaults. OAuth profiles support bearer tokens,
 client credentials, and authorization code discovery with CIMD; secret material is sourced only
-from named environment variables. MCP enters through the existing permission, approval,
-normalized-resource, session, and audit boundaries. Extensions, server mode, and `loro.skills`
-remain planned. See [Model Context Protocol](docs/mcp.md) and the
+from named environment variables. `loro.mcp.extensions` keeps unknown extensions inert and maps
+approved identifiers to trusted adapters. `loro.mcp.tasks` persists opaque handles separately
+from credentials and implements modern create/get/update/cancel routing. Bounded subscriptions
+share the client facade but are never left open without time and event ceilings. MCP enters
+through the existing permission, approval, normalized-resource, session, and audit boundaries.
+Server mode and `loro.skills` remain planned. See [Model Context Protocol](docs/mcp.md) and the
 [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
 
 ## Runtime Flow

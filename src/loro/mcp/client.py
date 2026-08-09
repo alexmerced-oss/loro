@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from loro.config import MCPConfig, MCPServerConfig
+from loro.mcp.extensions import (
+    TASKS_EXTENSION_ID,
+    MCPExtensionError,
+    MCPExtensionRegistry,
+)
 from loro.mcp.registry import MCPRegistry
 from loro.mcp.security import (
     MCPTransportPolicyError,
@@ -16,6 +21,7 @@ from loro.mcp.security import (
     dynamic_registration_guard,
     enforce_server_policy,
 )
+from loro.mcp.tasks import MCPTaskStore
 
 
 class MCPClientError(RuntimeError):
@@ -28,6 +34,10 @@ class MCPDependencyError(MCPClientError):
 
 class MCPProtocolError(MCPClientError):
     """Raised when protocol negotiation violates Loro policy."""
+
+
+class MCPTaskApprovalError(MCPClientError):
+    """Raised when a task mutation lacks trusted user approval."""
 
 
 class MCPClientLike(Protocol):
@@ -47,6 +57,8 @@ class MCPClientLike(Protocol):
 
     async def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> Any: ...
 
+    def listen(self, **kwargs: Any) -> Any: ...
+
 
 ClientContextFactory = Callable[[MCPServerConfig], Any]
 
@@ -59,6 +71,7 @@ class MCPConnectionInfo:
     lifecycle: str
     server_info: dict[str, Any] | None
     capabilities: dict[str, Any]
+    extensions: list[str]
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -68,6 +81,7 @@ class MCPConnectionInfo:
             "lifecycle": self.lifecycle,
             "server_info": self.server_info,
             "capabilities": self.capabilities,
+            "extensions": self.extensions,
         }
 
 
@@ -78,11 +92,21 @@ class MCPService:
         *,
         client_factory: ClientContextFactory | None = None,
         environ: Mapping[str, str] | None = None,
+        task_store: MCPTaskStore | None = None,
     ) -> None:
         self.config = config
         self.registry = MCPRegistry(config)
         self.environ = dict(environ if environ is not None else os.environ)
+        self.extensions = MCPExtensionRegistry(config)
+        self.task_store = task_store or MCPTaskStore.from_config(config)
         self.client_factory = client_factory or self._sdk_client
+
+    def extension_status(self, server_id: str | None = None) -> dict[str, Any]:
+        server = self.registry.get(server_id, require_enabled=False) if server_id else None
+        return {
+            "server_id": server_id,
+            "extensions": [status.to_payload() for status in self.extensions.statuses(server)],
+        }
 
     async def inspect_connection(self, server_id: str) -> dict[str, Any]:
         async with self.connect(server_id) as connected:
@@ -158,6 +182,189 @@ class MCPService:
             }
             return _bounded(payload, self.config.max_output_bytes)
 
+    async def start_task(
+        self,
+        server_id: str,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from loro.mcp.tasks import sdk_start_task
+
+        server = self.registry.get(server_id)
+        self.extensions.require_active(server, TASKS_EXTENSION_ID)
+        async with self.connect(server_id) as connected:
+            _require_remote_extension(connected, TASKS_EXTENSION_ID)
+            if hasattr(connected.client, "start_task"):
+                result = await connected.client.start_task(name, arguments or {})
+            else:
+                result = await sdk_start_task(connected.client, name, arguments or {})
+            if result.get("resultType") != "task" and result.get("result_type") != "task":
+                return _bounded(
+                    {
+                        "connection": connected.info.to_payload(),
+                        "task_created": False,
+                        "result": result,
+                    },
+                    self.config.max_output_bytes,
+                )
+            handle = self.task_store.record_remote(
+                server_id=server_id,
+                operation="tools/call",
+                name=name,
+                remote=result,
+            )
+            return _bounded(
+                {
+                    "connection": connected.info.to_payload(),
+                    "task_created": True,
+                    "task": handle.model_dump(mode="json"),
+                },
+                self.config.max_output_bytes,
+            )
+
+    async def get_task(self, server_id: str, task_id: str) -> dict[str, Any]:
+        from loro.mcp.tasks import sdk_get_task
+
+        local = self.task_store.get(server_id, task_id)
+        server = self.registry.get(server_id)
+        self.extensions.require_active(server, TASKS_EXTENSION_ID)
+        async with self.connect(server_id) as connected:
+            _require_remote_extension(connected, TASKS_EXTENSION_ID)
+            if hasattr(connected.client, "get_task"):
+                result = await connected.client.get_task(task_id)
+            else:
+                result = await sdk_get_task(connected.client, task_id)
+            handle = self.task_store.record_remote(
+                server_id=server_id,
+                operation=local.operation,
+                name=local.name,
+                remote=result,
+            )
+            return _bounded(
+                {
+                    "connection": connected.info.to_payload(),
+                    "task": handle.model_dump(mode="json"),
+                },
+                self.config.max_output_bytes,
+            )
+
+    async def update_task(
+        self,
+        server_id: str,
+        task_id: str,
+        input_responses: dict[str, Any],
+        *,
+        user_approved: bool = False,
+    ) -> dict[str, Any]:
+        from loro.mcp.tasks import sdk_update_task
+
+        if not user_approved:
+            raise MCPTaskApprovalError("MCP task input requires trusted user approval.")
+        handle = self.task_store.get(server_id, task_id)
+        if handle.status != "input_required":
+            raise MCPClientError("MCP task is not waiting for input.")
+        response_keys = list(input_responses)
+        self.task_store.validate_response_keys(handle, response_keys)
+        server = self.registry.get(server_id)
+        self.extensions.require_active(server, TASKS_EXTENSION_ID)
+        async with self.connect(server_id) as connected:
+            _require_remote_extension(connected, TASKS_EXTENSION_ID)
+            if hasattr(connected.client, "update_task"):
+                result = await connected.client.update_task(task_id, input_responses)
+            else:
+                result = await sdk_update_task(connected.client, task_id, input_responses)
+            handle = self.task_store.mark_answered(server_id, task_id, response_keys)
+            return _bounded(
+                {
+                    "connection": connected.info.to_payload(),
+                    "acknowledged": True,
+                    "result": result,
+                    "task": handle.model_dump(mode="json"),
+                },
+                self.config.max_output_bytes,
+            )
+
+    async def cancel_task(
+        self,
+        server_id: str,
+        task_id: str,
+        *,
+        user_approved: bool = False,
+    ) -> dict[str, Any]:
+        from loro.mcp.tasks import sdk_cancel_task
+
+        if not user_approved:
+            raise MCPTaskApprovalError("MCP task cancellation requires trusted user approval.")
+        self.task_store.get(server_id, task_id)
+        server = self.registry.get(server_id)
+        self.extensions.require_active(server, TASKS_EXTENSION_ID)
+        async with self.connect(server_id) as connected:
+            _require_remote_extension(connected, TASKS_EXTENSION_ID)
+            if hasattr(connected.client, "cancel_task"):
+                result = await connected.client.cancel_task(task_id)
+            else:
+                result = await sdk_cancel_task(connected.client, task_id)
+            handle = self.task_store.mark_cancellation_requested(server_id, task_id)
+            return _bounded(
+                {
+                    "connection": connected.info.to_payload(),
+                    "acknowledged": True,
+                    "cooperative": True,
+                    "result": result,
+                    "task": handle.model_dump(mode="json"),
+                },
+                self.config.max_output_bytes,
+            )
+
+    async def listen_changes(
+        self,
+        server_id: str,
+        *,
+        tools: bool = False,
+        prompts: bool = False,
+        resources: bool = False,
+        resource_uris: list[str] | None = None,
+        max_events: int | None = None,
+        max_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        import anyio
+
+        event_limit = self.config.subscription_max_events if max_events is None else max_events
+        time_limit = self.config.subscription_max_seconds if max_seconds is None else max_seconds
+        if not 1 <= event_limit <= self.config.subscription_max_events:
+            raise ValueError("MCP subscription max_events exceeds the configured managed limit.")
+        if not 0 < time_limit <= self.config.subscription_max_seconds:
+            raise ValueError("MCP subscription max_seconds exceeds the configured managed limit.")
+        events: list[dict[str, Any]] = []
+        timed_out = False
+        async with self.connect(server_id) as connected:
+            if connected.info.protocol_version < "2026-07-28":
+                raise MCPProtocolError("subscriptions/listen requires MCP 2026-07-28.")
+            listen = connected.client.listen(
+                tools_list_changed=tools,
+                prompts_list_changed=prompts,
+                resources_list_changed=resources,
+                resource_subscriptions=resource_uris or [],
+            )
+            with anyio.move_on_after(time_limit) as scope:
+                async with listen as subscription:
+                    async for event in subscription:
+                        events.append(_payload(event))
+                        _bounded(events, self.config.max_output_bytes)
+                        if len(events) >= event_limit:
+                            break
+            timed_out = bool(scope.cancel_called)
+            return _bounded(
+                {
+                    "connection": connected.info.to_payload(),
+                    "events": events,
+                    "event_count": len(events),
+                    "timed_out": timed_out,
+                    "limits": {"max_events": event_limit, "max_seconds": time_limit},
+                },
+                self.config.max_output_bytes,
+            )
+
     @asynccontextmanager
     async def connect(self, server_id: str) -> AsyncIterator[ConnectedMCP]:
         server = self.registry.get(server_id)
@@ -166,13 +373,15 @@ class MCPService:
             async with self.client_factory(server) as client:
                 protocol_version = str(client.protocol_version)
                 _enforce_protocol_policy(server, protocol_version)
+                capabilities = _mapping(client.server_capabilities)
                 info = MCPConnectionInfo(
                     server_id=server_id,
                     transport=server.transport,
                     protocol_version=protocol_version,
                     lifecycle=("stateless" if protocol_version >= "2026-07-28" else "classic"),
                     server_info=_optional_mapping(client.server_info),
-                    capabilities=_mapping(client.server_capabilities),
+                    capabilities=capabilities,
+                    extensions=sorted((capabilities.get("extensions") or {}).keys()),
                 )
                 yield ConnectedMCP(
                     client=client,
@@ -180,7 +389,7 @@ class MCPService:
                     max_pagination_pages=self.config.max_pagination_pages,
                     max_output_bytes=self.config.max_output_bytes,
                 )
-        except (MCPClientError, MCPTransportPolicyError):
+        except (MCPClientError, MCPExtensionError, MCPTransportPolicyError):
             raise
         except Exception as error:
             raise MCPClientError(f"MCP server {server_id} failed: {error}") from error
@@ -199,12 +408,14 @@ class MCPService:
             "mode": server.protocol_mode,
             "raise_exceptions": True,
             "input_required_max_rounds": (
-                self.config.input_required_max_rounds
-                if self.config.allow_input_required
-                else 0
+                self.config.input_required_max_rounds if self.config.allow_input_required else 0
             ),
             "elicitation_callback": (
                 self._elicitation_callback if self.config.allow_input_required else None
+            ),
+            "extensions": self.extensions.sdk_extensions(
+                server,
+                self._task_capture_callback(server),
             ),
         }
         if server.transport == "streamable_http":
@@ -225,6 +436,26 @@ class MCPService:
             cwd=server.cwd,
         )
         return Client(stdio_client(parameters), **kwargs)
+
+    def _task_capture_callback(self, server: MCPServerConfig) -> Callable[..., Any]:
+        server_id = next(
+            (
+                current_id
+                for current_id, candidate in self.config.servers.items()
+                if candidate is server
+            ),
+            "unknown",
+        )
+
+        def capture(remote: dict[str, Any], tool_name: str) -> None:
+            self.task_store.record_remote(
+                server_id=server_id,
+                operation="tools/call",
+                name=tool_name,
+                remote=remote,
+            )
+
+        return capture
 
     @asynccontextmanager
     async def _http_sdk_client(
@@ -466,6 +697,15 @@ def _enforce_protocol_policy(server: MCPServerConfig, protocol_version: str) -> 
             f"Negotiated MCP protocol {protocol_version} is below managed minimum "
             f"{server.minimum_protocol_version}."
         )
+
+
+def _require_remote_extension(connected: ConnectedMCP, extension_id: str) -> None:
+    if connected.info.protocol_version < "2026-07-28":
+        raise MCPProtocolError(
+            f"MCP extension {extension_id} requires protocol 2026-07-28 or newer."
+        )
+    if extension_id not in connected.info.extensions:
+        raise MCPExtensionError(f"MCP server did not advertise required extension: {extension_id}")
 
 
 def _payload(value: Any) -> dict[str, Any]:

@@ -231,7 +231,8 @@ setup approvals` configures interactive prompts, non-interactive automation, exa
 reuse, and expiration. `loro setup memory` configures private local memory. `loro setup shared-memory` configures
 explicit-only shared enterprise memory with either Postgres or Iceberg. `loro setup polaris`
 configures governed data discovery through the Polaris CLI. `loro setup mcp` configures one
-stdio or Streamable HTTP MCP server without storing environment-secret values. `loro setup audit` configures local
+stdio or Streamable HTTP MCP server without storing environment-secret values and can attach the
+experimental Tasks extension. `loro setup audit` configures local
 JSONL or external HTTP delivery, retry, buffering, and failure behavior. `loro setup quickstart`
 runs all eight setup areas in sequence.
 
@@ -245,6 +246,18 @@ See [Approvals](approvals.md) for record binding, replay protection, prompt beha
 recommended managed policy that disables non-interactive approvals.
 See [Audit Events And Delivery](audit.md) for schema fields, collector behavior, buffering,
 failure modes, and operations.
+
+## MCP Extensions
+
+Use `loro mcp extension-add` to register a versioned extension and repeated `--extension` options
+on `loro mcp add` to attach configured extensions to a server. `loro mcp extensions [SERVER]`
+shows whether each extension is enabled, managed-allowlisted, implemented, schema-valid, and
+active. Unknown adapters never gain authority. Optional `settings_schema` uses JSON Schema and
+is validated when the registry activates an extension.
+
+`[mcp].task_store_path` controls durable local task handles. `subscription_max_events` and
+`subscription_max_seconds` are operator ceilings; CLI callers may request only equal or lower
+limits. See [Model Context Protocol](mcp.md) for the Tasks configuration and commands.
 
 ## Shared Memory Backend Checks
 

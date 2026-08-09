@@ -60,6 +60,7 @@ def server_payload(server_id: str, server: MCPServerConfig) -> dict[str, Any]:
         "minimum_protocol_version": server.minimum_protocol_version,
         "timeout_seconds": server.timeout_seconds,
         "credential_profile": server.credential_profile,
+        "extensions": list(server.extensions),
     }
 
 
@@ -108,7 +109,10 @@ def diagnose_mcp(
     *,
     environ: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    from loro.mcp.extensions import MCPExtensionRegistry
+
     registry = MCPRegistry(config)
+    extensions = MCPExtensionRegistry(config)
     environment = environ if environ is not None else dict(os.environ)
     issues: list[str] = []
     sdk_version = _mcp_sdk_version()
@@ -129,7 +133,19 @@ def diagnose_mcp(
     for current_id in server_ids:
         server = registry.get(current_id, require_enabled=False)
         server_issues = _server_issues(config, server, environment)
-        diagnostics.append({**server_payload(current_id, server), "issues": server_issues})
+        extension_statuses = [status.to_payload() for status in extensions.statuses(server)]
+        for status in extension_statuses:
+            if status["enabled"] and not status["active"]:
+                server_issues.append(
+                    f"extension {status['identifier']} is inactive: {status['reason']}"
+                )
+        diagnostics.append(
+            {
+                **server_payload(current_id, server),
+                "extension_statuses": extension_statuses,
+                "issues": server_issues,
+            }
+        )
         issues.extend(f"{current_id}: {issue}" for issue in server_issues)
 
     if config.enabled and not config.servers:
@@ -140,6 +156,7 @@ def diagnose_mcp(
         "enabled": config.enabled,
         "sdk_installed": sdk_version is not None,
         "sdk_version": sdk_version,
+        "allowed_extensions": list(config.allowed_extensions),
         "servers": diagnostics,
         "issues": issues,
     }

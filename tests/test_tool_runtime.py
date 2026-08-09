@@ -21,6 +21,7 @@ from loro.tool_runtime import ToolRegistry, parse_tool_calls
 class FakeRuntimeMCPService:
     def __init__(self) -> None:
         self.requests: list[str] = []
+        self.task_updates: list[tuple[str, str, dict[str, object], bool]] = []
 
     async def list_tools(self, server_id: str):
         self.requests.append(server_id)
@@ -32,6 +33,25 @@ class FakeRuntimeMCPService:
                 "lifecycle": "stateless",
             },
             "tools": [{"name": "echo"}],
+        }
+
+    async def update_task(
+        self,
+        server_id: str,
+        task_id: str,
+        responses: dict[str, object],
+        *,
+        user_approved: bool,
+    ):
+        self.task_updates.append((server_id, task_id, responses, user_approved))
+        return {
+            "connection": {
+                "server_id": server_id,
+                "transport": "stdio",
+                "protocol_version": "2026-07-28",
+                "lifecycle": "stateless",
+            },
+            "acknowledged": True,
         }
 
 
@@ -80,9 +100,7 @@ def test_tool_registry_file_search(tmp_path) -> None:
 
 def test_tool_registry_file_write_requires_approval(tmp_path) -> None:
     target = tmp_path / "note.txt"
-    call = parse_tool_calls(
-        f'@tool file.write {{"path": "{target}", "content": "hello"}}'
-    )[0]
+    call = parse_tool_calls(f'@tool file.write {{"path": "{target}", "content": "hello"}}')[0]
     result = ToolRegistry(LoroConfig()).execute(call)
     assert result.ok is False
     assert "requires approval" in result.output
@@ -172,8 +190,7 @@ def test_tool_registry_file_replace_with_approval(tmp_path) -> None:
     target = tmp_path / "note.txt"
     target.write_text("hello loro\n", encoding="utf-8")
     call = parse_tool_calls(
-        f'@tool file.replace {{"path": "{target}", "old": "loro", '
-        '"new": "team", "approved": true}'
+        f'@tool file.replace {{"path": "{target}", "old": "loro", "new": "team", "approved": true}}'
     )[0]
     result = ToolRegistry(LoroConfig()).execute(call)
     assert result.ok is True
@@ -236,6 +253,46 @@ def test_model_cannot_self_approve_mcp_operation() -> None:
     assert service.requests == []
 
 
+def test_user_can_explicitly_approve_mcp_task_input() -> None:
+    service = FakeRuntimeMCPService()
+    config = LoroConfig(
+        mcp=MCPConfig(
+            enabled=True,
+            servers={"fixture": MCPServerConfig(command="fixture-server")},
+        )
+    )
+    call = parse_tool_calls(
+        '@tool mcp.task_update {"server_id":"fixture","task_id":"task-1",'
+        '"responses":{"format":"pptx"},"approved":true}'
+    )[0]
+
+    result = ToolRegistry(config, mcp_service=service).execute(call)
+
+    assert result.ok is True
+    assert service.task_updates == [("fixture", "task-1", {"format": "pptx"}, True)]
+
+
+def test_model_cannot_self_approve_mcp_task_input() -> None:
+    service = FakeRuntimeMCPService()
+    config = LoroConfig(
+        mcp=MCPConfig(
+            enabled=True,
+            servers={"fixture": MCPServerConfig(command="fixture-server")},
+        )
+    )
+    call = parse_tool_calls(
+        '@tool mcp.task_update {"server_id":"fixture","task_id":"task-1",'
+        '"responses":{"format":"pptx"},"approved":true}',
+        origin="model",
+    )[0]
+
+    result = ToolRegistry(config, mcp_service=service).execute(call)
+
+    assert result.ok is False
+    assert "Model-provided approval arguments are not trusted" in result.output
+    assert service.task_updates == []
+
+
 def test_tool_registry_shell_run_requires_approval() -> None:
     call = parse_tool_calls('@tool shell.run {"args": ["python", "-c", "print(123)"]}')[0]
     result = ToolRegistry(LoroConfig()).execute(call)
@@ -264,8 +321,7 @@ def test_tool_registry_shell_run_respects_deny() -> None:
 
 def test_tool_registry_shell_structured_rule_blocks_absolute_executable() -> None:
     call = parse_tool_calls(
-        '@tool shell.run {"args": ["/usr/bin/python3", "-c", "print(123)"], '
-        '"approved": true}'
+        '@tool shell.run {"args": ["/usr/bin/python3", "-c", "print(123)"], "approved": true}'
     )[0]
     config = LoroConfig(
         permissions=PermissionsConfig(
@@ -295,12 +351,10 @@ def test_tool_registry_rejects_symlink_outside_workspace(tmp_path) -> None:
     outside.mkdir()
     (outside / "secret.txt").write_text("secret", encoding="utf-8")
     (workspace / "linked").symlink_to(outside, target_is_directory=True)
-    call = parse_tool_calls(
-        f'@tool file.read {{"path": "{workspace / "linked" / "secret.txt"}"}}'
-    )[0]
-    config = LoroConfig(
-        permissions=PermissionsConfig(workspace_roots=[str(workspace)])
-    )
+    call = parse_tool_calls(f'@tool file.read {{"path": "{workspace / "linked" / "secret.txt"}"}}')[
+        0
+    ]
+    config = LoroConfig(permissions=PermissionsConfig(workspace_roots=[str(workspace)]))
 
     result = ToolRegistry(config).execute(call)
 
@@ -354,9 +408,7 @@ def test_tool_registry_memory_search(tmp_path) -> None:
     memory_config = LocalMemoryConfig(path=str(tmp_path / "memory"))
     LocalMemoryStore.from_config(memory_config).remember("Launch briefs include risks.")
     call = parse_tool_calls('@tool memory.search {"query": "launch"}')[0]
-    result = ToolRegistry(
-        LoroConfig(memory=MemoryConfig(local=memory_config))
-    ).execute(call)
+    result = ToolRegistry(LoroConfig(memory=MemoryConfig(local=memory_config))).execute(call)
     assert result.ok is True
     assert "Launch briefs include risks." in result.output
 
@@ -400,7 +452,7 @@ def test_tool_registry_polaris_readonly_rejects_mutation() -> None:
 
 def test_tool_registry_artifact_create_document(tmp_path) -> None:
     call = parse_tool_calls(
-        '@tool artifact.create '
+        "@tool artifact.create "
         f'{{"kind": "document", "prompt": "Draft onboarding guide", '
         f'"output_dir": "{tmp_path}"}}'
     )[0]
@@ -414,7 +466,7 @@ def test_tool_registry_artifact_create_document(tmp_path) -> None:
 
 def test_tool_registry_artifact_create_brief(tmp_path) -> None:
     call = parse_tool_calls(
-        '@tool artifact.create '
+        "@tool artifact.create "
         f'{{"kind": "brief", "brief_type": "executive", '
         f'"prompt": "Summarize launch readiness", "output_dir": "{tmp_path}"}}'
     )[0]
@@ -426,7 +478,7 @@ def test_tool_registry_artifact_create_brief(tmp_path) -> None:
 
 def test_tool_registry_artifact_create_rejects_unknown_kind(tmp_path) -> None:
     call = parse_tool_calls(
-        '@tool artifact.create '
+        "@tool artifact.create "
         f'{{"kind": "video", "prompt": "Make a clip", "output_dir": "{tmp_path}"}}'
     )[0]
     result = ToolRegistry(LoroConfig()).execute(call)
@@ -436,7 +488,7 @@ def test_tool_registry_artifact_create_rejects_unknown_kind(tmp_path) -> None:
 
 def test_tool_registry_artifact_create_blocks_sensitive_prompt(tmp_path) -> None:
     call = parse_tool_calls(
-        '@tool artifact.create '
+        "@tool artifact.create "
         f'{{"kind": "document", "prompt": "api_key = abcdefghijklmnop", '
         f'"output_dir": "{tmp_path}"}}'
     )[0]

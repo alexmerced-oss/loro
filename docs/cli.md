@@ -68,6 +68,7 @@ tool registry supports:
 - `mcp.tools`: `{"server_id": "filesystem"}`
 - `mcp.call`: `{"server_id": "filesystem", "tool_name": "read_file", "arguments": {"path": "README.md"}}`
 - `mcp.resources`, `mcp.read`, `mcp.prompts`, and `mcp.prompt`
+- `mcp.task_start`, `mcp.task_get`, `mcp.task_update`, and `mcp.task_cancel`
 
 Runtime write-like calls still obey configured permissions. When policy is `ask`, Loro prompts
 the trusted terminal user; a model-provided `approved=true` cannot authorize itself. Explicit
@@ -102,9 +103,23 @@ loro mcp prompts filesystem
 loro mcp prompt filesystem summarize --arguments '{"audience":"engineering"}'
 ```
 
+Register extensions, resume modern Tasks, and collect bounded change events:
+
+```bash
+loro mcp extension-add io.modelcontextprotocol/tasks --version draft --adapter tasks
+loro mcp extensions
+loro mcp tasks
+loro mcp task-start tasks-server build_report --arguments '{"quarter":"Q2"}'
+loro mcp task-get tasks-server TASK_ID
+loro mcp task-update tasks-server TASK_ID --responses '{"format":"pptx"}'
+loro mcp task-cancel tasks-server TASK_ID
+loro mcp listen tasks-server --tools --max-events 10 --max-seconds 15
+```
+
 Tool calls require an exact Loro approval by default. The current foundation supports stdio and
 Streamable HTTP through the official SDK, prefers stateless MCP `2026-07-28`, and falls back to
-classic initialization when policy allows. See [Model Context Protocol](mcp.md).
+classic initialization when policy allows. Tasks and `listen` require modern `2026-07-28`;
+Tasks are an experimental extension. See [Model Context Protocol](mcp.md).
 
 ## Providers
 

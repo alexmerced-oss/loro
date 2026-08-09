@@ -4,6 +4,8 @@ import pytest
 
 from loro.config import MCPConfig, MCPCredentialProfileConfig, MCPServerConfig
 from loro.mcp.client import MCPService, _MemoryTokenStorage
+from loro.mcp.extensions import TASKS_EXTENSION_ID
+from loro.mcp.tasks import _sdk_types, create_sdk_tasks_extension
 
 mcp = pytest.importorskip("mcp")
 
@@ -112,3 +114,47 @@ def test_official_sdk_rejects_oauth_issuer_confusion() -> None:
     )
     with pytest.raises(OAuthFlowError, match="issuer mismatch"):
         validate_metadata_issuer(metadata, "https://identity.example")
+
+
+def test_tasks_extension_uses_namespaced_identity_and_modern_claim() -> None:
+    extension = create_sdk_tasks_extension(lambda _task, _name: None, {"notifications": False})
+    claims = extension.claims()
+
+    assert extension.identifier == TASKS_EXTENSION_ID
+    assert extension.settings() == {"notifications": False}
+    assert len(claims) == 1
+    assert claims[0].result_type == "task"
+    assert claims[0].protocol_versions == frozenset({"2026-07-28"})
+
+
+def test_tasks_sdk_requests_serialize_task_routing_aliases() -> None:
+    sdk = _sdk_types()
+    request = sdk["UpdateTaskRequest"](
+        params=sdk["UpdateTaskParams"](task_id="task-1", input_responses={"format": "pptx"})
+    )
+
+    payload = request.model_dump(by_alias=True, mode="json", exclude_none=True)
+    assert request.name_param == "taskId"
+    assert payload == {
+        "method": "tasks/update",
+        "params": {
+            "taskId": "task-1",
+            "inputResponses": {"format": "pptx"},
+        },
+    }
+
+
+def test_tasks_claim_preserves_reserved_input_requests_as_extension_data() -> None:
+    model = _sdk_types()["CreateTaskResult"].model_validate(
+        {
+            "resultType": "task",
+            "taskId": "task-1",
+            "status": "input_required",
+            "createdAt": "2026-08-09T00:00:00Z",
+            "lastUpdatedAt": "2026-08-09T00:00:01Z",
+            "ttlMs": 60_000,
+            "inputRequests": {"format": {}},
+        }
+    )
+
+    assert model.model_dump(by_alias=True)["inputRequests"] == {"format": {}}

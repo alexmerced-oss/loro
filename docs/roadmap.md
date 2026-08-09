@@ -162,7 +162,7 @@ The near-term execution plan is tracked in
 
 ## MCP And Agent Skills
 
-MCP Batch 1 is implemented; later MCP enterprise/extension/server work and Agent Skills remain
+MCP Batches 1 through 3 are implemented; MCP server mode, conformance, and Agent Skills remain
 planned. The
 [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md) defines six implementation batches for:
 
@@ -174,8 +174,8 @@ planned. The
   sandboxed execution, and explicit install/publish review.
 - Official conformance and dual-era interoperability evidence before support is advertised.
 
-Batch 2 should now harden host, TLS, redirect, credential, OAuth, and callback controls before
-additional remote capability or Agent Skills execution is introduced.
+Batch 4 is next: expose an explicit least-privilege subset of Loro through MCP server mode while
+preserving tenant, credential, memory, governed-data, approval, and audit boundaries.
 
 Status: Batch 1 provides official Python SDK v2 integration, stdio and Streamable HTTP clients,
 modern/classic lifecycle normalization, version policy, tools/resources/prompts, configuration

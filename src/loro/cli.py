@@ -19,6 +19,7 @@ from loro.audit import AuditLogger, prompt_preview
 from loro.config import (
     LoroConfig,
     MCPCredentialProfileConfig,
+    MCPExtensionConfig,
     MCPServerConfig,
     load_config,
     replace_config_section,
@@ -31,7 +32,16 @@ from loro.identity import (
     diagnose_identity,
     resolve_identity,
 )
-from loro.mcp import MCPClientError, MCPRegistry, MCPRegistryError, MCPService, diagnose_mcp
+from loro.mcp import (
+    MCPClientError,
+    MCPExtensionError,
+    MCPRegistry,
+    MCPRegistryError,
+    MCPService,
+    MCPTaskError,
+    diagnose_mcp,
+)
+from loro.mcp.extensions import TASKS_EXTENSION_ID
 from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
@@ -196,6 +206,40 @@ def _authorize_explicit_mcp_read(
         raise typer.BadParameter(str(error)) from error
 
 
+def _authorize_mcp_mutation(
+    server_id: str,
+    *,
+    action: str,
+    operation: str,
+    name: str,
+    arguments: dict[str, Any],
+    yes: bool,
+    risk_reason: str,
+) -> None:
+    config = load_config()
+    try:
+        server = MCPRegistry(config.mcp).get(server_id)
+    except MCPRegistryError as error:
+        raise typer.BadParameter(str(error)) from error
+    resource = mcp_resource(
+        operation=operation,
+        server_id=server_id,
+        transport=server.transport,
+        endpoint=_mcp_server_endpoint(server),
+        name=name,
+        arguments=arguments,
+    )
+    _authorize_cli_action(
+        tool="mcp",
+        action=action,
+        target=resource.target,
+        arguments={"server_id": server_id, "name": name, "arguments": arguments},
+        risk_reason=risk_reason,
+        non_interactive_approved=yes,
+        resource=resource,
+    )
+
+
 def _run_mcp_operation(
     operation: str,
     server_id: str,
@@ -205,7 +249,7 @@ def _run_mcp_operation(
     audit.write("mcp.request_started", action=operation, target=server_id, server_id=server_id)
     try:
         result = asyncio.run(awaitable)
-    except (MCPClientError, ValueError) as error:
+    except (MCPClientError, MCPExtensionError, MCPTaskError, ValueError) as error:
         audit.write(
             "mcp.request_failed",
             action=operation,
@@ -1338,6 +1382,16 @@ def setup_mcp(
             )
         else:
             raise typer.BadParameter("Transport must be stdio or streamable_http.")
+        if typer.confirm("Enable the experimental MCP Tasks extension?", default=False):
+            if protocol_mode == "legacy":
+                raise typer.BadParameter(
+                    "The Tasks extension requires modern MCP; choose auto or 2026-07-28."
+                )
+            config.mcp.extensions.setdefault(
+                TASKS_EXTENSION_ID,
+                MCPExtensionConfig(version="draft", adapter="tasks"),
+            )
+            server.extensions = list(dict.fromkeys([*server.extensions, TASKS_EXTENSION_ID]))
         config.mcp.servers[server_id] = server
     written = replace_config_section(output, config, "mcp")
     _audit().write(
@@ -1400,6 +1454,31 @@ def mcp_list() -> None:
     )
 
 
+@mcp_app.command("extensions")
+def mcp_extensions(
+    server_id: Annotated[
+        str | None, typer.Argument(help="Optional configured MCP server id.")
+    ] = None,
+) -> None:
+    """Show configured extension activation without connecting to a server."""
+    try:
+        result = _mcp_service().extension_status(server_id)
+    except MCPRegistryError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=result)
+
+
+@mcp_app.command("tasks")
+def mcp_tasks(
+    server_id: Annotated[
+        str | None, typer.Option("--server-id", help="Filter local task handles by server.")
+    ] = None,
+) -> None:
+    """List durable local MCP task handles without connecting."""
+    handles = _mcp_service().task_store.list(server_id)
+    console.print_json(data={"tasks": [item.model_dump(mode="json") for item in handles]})
+
+
 @mcp_app.command("inspect")
 def mcp_inspect(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
@@ -1448,6 +1527,10 @@ def mcp_add(
         str | None,
         typer.Option("--credential-profile", help="Configured MCP credential profile id."),
     ] = None,
+    extensions: Annotated[
+        list[str] | None,
+        typer.Option("--extension", help="Repeat for each configured extension id."),
+    ] = None,
     timeout_seconds: Annotated[
         float,
         typer.Option("--timeout", min=0.1, max=300, help="Request timeout seconds."),
@@ -1475,6 +1558,7 @@ def mcp_add(
         "minimum_protocol_version": minimum_version,
         "timeout_seconds": timeout_seconds,
         "credential_profile": credential_profile,
+        "extensions": extensions or [],
     }
     if allowed_versions:
         server_values["allowed_protocol_versions"] = allowed_versions
@@ -1495,6 +1579,62 @@ def mcp_add(
         enabled=server.enabled,
     )
     console.print(f"Configured MCP server {normalized_id}: {written}")
+
+
+@mcp_app.command("extension-add")
+def mcp_extension_add(
+    extension_id: Annotated[str, typer.Argument(help="Namespaced MCP extension identifier.")],
+    version: Annotated[str, typer.Option("--version", help="Extension schema version.")],
+    adapter: Annotated[
+        str | None, typer.Option("--adapter", help="Trusted Loro adapter, currently tasks.")
+    ] = None,
+    settings: Annotated[
+        str, typer.Option("--settings", help="Extension settings as a JSON object.")
+    ] = "{}",
+    settings_schema: Annotated[
+        str | None,
+        typer.Option("--settings-schema", help="Optional JSON Schema as a JSON object."),
+    ] = None,
+    disabled: Annotated[
+        bool, typer.Option("--disabled", help="Register without activating the extension.")
+    ] = False,
+    output: Annotated[Path, typer.Option("--output", "-o", help="Config file to update.")] = Path(
+        ".loro/config.local.toml"
+    ),
+) -> None:
+    """Register a versioned MCP extension; unknown adapters remain inert."""
+    config = load_config()
+    parsed_settings = _json_object(settings, label="extension settings")
+    parsed_schema = (
+        _json_object(settings_schema, label="extension settings schema")
+        if settings_schema is not None
+        else None
+    )
+    try:
+        extension = MCPExtensionConfig.model_validate(
+            {
+                "enabled": not disabled,
+                "version": version,
+                "adapter": adapter,
+                "settings": parsed_settings,
+                "settings_schema": parsed_schema,
+            }
+        )
+        configured = {**config.mcp.extensions, extension_id: extension}
+        config.mcp = type(config.mcp).model_validate(
+            config.mcp.model_copy(update={"extensions": configured}).model_dump()
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.mcp_extension_written",
+        path=str(written),
+        extension_id=extension_id,
+        adapter=adapter,
+        enabled=not disabled,
+    )
+    console.print(f"Configured MCP extension {extension_id}: {written}")
 
 
 @mcp_app.command("auth-add")
@@ -1710,6 +1850,145 @@ def mcp_call(
     )
     result = _run_mcp_operation(
         "call tool", server_id, _mcp_service().call_tool(server_id, tool_name, parsed_arguments)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("task-start")
+def mcp_task_start(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    tool_name: Annotated[str, typer.Argument(help="Remote task-capable MCP tool name.")],
+    arguments: Annotated[
+        str, typer.Option("--arguments", "-a", help="Tool arguments as a JSON object.")
+    ] = "{}",
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Use an allowed non-interactive approval.")
+    ] = False,
+) -> None:
+    """Start a task-capable MCP tool call after exact approval."""
+    parsed = _json_object(arguments, label="task tool arguments")
+    _authorize_mcp_mutation(
+        server_id,
+        action="start task",
+        operation="task_start",
+        name=tool_name,
+        arguments=parsed,
+        yes=yes,
+        risk_reason="Start a remote MCP task with the displayed exact arguments.",
+    )
+    result = _run_mcp_operation(
+        "start task", server_id, _mcp_service().start_task(server_id, tool_name, parsed)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("task-get")
+def mcp_task_get(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    task_id: Annotated[str, typer.Argument(help="Durable MCP task id.")],
+) -> None:
+    """Refresh a durable MCP task handle from its server."""
+    _authorize_explicit_mcp_read(server_id, action="get task", operation="task_get", name=task_id)
+    result = _run_mcp_operation("get task", server_id, _mcp_service().get_task(server_id, task_id))
+    console.print_json(data=result)
+
+
+@mcp_app.command("task-update")
+def mcp_task_update(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    task_id: Annotated[str, typer.Argument(help="Durable MCP task id.")],
+    responses: Annotated[
+        str, typer.Option("--responses", "-r", help="Input responses as a JSON object.")
+    ],
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Use an allowed non-interactive approval.")
+    ] = False,
+) -> None:
+    """Send explicitly approved input to a waiting MCP task."""
+    parsed = _json_object(responses, label="task input responses")
+    _authorize_mcp_mutation(
+        server_id,
+        action="update task",
+        operation="task_update",
+        name=task_id,
+        arguments=parsed,
+        yes=yes,
+        risk_reason="Send the displayed exact input values to a remote MCP task.",
+    )
+    result = _run_mcp_operation(
+        "update task",
+        server_id,
+        _mcp_service().update_task(server_id, task_id, parsed, user_approved=True),
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("task-cancel")
+def mcp_task_cancel(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    task_id: Annotated[str, typer.Argument(help="Durable MCP task id.")],
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Use an allowed non-interactive approval.")
+    ] = False,
+) -> None:
+    """Request cooperative cancellation of a remote MCP task."""
+    _authorize_mcp_mutation(
+        server_id,
+        action="cancel task",
+        operation="task_cancel",
+        name=task_id,
+        arguments={},
+        yes=yes,
+        risk_reason="Request cooperative cancellation of the displayed remote MCP task.",
+    )
+    result = _run_mcp_operation(
+        "cancel task",
+        server_id,
+        _mcp_service().cancel_task(server_id, task_id, user_approved=True),
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("listen")
+def mcp_listen(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    tools: Annotated[bool, typer.Option("--tools", help="Listen for tool list changes.")] = False,
+    prompts: Annotated[
+        bool, typer.Option("--prompts", help="Listen for prompt list changes.")
+    ] = False,
+    resources: Annotated[
+        bool, typer.Option("--resources", help="Listen for resource list changes.")
+    ] = False,
+    resource_uris: Annotated[
+        list[str] | None, typer.Option("--resource-uri", help="Repeat for resource updates.")
+    ] = None,
+    max_events: Annotated[int | None, typer.Option("--max-events", min=1)] = None,
+    max_seconds: Annotated[float | None, typer.Option("--max-seconds", min=0.1)] = None,
+) -> None:
+    """Listen for a bounded set of modern MCP change events."""
+    if not any((tools, prompts, resources, resource_uris)):
+        raise typer.BadParameter("Select at least one MCP event filter.")
+    filters = {
+        "tools": tools,
+        "prompts": prompts,
+        "resources": resources,
+        "resource_uris": resource_uris or [],
+    }
+    _authorize_explicit_mcp_read(
+        server_id, action="listen for changes", operation="listen", arguments=filters
+    )
+    result = _run_mcp_operation(
+        "listen for changes",
+        server_id,
+        _mcp_service().listen_changes(
+            server_id,
+            tools=tools,
+            prompts=prompts,
+            resources=resources,
+            resource_uris=resource_uris,
+            max_events=max_events,
+            max_seconds=max_seconds,
+        ),
     )
     console.print_json(data=result)
 

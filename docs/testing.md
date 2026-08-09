@@ -63,10 +63,12 @@ The `dev` extra includes the official MCP SDK. Standard CI runs hermetic adapter
 in-process server in both `auto` (`2026-07-28`) and `legacy` handshake modes:
 
 ```bash
-python -m pytest tests/test_mcp.py tests/test_mcp_sdk.py
+python -m pytest tests/test_mcp.py tests/test_mcp_sdk.py tests/test_mcp_tasks.py
 ```
 
-These tests never contact a remote MCP endpoint. Later roadmap batches add official conformance,
+These tests never contact a remote MCP endpoint. They cover inert extensions, Tasks persistence,
+restart/reconnect, approval and input deduplication, cancellation intent, bounded subscriptions,
+SDK extension claims, and task routing aliases. Later roadmap batches add official conformance,
 real stdio subprocess fixtures, Streamable HTTP servers, authorization, and adversarial cases.
 
 ## Live Provider Smoke Checks
