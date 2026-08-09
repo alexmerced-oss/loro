@@ -1,7 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 
-from loro.config import MCPConfig, MCPServerConfig
-from loro.mcp.client import MCPService
+from loro.config import MCPConfig, MCPCredentialProfileConfig, MCPServerConfig
+from loro.mcp.client import MCPService, _MemoryTokenStorage
 
 mcp = pytest.importorskip("mcp")
 
@@ -43,3 +45,70 @@ async def test_official_sdk_in_process_interoperability(
     assert result["connection"]["protocol_version"] == expected_version
     assert result["connection"]["lifecycle"] == expected_lifecycle
     assert result["result"]["isError"] is False
+
+
+def test_official_sdk_oauth_profiles_use_supported_providers() -> None:
+    from mcp.client.auth import OAuthClientProvider
+    from mcp.client.auth.extensions.client_credentials import ClientCredentialsOAuthProvider
+
+    authorization = MCPCredentialProfileConfig(
+        type="oauth_authorization_code",
+        client_metadata_url="https://agents.example/loro/client-metadata.json",
+    )
+    service = MCPService(MCPConfig())
+    provider = service._oauth_provider("https://mcp.example/mcp", authorization, {})
+    assert isinstance(provider, OAuthClientProvider)
+    assert provider.context.client_metadata_url == authorization.client_metadata_url
+
+    workload = MCPCredentialProfileConfig(
+        type="oauth_client_credentials",
+        client_id_env="MCP_CLIENT_ID",
+        client_secret_env="MCP_CLIENT_SECRET",
+    )
+    provider = service._oauth_provider(
+        "https://mcp.example/mcp",
+        workload,
+        {"MCP_CLIENT_ID": "client", "MCP_CLIENT_SECRET": "secret"},
+    )
+    assert isinstance(provider, ClientCredentialsOAuthProvider)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol_version", ["2025-11-25", "2026-07-28"])
+async def test_official_sdk_callbacks_fail_closed_without_terminal(
+    protocol_version: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = MCPService(MCPConfig(allow_input_required=True))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    result = await service._elicitation_callback(
+        SimpleNamespace(session=SimpleNamespace(protocol_version=protocol_version)),
+        SimpleNamespace(message="untrusted request"),
+    )
+    assert result.code == -32600
+    if protocol_version == "2025-11-25":
+        assert "Classic" in result.message
+    else:
+        assert "interactive terminal" in result.message
+
+
+@pytest.mark.asyncio
+async def test_oauth_token_storage_is_connection_local() -> None:
+    storage = _MemoryTokenStorage()
+    await storage.set_tokens("tokens")
+    await storage.set_client_info("client")
+    assert await storage.get_tokens() == "tokens"
+    assert await storage.get_client_info() == "client"
+
+
+def test_official_sdk_rejects_oauth_issuer_confusion() -> None:
+    from mcp.client.auth import OAuthFlowError
+    from mcp.client.auth.utils import validate_metadata_issuer
+    from mcp.shared.auth import OAuthMetadata
+
+    metadata = OAuthMetadata(
+        issuer="https://attacker.example",
+        authorization_endpoint="https://attacker.example/authorize",
+        token_endpoint="https://attacker.example/token",
+    )
+    with pytest.raises(OAuthFlowError, match="issuer mismatch"):
+        validate_metadata_issuer(metadata, "https://identity.example")

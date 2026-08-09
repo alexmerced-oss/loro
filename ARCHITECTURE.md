@@ -47,12 +47,17 @@ flowchart LR
 - `loro.serialization`: small helpers for JSON-safe CLI output.
 - `loro.sessions`: durable JSON session records.
 
-`loro.mcp` now provides the first client foundation: a typed registry, lazy official-SDK adapter,
-stdio and Streamable HTTP transports, modern/classic lifecycle normalization, tools/resources/
-prompts, CLI diagnostics, and runtime adapters. It enters through the existing permission,
-approval, normalized-resource, session, and audit boundaries. Enterprise authorization,
-extensions, server mode, and `loro.skills` remain planned. See [Model Context Protocol](docs/mcp.md)
-and the [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
+`loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
+transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,
+and runtime adapters. `loro.mcp.security` enforces managed host, TLS, DNS, redirect, stdio-command,
+environment, credential-profile, pagination, and output policy before untrusted results cross the
+adapter boundary. Streamable HTTP always uses a Loro-owned SDK HTTP client so authentication and
+redirect behavior cannot inherit permissive SDK defaults. OAuth profiles support bearer tokens,
+client credentials, and authorization code discovery with CIMD; secret material is sourced only
+from named environment variables. MCP enters through the existing permission, approval,
+normalized-resource, session, and audit boundaries. Extensions, server mode, and `loro.skills`
+remain planned. See [Model Context Protocol](docs/mcp.md) and the
+[MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
 
 ## Runtime Flow
 

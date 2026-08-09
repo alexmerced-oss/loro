@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from loro.config import MCPConfig, MCPServerConfig
+from loro.mcp.security import MCPTransportPolicyError, credential_environment, enforce_server_policy
 
 
 class MCPRegistryError(ValueError):
@@ -58,6 +59,7 @@ def server_payload(server_id: str, server: MCPServerConfig) -> dict[str, Any]:
         "allowed_protocol_versions": list(server.allowed_protocol_versions),
         "minimum_protocol_version": server.minimum_protocol_version,
         "timeout_seconds": server.timeout_seconds,
+        "credential_profile": server.credential_profile,
     }
 
 
@@ -126,7 +128,7 @@ def diagnose_mcp(
     diagnostics: list[dict[str, Any]] = []
     for current_id in server_ids:
         server = registry.get(current_id, require_enabled=False)
-        server_issues = _server_issues(server, environment)
+        server_issues = _server_issues(config, server, environment)
         diagnostics.append({**server_payload(current_id, server), "issues": server_issues})
         issues.extend(f"{current_id}: {issue}" for issue in server_issues)
 
@@ -143,8 +145,14 @@ def diagnose_mcp(
     }
 
 
-def _server_issues(server: MCPServerConfig, environ: dict[str, str]) -> list[str]:
+def _server_issues(
+    config: MCPConfig, server: MCPServerConfig, environ: dict[str, str]
+) -> list[str]:
     issues: list[str] = []
+    try:
+        enforce_server_policy(config, server)
+    except MCPTransportPolicyError as error:
+        issues.append(str(error))
     if server.transport == "stdio":
         assert server.command is not None
         command = Path(server.command).expanduser()
@@ -165,6 +173,12 @@ def _server_issues(server: MCPServerConfig, environ: dict[str, str]) -> list[str
             issues.append("Streamable HTTP URL must be an absolute http:// or https:// URL.")
         if parsed.username or parsed.password:
             issues.append("Streamable HTTP URL cannot contain credentials.")
+        if server.credential_profile:
+            profile = config.credential_profiles[server.credential_profile]
+            try:
+                credential_environment(profile, environ)
+            except MCPTransportPolicyError as error:
+                issues.append(str(error))
     return issues
 
 

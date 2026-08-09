@@ -2,10 +2,10 @@
 
 ## Status And Scope
 
-MCP Batch 1 is implemented. Enterprise transport/authentication, extensions, server mode,
-release conformance, and Agent Skills remain planned. This roadmap defines the compatibility,
-security, implementation, and verification work required before the broader capability set can
-be advertised as enterprise-ready.
+MCP Batches 1 and 2 are implemented. Extensions, server mode, release conformance, and Agent
+Skills remain planned. This roadmap defines the compatibility, security, implementation, and
+verification work required before the broader capability set can be advertised as
+enterprise-ready.
 
 Loro will treat these as complementary systems:
 
@@ -186,6 +186,8 @@ classic handshake path.
 
 ### Batch 2: Enterprise Transport And Authorization
 
+Status: **implemented**.
+
 - Add server/host allowlists, TLS requirements, redirect/SSRF controls, environment isolation,
   output limits, and credential profiles.
 - Implement current MCP OAuth discovery, issuer validation, and Client ID Metadata Documents;
@@ -195,6 +197,12 @@ classic handshake path.
 
 Exit: credential, issuer-confusion, downgrade, DNS/redirect, environment-leak, and callback
 abuse suites pass.
+
+Implemented in `src/loro/mcp/security.py`, typed MCP credential profiles, the official SDK OAuth
+providers, custom no-redirect HTTP clients, bounded pagination/results, and callback-deny
+defaults. Authorization-code profiles use SDK discovery, issuer/resource validation, and CIMD;
+DCR requires explicit legacy opt-in. Managed DNS preflight is defense in depth and does not
+replace enterprise egress enforcement. Batch 3 is the next implementation batch.
 
 ### Batch 3: Extensions And Long-Running Work
 

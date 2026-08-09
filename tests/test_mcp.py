@@ -7,9 +7,15 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from loro.config import MCPConfig, MCPServerConfig
+from loro.config import MCPConfig, MCPCredentialProfileConfig, MCPServerConfig
 from loro.mcp.client import MCPProtocolError, MCPService
 from loro.mcp.registry import MCPRegistry, MCPRegistryError, diagnose_mcp
+from loro.mcp.security import (
+    MCPTransportPolicyError,
+    credential_environment,
+    dynamic_registration_guard,
+    enforce_server_policy,
+)
 
 
 class FakeMCPClient:
@@ -68,8 +74,7 @@ def mcp_config(
         servers={
             "fixture": MCPServerConfig(
                 command="fixture-server",
-                allowed_protocol_versions=allowed
-                or ["2026-07-28", "2025-11-25", "2024-11-05"],
+                allowed_protocol_versions=allowed or ["2026-07-28", "2025-11-25", "2024-11-05"],
                 minimum_protocol_version=minimum,
                 protocol_mode="auto" if protocol_version == "2026-07-28" else "legacy",
             )
@@ -142,6 +147,27 @@ async def test_mcp_service_calls_tool_and_normalizes_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mcp_service_normalizes_resource_and_prompt_operations() -> None:
+    service = MCPService(
+        mcp_config(), client_factory=fake_factory(FakeMCPClient())
+    )
+
+    connection = await service.inspect_connection("fixture")
+    tools = await service.list_tools("fixture")
+    resources = await service.list_resources("fixture")
+    read = await service.read_resource("fixture", "fixture://readme")
+    prompts = await service.list_prompts("fixture")
+    prompt = await service.get_prompt("fixture", "summarize", {"audience": "engineering"})
+
+    assert connection["server_id"] == "fixture"
+    assert tools["tools"][0]["name"] == "echo"
+    assert resources["resources"][0]["uri"] == "fixture://readme"
+    assert read["result"]["contents"][0]["text"] == "untrusted fixture"
+    assert prompts["prompts"][0]["name"] == "summarize"
+    assert prompt["result"]["arguments"] == {"audience": "engineering"}
+
+
+@pytest.mark.asyncio
 async def test_mcp_service_rejects_disallowed_or_downgraded_version() -> None:
     disallowed = MCPService(
         mcp_config(allowed=["2026-07-28"]),
@@ -160,12 +186,24 @@ async def test_mcp_service_rejects_disallowed_or_downgraded_version() -> None:
 
 @pytest.mark.asyncio
 async def test_mcp_service_bounds_pagination() -> None:
-    service = MCPService(
-        mcp_config(), client_factory=fake_factory(EndlessPaginationClient())
-    )
+    service = MCPService(mcp_config(), client_factory=fake_factory(EndlessPaginationClient()))
 
     with pytest.raises(MCPProtocolError, match="exceeded 20 pages"):
         await service.list_tools("fixture")
+
+
+@pytest.mark.asyncio
+async def test_mcp_service_bounds_untrusted_output() -> None:
+    class OversizedClient(FakeMCPClient):
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+            return {"content": [{"type": "text", "text": "x" * 2000}]}
+
+    client = OversizedClient()
+    config = mcp_config().model_copy(update={"max_output_bytes": 1024})
+    service = MCPService(config, client_factory=fake_factory(client))
+
+    with pytest.raises(MCPProtocolError, match="managed limit"):
+        await service.call_tool("fixture", "echo", {"value": "x" * 2000})
 
 
 @pytest.mark.asyncio
@@ -197,6 +235,70 @@ def test_mcp_doctor_reports_missing_environment(monkeypatch) -> None:
 
     assert result["ok"] is False
     assert "MCP_FIXTURE_TOKEN" in result["issues"][0]
+
+
+def test_mcp_transport_policy_enforces_tls_hosts_and_stdio_commands() -> None:
+    remote = MCPServerConfig(transport="streamable_http", url="http://mcp.attacker.example/mcp")
+    policy = MCPConfig(
+        require_https=True,
+        allowed_hosts=["*.trusted.example"],
+        allowed_stdio_commands=["/usr/bin/python"],
+    )
+    with pytest.raises(MCPTransportPolicyError, match="HTTPS"):
+        enforce_server_policy(policy, remote)
+    with pytest.raises(MCPTransportPolicyError, match="stdio command"):
+        enforce_server_policy(policy, MCPServerConfig(command="node"))
+
+    trusted = remote.model_copy(update={"url": "https://mcp.trusted.example/mcp"})
+    enforce_server_policy(policy, trusted)
+
+
+def test_mcp_transport_policy_rejects_private_dns_answers() -> None:
+    server = MCPServerConfig(transport="streamable_http", url="https://mcp.example/mcp")
+
+    def private_resolver(*_args, **_kwargs):
+        return [(2, 1, 6, "", ("169.254.169.254", 443))]
+
+    with pytest.raises(MCPTransportPolicyError, match="non-public"):
+        enforce_server_policy(
+            MCPConfig(block_private_networks=True),
+            server,
+            resolver=private_resolver,
+        )
+
+
+def test_mcp_credentials_are_environment_references() -> None:
+    profile = MCPCredentialProfileConfig(type="bearer", token_env="MCP_TOKEN")
+    assert credential_environment(profile, {"MCP_TOKEN": "secret"}) == {"MCP_TOKEN": "secret"}
+    with pytest.raises(MCPTransportPolicyError, match="MCP_TOKEN"):
+        credential_environment(profile, {})
+
+
+@pytest.mark.asyncio
+async def test_mcp_dynamic_registration_is_explicit_legacy_policy() -> None:
+    request = SimpleNamespace(
+        method="POST",
+        headers={"content-type": "application/json"},
+        content=b'{"redirect_uris":["http://localhost/callback"]}',
+    )
+    with pytest.raises(MCPTransportPolicyError, match="Dynamic Client Registration"):
+        await dynamic_registration_guard(False)(request)
+    await dynamic_registration_guard(True)(request)
+
+
+def test_mcp_config_requires_declared_credential_profiles() -> None:
+    with pytest.raises(ValueError, match="Unknown MCP credential profiles"):
+        MCPConfig(
+            servers={
+                "remote": MCPServerConfig(
+                    transport="streamable_http",
+                    url="https://mcp.example/mcp",
+                    credential_profile="missing",
+                )
+            }
+        )
+    with pytest.raises(ValueError, match="client_metadata_url"):
+        MCPCredentialProfileConfig(type="oauth_authorization_code")
 
 
 def test_mcp_cli_add_and_list(tmp_path, monkeypatch) -> None:
@@ -235,6 +337,51 @@ def test_mcp_cli_add_and_list(tmp_path, monkeypatch) -> None:
     assert "MCP_DEMO_TOKEN" in list_result.stdout
     assert '"-y"' in list_result.stdout
 
+    remove_result = runner.invoke(
+        app, ["mcp", "remove", "demo", "--output", str(output)]
+    )
+    assert remove_result.exit_code == 0, remove_result.stdout
+    assert "[mcp.servers.demo]" not in output.read_text(encoding="utf-8")
+
+
+def test_mcp_cli_configures_environment_backed_auth_profile(tmp_path, monkeypatch) -> None:
+    from loro.cli import app
+
+    output = tmp_path / "config.toml"
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "mcp",
+            "auth-add",
+            "prod",
+            "--type",
+            "bearer",
+            "--token-env",
+            "MCP_PROD_TOKEN",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "secret" not in output.read_text(encoding="utf-8").casefold()
+
+    monkeypatch.setenv("LORO_CONFIG", str(output))
+    listed = runner.invoke(app, ["mcp", "auth-list"])
+    assert listed.exit_code == 0
+    assert "MCP_PROD_TOKEN" in listed.stdout
+
+    removed = runner.invoke(
+        app,
+        ["mcp", "auth-remove", "prod", "--output", str(output)],
+    )
+    assert removed.exit_code == 0, removed.stdout
+    assert "MCP_PROD_TOKEN" not in output.read_text(encoding="utf-8")
+
 
 def test_mcp_cli_call_requires_and_records_explicit_approval(tmp_path, monkeypatch) -> None:
     from loro.cli import app
@@ -246,7 +393,7 @@ def test_mcp_cli_call_requires_and_records_explicit_approval(tmp_path, monkeypat
         "LORO_CONFIG_CONTENT",
         "[mcp]\nenabled = true\n"
         '[mcp.servers.fixture]\ncommand = "fixture-server"\n'
-        "[permissions]\nmcp = \"ask\"\n"
+        '[permissions]\nmcp = "ask"\n'
         f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
 

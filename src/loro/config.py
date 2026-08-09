@@ -137,8 +137,9 @@ class MCPServerConfig(BaseModel):
     )
     minimum_protocol_version: str | None = None
     timeout_seconds: float = Field(default=30, gt=0, le=300)
+    credential_profile: str | None = None
 
-    @field_validator("command", "url", "cwd")
+    @field_validator("command", "url", "cwd", "credential_profile")
     @classmethod
     def _normalize_optional_string(cls, value: str | None) -> str | None:
         if value is None:
@@ -172,9 +173,10 @@ class MCPServerConfig(BaseModel):
     @classmethod
     def _validate_protocol_mode(cls, value: str) -> str:
         normalized = value.strip()
-        if normalized not in {"auto", "legacy"} and re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}", normalized
-        ) is None:
+        if (
+            normalized not in {"auto", "legacy"}
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized) is None
+        ):
             raise ValueError("MCP protocol_mode must be auto, legacy, or YYYY-MM-DD.")
         return normalized
 
@@ -207,9 +209,75 @@ class MCPServerConfig(BaseModel):
         return self
 
 
+class MCPCredentialProfileConfig(BaseModel):
+    type: Literal["bearer", "oauth_client_credentials", "oauth_authorization_code"]
+    token_env: str | None = None
+    client_id_env: str | None = None
+    client_secret_env: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    redirect_uri: str = "http://127.0.0.1:8765/callback"
+    client_metadata_url: str | None = None
+    allow_dynamic_client_registration: bool = False
+
+    @field_validator("token_env", "client_id_env", "client_secret_env")
+    @classmethod
+    def _validate_credential_environment_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        name = value.strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+            raise ValueError(f"Invalid credential environment variable name: {value!r}")
+        return name
+
+    @field_validator("scopes")
+    @classmethod
+    def _normalize_scopes(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def _validate_profile(self) -> "MCPCredentialProfileConfig":
+        if self.type == "bearer" and not self.token_env:
+            raise ValueError("MCP bearer credential profile requires token_env.")
+        if self.type == "oauth_client_credentials" and (
+            not self.client_id_env or not self.client_secret_env
+        ):
+            raise ValueError(
+                "MCP OAuth client-credentials profile requires client_id_env and client_secret_env."
+            )
+        if self.type == "oauth_authorization_code":
+            parsed_redirect = urlsplit(self.redirect_uri)
+            if parsed_redirect.scheme not in {"http", "https"} or not parsed_redirect.hostname:
+                raise ValueError("MCP OAuth redirect_uri must be an absolute HTTP(S) URL.")
+            if not self.client_metadata_url and not self.allow_dynamic_client_registration:
+                raise ValueError(
+                    "MCP authorization-code profile requires client_metadata_url unless "
+                    "allow_dynamic_client_registration is explicitly enabled."
+                )
+            if self.client_metadata_url:
+                metadata = urlsplit(self.client_metadata_url)
+                if (
+                    metadata.scheme != "https"
+                    or not metadata.hostname
+                    or metadata.path in {"", "/"}
+                ):
+                    raise ValueError("MCP client_metadata_url must be HTTPS with a non-root path.")
+        return self
+
+
 class MCPConfig(BaseModel):
     enabled: bool = False
     servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+    credential_profiles: dict[str, MCPCredentialProfileConfig] = Field(default_factory=dict)
+    allowed_hosts: list[str] = Field(default_factory=list)
+    require_https: bool = False
+    allow_loopback_http: bool = True
+    block_private_networks: bool = False
+    follow_redirects: bool = False
+    allowed_stdio_commands: list[str] = Field(default_factory=list)
+    max_output_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    max_pagination_pages: int = Field(default=20, ge=1, le=1000)
+    allow_input_required: bool = False
+    input_required_max_rounds: int = Field(default=3, ge=1, le=20)
 
     @field_validator("servers")
     @classmethod
@@ -218,13 +286,39 @@ class MCPConfig(BaseModel):
     ) -> dict[str, MCPServerConfig]:
         for server_id in servers:
             if not server_id or any(
-                character not in "abcdefghijklmnopqrstuvwxyz0123456789-_"
-                for character in server_id
+                character not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for character in server_id
             ):
                 raise ValueError(
                     "MCP server ids must use lowercase letters, numbers, hyphens, or underscores."
                 )
         return servers
+
+    @field_validator("credential_profiles")
+    @classmethod
+    def _validate_profile_ids(
+        cls, profiles: dict[str, MCPCredentialProfileConfig]
+    ) -> dict[str, MCPCredentialProfileConfig]:
+        for profile_id in profiles:
+            if not profile_id or re.fullmatch(r"[a-z0-9_-]+", profile_id) is None:
+                raise ValueError(
+                    "MCP credential profile ids must use lowercase letters, numbers, "
+                    "hyphens, or underscores."
+                )
+        return profiles
+
+    @model_validator(mode="after")
+    def _validate_server_profiles(self) -> "MCPConfig":
+        missing = sorted(
+            {
+                server.credential_profile
+                for server in self.servers.values()
+                if server.credential_profile
+                and server.credential_profile not in self.credential_profiles
+            }
+        )
+        if missing:
+            raise ValueError("Unknown MCP credential profiles: " + ", ".join(missing))
+        return self
 
 
 class AuditConfig(BaseModel):
@@ -321,6 +415,18 @@ def write_config_sections(path: Path, config: LoroConfig, sections: list[str]) -
     data = _read_toml(path)
     for section in sections:
         data = _merge(data, _config_section_data(config, section))
+    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    return path
+
+
+def replace_config_section(path: Path, config: LoroConfig, section: str) -> Path:
+    """Replace a top-level section when removed nested keys must not survive a merge."""
+    section_data = _config_section_data(config, section)
+    if section not in section_data:
+        raise ValueError(f"Section is not top-level and cannot be replaced: {section}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_toml(path)
+    data[section] = section_data[section]
     path.write_text(tomli_w.dumps(data), encoding="utf-8")
     return path
 

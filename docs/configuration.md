@@ -85,6 +85,14 @@ require_role_inspection = true
 
 [mcp]
 enabled = false
+require_https = false
+allow_loopback_http = true
+block_private_networks = false
+follow_redirects = false
+max_output_bytes = 1000000
+max_pagination_pages = 20
+allow_input_required = false
+input_required_max_rounds = 3
 
 [mcp.servers.example]
 enabled = true

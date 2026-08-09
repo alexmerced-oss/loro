@@ -16,7 +16,14 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
-from loro.config import LoroConfig, MCPServerConfig, load_config, write_config_sections
+from loro.config import (
+    LoroConfig,
+    MCPCredentialProfileConfig,
+    MCPServerConfig,
+    load_config,
+    replace_config_section,
+    write_config_sections,
+)
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -432,9 +439,7 @@ def _polaris_client() -> PolarisClient:
             "namespace": str(arguments.get("namespace") or ""),
             "table": str(arguments.get("table") or ""),
             "resource": str(arguments.get("resource") or ""),
-            "role": str(
-                arguments.get("catalog_role") or arguments.get("principal_role") or ""
-            ),
+            "role": str(arguments.get("catalog_role") or arguments.get("principal_role") or ""),
             "policy": str(arguments.get("policy") or ""),
         },
     )
@@ -484,9 +489,7 @@ def policy_explain(
     request_json: Annotated[
         str,
         typer.Argument(
-            help=(
-                "JSON request with tool, action, optional target, and optional resource."
-            )
+            help=("JSON request with tool, action, optional target, and optional resource.")
         ),
     ],
 ) -> None:
@@ -882,15 +885,23 @@ def setup_polaris(
         if interactive
         else polaris.cli_path
     )
-    polaris.realm = realm if realm is not None else (
-        typer.prompt("Polaris realm", default=polaris.realm or "")
-        if interactive
-        else polaris.realm
+    polaris.realm = (
+        realm
+        if realm is not None
+        else (
+            typer.prompt("Polaris realm", default=polaris.realm or "")
+            if interactive
+            else polaris.realm
+        )
     )
-    polaris.catalog = catalog if catalog is not None else (
-        typer.prompt("Default Polaris catalog", default=polaris.catalog or "")
-        if interactive
-        else polaris.catalog
+    polaris.catalog = (
+        catalog
+        if catalog is not None
+        else (
+            typer.prompt("Default Polaris catalog", default=polaris.catalog or "")
+            if interactive
+            else polaris.catalog
+        )
     )
     if require_role_inspection is None:
         require_role_inspection = (
@@ -1133,12 +1144,8 @@ def setup_approvals(
 
 @setup_app.command("audit")
 def setup_audit(
-    sink: Annotated[
-        str | None, typer.Option("--sink", help="Audit sink: jsonl or http.")
-    ] = None,
-    path: Annotated[
-        str | None, typer.Option("--path", help="Local JSONL audit path.")
-    ] = None,
+    sink: Annotated[str | None, typer.Option("--sink", help="Audit sink: jsonl or http.")] = None,
+    path: Annotated[str | None, typer.Option("--path", help="Local JSONL audit path.")] = None,
     http_url: Annotated[
         str | None, typer.Option("--http-url", help="External HTTP collector URL.")
     ] = None,
@@ -1150,7 +1157,8 @@ def setup_audit(
         str | None, typer.Option("--failure-mode", help="Delivery failure mode: warn or fail.")
     ] = None,
     buffer_path: Annotated[
-        str | None, typer.Option("--buffer-path", help="Bounded local delivery buffer path."),
+        str | None,
+        typer.Option("--buffer-path", help="Bounded local delivery buffer path."),
     ] = None,
     max_buffer_events: Annotated[
         int | None, typer.Option("--max-buffer-events", help="Maximum retained events.")
@@ -1290,9 +1298,7 @@ def setup_mcp(
     config.mcp.enabled = enabled
     if enabled:
         server_id = typer.prompt("Server id", default="example").strip().casefold()
-        transport = typer.prompt(
-            "Transport (stdio/streamable_http)", default="stdio"
-        ).strip()
+        transport = typer.prompt("Transport (stdio/streamable_http)", default="stdio").strip()
         protocol_mode = typer.prompt(
             "Protocol mode (auto/legacy/2026-07-28)", default="auto"
         ).strip()
@@ -1316,16 +1322,24 @@ def setup_mcp(
                 timeout_seconds=timeout_seconds,
             )
         elif transport == "streamable_http":
+            credential_profile = typer.prompt(
+                "Credential profile id (blank for none)", default=""
+            ).strip()
+            if credential_profile and credential_profile not in config.mcp.credential_profiles:
+                raise typer.BadParameter(
+                    "Unknown credential profile. Create it first with `loro mcp auth-add`."
+                )
             server = MCPServerConfig(
                 transport="streamable_http",
                 url=typer.prompt("MCP endpoint URL").strip(),
                 protocol_mode=protocol_mode,
                 timeout_seconds=timeout_seconds,
+                credential_profile=credential_profile or None,
             )
         else:
             raise typer.BadParameter("Transport must be stdio or streamable_http.")
         config.mcp.servers[server_id] = server
-    written = write_config_sections(output, config, ["mcp"])
+    written = replace_config_section(output, config, "mcp")
     _audit().write(
         "config.mcp_written",
         path=str(written),
@@ -1410,9 +1424,7 @@ def mcp_add(
     args: Annotated[
         list[str] | None, typer.Option("--arg", help="Repeat for each stdio argument.")
     ] = None,
-    url: Annotated[
-        str | None, typer.Option("--url", help="Streamable HTTP MCP endpoint.")
-    ] = None,
+    url: Annotated[str | None, typer.Option("--url", help="Streamable HTTP MCP endpoint.")] = None,
     cwd: Annotated[
         str | None, typer.Option("--cwd", help="stdio server working directory.")
     ] = None,
@@ -1432,14 +1444,21 @@ def mcp_add(
         str | None,
         typer.Option("--minimum-version", help="Reject negotiated versions below this date."),
     ] = None,
+    credential_profile: Annotated[
+        str | None,
+        typer.Option("--credential-profile", help="Configured MCP credential profile id."),
+    ] = None,
     timeout_seconds: Annotated[
-        float, typer.Option("--timeout", min=0.1, max=300, help="Request timeout seconds."),
+        float,
+        typer.Option("--timeout", min=0.1, max=300, help="Request timeout seconds."),
     ] = 30,
     disabled: Annotated[
-        bool, typer.Option("--disabled", help="Save the server but leave it disabled."),
+        bool,
+        typer.Option("--disabled", help="Save the server but leave it disabled."),
     ] = False,
     output: Annotated[
-        Path, typer.Option("--output", "-o", help="Config file to update."),
+        Path,
+        typer.Option("--output", "-o", help="Config file to update."),
     ] = Path(".loro/config.local.toml"),
 ) -> None:
     """Add or replace an MCP server configuration without connecting."""
@@ -1455,6 +1474,7 @@ def mcp_add(
         "protocol_mode": protocol_mode,
         "minimum_protocol_version": minimum_version,
         "timeout_seconds": timeout_seconds,
+        "credential_profile": credential_profile,
     }
     if allowed_versions:
         server_values["allowed_protocol_versions"] = allowed_versions
@@ -1462,9 +1482,7 @@ def mcp_add(
         server = MCPServerConfig.model_validate(server_values)
         normalized_id = server_id.strip().casefold()
         candidate_servers = {**config.mcp.servers, normalized_id: server}
-        config.mcp = config.mcp.model_copy(
-            update={"enabled": True, "servers": candidate_servers}
-        )
+        config.mcp = config.mcp.model_copy(update={"enabled": True, "servers": candidate_servers})
         config.mcp = type(config.mcp).model_validate(config.mcp.model_dump())
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
@@ -1479,11 +1497,130 @@ def mcp_add(
     console.print(f"Configured MCP server {normalized_id}: {written}")
 
 
+@mcp_app.command("auth-add")
+def mcp_auth_add(
+    profile_id: Annotated[str, typer.Argument(help="Stable lowercase credential profile id.")],
+    profile_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            help="bearer, oauth_client_credentials, or oauth_authorization_code.",
+        ),
+    ],
+    token_env: Annotated[
+        str | None, typer.Option("--token-env", help="Bearer token environment variable.")
+    ] = None,
+    client_id_env: Annotated[
+        str | None, typer.Option("--client-id-env", help="OAuth client id environment variable.")
+    ] = None,
+    client_secret_env: Annotated[
+        str | None,
+        typer.Option("--client-secret-env", help="OAuth client secret environment variable."),
+    ] = None,
+    scopes: Annotated[
+        list[str] | None, typer.Option("--scope", help="Repeat for each OAuth scope.")
+    ] = None,
+    redirect_uri: Annotated[
+        str,
+        typer.Option("--redirect-uri", help="Authorization-code OAuth callback URI."),
+    ] = "http://127.0.0.1:8765/callback",
+    client_metadata_url: Annotated[
+        str | None,
+        typer.Option("--client-metadata-url", help="HTTPS Client ID Metadata Document URL."),
+    ] = None,
+    allow_dynamic_registration: Annotated[
+        bool,
+        typer.Option(
+            "--allow-dynamic-registration",
+            help="Allow legacy OAuth Dynamic Client Registration fallback.",
+        ),
+    ] = False,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to update."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Add an environment-backed MCP credential profile without storing secret values."""
+    config = load_config()
+    normalized_id = profile_id.strip().casefold()
+    try:
+        profile = MCPCredentialProfileConfig.model_validate(
+            {
+                "type": profile_type,
+                "token_env": token_env,
+                "client_id_env": client_id_env,
+                "client_secret_env": client_secret_env,
+                "scopes": scopes or [],
+                "redirect_uri": redirect_uri,
+                "client_metadata_url": client_metadata_url,
+                "allow_dynamic_client_registration": allow_dynamic_registration,
+            }
+        )
+        profiles = {**config.mcp.credential_profiles, normalized_id: profile}
+        config.mcp = type(config.mcp).model_validate(
+            config.mcp.model_copy(update={"credential_profiles": profiles}).model_dump()
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.mcp_credential_profile_written",
+        path=str(written),
+        profile_id=normalized_id,
+        profile_type=profile.type,
+    )
+    console.print(f"Configured MCP credential profile {normalized_id}: {written}")
+
+
+@mcp_app.command("auth-list")
+def mcp_auth_list() -> None:
+    """List MCP credential profiles and environment references without secret values."""
+    profiles = load_config().mcp.credential_profiles
+    console.print_json(
+        data={
+            profile_id: profile.model_dump(exclude_none=True)
+            for profile_id, profile in sorted(profiles.items())
+        }
+    )
+
+
+@mcp_app.command("auth-remove")
+def mcp_auth_remove(
+    profile_id: Annotated[str, typer.Argument(help="Credential profile id to remove.")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to update."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Remove an unused MCP credential profile."""
+    config = load_config()
+    if profile_id not in config.mcp.credential_profiles:
+        raise typer.BadParameter(f"Unknown MCP credential profile: {profile_id}")
+    attached = sorted(
+        server_id
+        for server_id, server in config.mcp.servers.items()
+        if server.credential_profile == profile_id
+    )
+    if attached:
+        raise typer.BadParameter(
+            "Credential profile is still used by MCP servers: " + ", ".join(attached)
+        )
+    del config.mcp.credential_profiles[profile_id]
+    written = replace_config_section(output, config, "mcp")
+    _audit().write(
+        "config.mcp_credential_profile_removed",
+        path=str(written),
+        profile_id=profile_id,
+    )
+    console.print(f"Removed MCP credential profile {profile_id}: {written}")
+
+
 @mcp_app.command("remove")
 def mcp_remove(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
     output: Annotated[
-        Path, typer.Option("--output", "-o", help="Config file to update."),
+        Path,
+        typer.Option("--output", "-o", help="Config file to update."),
     ] = Path(".loro/config.local.toml"),
 ) -> None:
     """Remove an MCP server from local configuration."""
@@ -1491,7 +1628,7 @@ def mcp_remove(
     if server_id not in config.mcp.servers:
         raise typer.BadParameter(f"Unknown MCP server: {server_id}")
     del config.mcp.servers[server_id]
-    written = write_config_sections(output, config, ["mcp"])
+    written = replace_config_section(output, config, "mcp")
     _audit().write("config.mcp_server_removed", path=str(written), server_id=server_id)
     console.print(f"Removed MCP server {server_id}: {written}")
 
@@ -1513,9 +1650,7 @@ def mcp_test(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
 ) -> None:
     """Connect, negotiate, and list capability counts without invoking a tool."""
-    _authorize_explicit_mcp_read(
-        server_id, action="test connection", operation="test_connection"
-    )
+    _authorize_explicit_mcp_read(server_id, action="test connection", operation="test_connection")
     result = _run_mcp_operation(
         "test connection", server_id, _mcp_service().test_connection(server_id)
     )
@@ -1537,10 +1672,12 @@ def mcp_call(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
     tool_name: Annotated[str, typer.Argument(help="Remote MCP tool name.")],
     arguments: Annotated[
-        str, typer.Option("--arguments", "-a", help="Tool arguments as a JSON object."),
+        str,
+        typer.Option("--arguments", "-a", help="Tool arguments as a JSON object."),
     ] = "{}",
     yes: Annotated[
-        bool, typer.Option("--yes", help="Use an allowed non-interactive approval."),
+        bool,
+        typer.Option("--yes", help="Use an allowed non-interactive approval."),
     ] = False,
 ) -> None:
     """Invoke an MCP tool after an exact Loro permission and approval decision."""
@@ -1582,9 +1719,7 @@ def mcp_resources(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
 ) -> None:
     """List resources exposed by an MCP server."""
-    _authorize_explicit_mcp_read(
-        server_id, action="list resources", operation="list_resources"
-    )
+    _authorize_explicit_mcp_read(server_id, action="list resources", operation="list_resources")
     result = _run_mcp_operation(
         "list resources", server_id, _mcp_service().list_resources(server_id)
     )
@@ -1611,12 +1746,8 @@ def mcp_prompts(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
 ) -> None:
     """List prompts exposed by an MCP server."""
-    _authorize_explicit_mcp_read(
-        server_id, action="list prompts", operation="list_prompts"
-    )
-    result = _run_mcp_operation(
-        "list prompts", server_id, _mcp_service().list_prompts(server_id)
-    )
+    _authorize_explicit_mcp_read(server_id, action="list prompts", operation="list_prompts")
+    result = _run_mcp_operation("list prompts", server_id, _mcp_service().list_prompts(server_id))
     console.print_json(data=result)
 
 
@@ -1625,7 +1756,8 @@ def mcp_prompt(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
     prompt_name: Annotated[str, typer.Argument(help="Remote MCP prompt name.")],
     arguments: Annotated[
-        str, typer.Option("--arguments", "-a", help="Prompt arguments as a JSON object."),
+        str,
+        typer.Option("--arguments", "-a", help="Prompt arguments as a JSON object."),
     ] = "{}",
 ) -> None:
     """Resolve one MCP prompt; returned content remains untrusted context."""
@@ -1691,9 +1823,7 @@ def doctor() -> None:
         f"{'allowed' if config.approvals.allow_non_interactive else 'denied'}"
     )
     if not identity_diagnostic.ok:
-        console.print(
-            f"Missing identity fields: {', '.join(identity_diagnostic.missing_fields)}"
-        )
+        console.print(f"Missing identity fields: {', '.join(identity_diagnostic.missing_fields)}")
         raise typer.Exit(code=1)
 
 

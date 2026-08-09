@@ -8,9 +8,9 @@ the optional extra before connecting:
 python -m pip install "loro-agent[mcp]"
 ```
 
-Agent Skills, Tasks, subscriptions, OAuth, MCP Apps, legacy HTTP+SSE, and Loro MCP server mode
-are not part of this first implementation batch. Their sequencing and security gates remain in
-the [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md).
+Agent Skills, Tasks, subscriptions, MCP Apps, legacy HTTP+SSE, and Loro MCP server mode are not
+implemented yet. OAuth and enterprise transport policy are implemented; later capability work
+remains in the [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md).
 
 ## Configure A Server
 
@@ -47,18 +47,75 @@ Configure a Streamable HTTP server:
 ```bash
 loro mcp add catalog \
   --transport streamable_http \
-  --url https://mcp.example.internal/mcp
+  --url https://mcp.example.internal/mcp \
+  --credential-profile enterprise
 ```
 
 URLs must be absolute HTTP(S) URLs and cannot contain embedded credentials. Enterprise OAuth,
-issuer validation, SSRF/redirect controls, managed host allowlists, and stronger TLS policy are
-Batch 2 work. Use only trusted endpoints during the current alpha.
+issuer validation, SSRF/redirect controls, managed host allowlists, and stronger TLS policy can
+be set globally under `[mcp]`.
+
+## Credential Profiles
+
+Credential profiles store only environment variable names and public OAuth metadata. Secret
+values are never written to TOML. Create a bearer profile and attach it to a server:
+
+```bash
+export MCP_ENTERPRISE_TOKEN="<token>"
+loro mcp auth-add enterprise --type bearer --token-env MCP_ENTERPRISE_TOKEN
+loro mcp add catalog --transport streamable_http \
+  --url https://mcp.example.internal/mcp --credential-profile enterprise
+loro mcp auth-list
+```
+
+`loro mcp auth-remove enterprise` removes a profile after it has been detached from every
+configured server.
+
+Machine-to-machine OAuth client credentials use two environment references:
+
+```bash
+export MCP_CLIENT_ID="<client-id>"
+export MCP_CLIENT_SECRET="<client-secret>"
+loro mcp auth-add workload --type oauth_client_credentials \
+  --client-id-env MCP_CLIENT_ID --client-secret-env MCP_CLIENT_SECRET \
+  --scope mcp:tools --scope mcp:resources
+```
+
+Authorization-code OAuth uses Protected Resource Metadata and Authorization Server Metadata
+discovery from the official SDK. The SDK validates resource and issuer relationships. Loro
+prefers a URL-based Client ID Metadata Document (CIMD):
+
+```bash
+loro mcp auth-add employee --type oauth_authorization_code \
+  --client-metadata-url https://agents.example.com/loro/client-metadata.json \
+  --redirect-uri http://127.0.0.1:8765/callback \
+  --scope mcp:tools
+```
+
+On first use, Loro prints the authorization URL and asks for the final callback URL. This flow
+requires an interactive terminal. Dynamic Client Registration is blocked by default; enable
+`--allow-dynamic-registration` only for a reviewed legacy authorization server. Tokens are held
+in process memory for the connection and are not persisted by Loro.
 
 Equivalent TOML:
 
 ```toml
 [mcp]
 enabled = true
+require_https = true
+allow_loopback_http = true
+allowed_hosts = ["mcp.example.internal", "*.mcp.example.internal"]
+block_private_networks = true
+follow_redirects = false
+allowed_stdio_commands = ["/usr/bin/npx", "/opt/loro-mcp/*"]
+max_output_bytes = 1000000
+max_pagination_pages = 20
+allow_input_required = false
+input_required_max_rounds = 3
+
+[mcp.credential_profiles.enterprise]
+type = "bearer"
+token_env = "MCP_ENTERPRISE_TOKEN"
 
 [mcp.servers.filesystem]
 enabled = true
@@ -70,12 +127,24 @@ protocol_mode = "auto"
 allowed_protocol_versions = ["2026-07-28", "2025-11-25", "2024-11-05"]
 minimum_protocol_version = "2025-11-25"
 timeout_seconds = 30
+
+[mcp.servers.catalog]
+transport = "streamable_http"
+url = "https://mcp.example.internal/mcp"
+credential_profile = "enterprise"
 ```
 
 `protocol_mode = "auto"` prefers `2026-07-28` discovery and falls back to classic
 initialization. Use `legacy` to force the handshake path or `2026-07-28` to pin the modern path.
 `allowed_protocol_versions` rejects unexpected negotiation results. A managed
 `minimum_protocol_version` prevents silent downgrade below enterprise policy.
+
+`block_private_networks` rejects HTTP hosts whose preflight DNS answers are private, link-local,
+reserved, or otherwise non-public. Loopback endpoints remain available for local container
+testing. DNS preflight cannot fully eliminate rebinding between resolution and connection;
+enterprise egress controls and internal DNS policy remain the authoritative network boundary.
+Redirects are disabled by default because an allowed endpoint could otherwise redirect to a
+different trust zone.
 
 ## Inspect And Use
 
@@ -101,6 +170,11 @@ loro mcp prompt filesystem summarize --arguments '{"audience":"engineering"}'
 `mcp test` negotiates a connection and lists capability counts; it never invokes a tool.
 Resources, prompts, tool results, server instructions, and metadata are untrusted content even
 when the server itself is approved.
+
+New-protocol multi-round input is disabled by default. When `allow_input_required = true`, Loro
+permits up to `input_required_max_rounds` retries and requires terminal approval before accepting
+each elicitation response.
+Sampling, roots, logging opt-in, and classic server callbacks remain unadvertised and denied.
 
 Tool invocation requires the `mcp` permission. Its default is `ask`:
 
@@ -162,7 +236,8 @@ implicit approval.
 ## Current Verification
 
 - Hermetic tests cover configuration, registry behavior, pagination, protocol allowlists,
-  downgrade rejection, permission denial, explicit approval, redacted audit, and runtime use.
+  downgrade rejection, host/TLS/DNS policy, DCR denial, credential isolation, output bounds,
+  permission denial, explicit approval, redacted audit, and runtime use.
 - Official SDK in-process tests exercise both `auto` stateless and `legacy` handshake modes.
 - stdio and Streamable HTTP use SDK-provided transports.
 - `2024-11-05` remains a compatibility target; it is not yet an advertised conformance-tested
