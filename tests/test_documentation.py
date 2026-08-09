@@ -34,18 +34,18 @@ def test_documented_loro_command_paths_exist() -> None:
             ):
                 continue
             try:
-                tokens = shlex.split(command)
+                parts = shlex.split(command)
             except ValueError:
                 continue
-            if len(tokens) < 2 or tokens[1].startswith("-"):
+            if len(parts) < 2 or parts[1].startswith("-"):
                 continue
-            top_level = root.commands.get(tokens[1])
+            top_level = root.commands.get(parts[1])
             location = f"{path.relative_to(ROOT)}:{line_number}"
             if top_level is None:
-                broken.append(f"{location}: unknown command {tokens[1]!r}")
+                broken.append(f"{location}: unknown command {parts[1]!r}")
                 continue
             subcommands = getattr(top_level, "commands", None)
-            candidates = [token for token in tokens[2:] if not token.startswith("-")]
+            candidates = [part for part in parts[2:] if not part.startswith("-")]
             if subcommands and candidates and candidates[0] not in subcommands:
                 broken.append(f"{location}: unknown subcommand {candidates[0]!r}")
     assert not broken, "Invalid documented Loro commands:\n" + "\n".join(broken)
