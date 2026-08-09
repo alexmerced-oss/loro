@@ -36,6 +36,7 @@ Internal by enterprise policy before pilot use. Until that mapping exists, treat
 | Artifact provenance sidecar | Public metadata allowed. | Prompt preview permitted only by policy. | No raw prompt preview; use hashes/IDs and redaction metadata. | No content preview. |
 | Governed-data metadata/summary | Allowed if source permits. | Must retain catalog/namespace/table provenance. | Authorization, purpose, classification, and approved query/summary path required. | Raw records denied by default; aggregate/summary only under a separately approved policy. |
 | Shell/tool subprocess input and environment | Public task data only as needed. | Minimize and allowlist. | Explicit tool policy and isolated environment required. | Secrets passed only through a dedicated credential broker, never prompt-derived arguments. |
+| MCP request/resource/prompt/result | Allowed from trusted servers; content remains untrusted. | Approved server and minimum necessary data only. | Requires managed endpoint, authentication, classification-aware policy, and isolated execution. | Denied by default until a dedicated credential/data workflow is approved. |
 
 ## Memory-Specific Rules
 
@@ -53,7 +54,7 @@ Internal by enterprise policy before pilot use. Until that mapping exists, treat
 
 ## Credentials And Authentication Material
 
-Provider keys, database DSNs, Polaris credentials/tokens, cloud credentials, session tokens,
+Provider keys, database DSNs, Polaris and MCP credentials/tokens, cloud credentials, session tokens,
 private keys, passwords, and recovery codes are Restricted regardless of surrounding data.
 They must remain in approved environment/credential facilities, must not be written to TOML,
 prompts, memory, artifacts, sessions, provenance previews, or audit details, and must not be

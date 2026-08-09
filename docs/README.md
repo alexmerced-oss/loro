@@ -16,6 +16,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Polaris And Iceberg](polaris-iceberg.md)
 - [Local Polaris And Iceberg Testing](local-polaris-iceberg.md)
 - [Polaris, Object Storage, And DuckDB CI](ci-polaris-duckdb.md)
+- [Model Context Protocol](mcp.md)
 - [AI Providers](providers.md)
 - [Safety](safety.md)
 - [Testing](testing.md)

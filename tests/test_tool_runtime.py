@@ -6,6 +6,8 @@ from loro.config import (
     ApprovalsConfig,
     LocalMemoryConfig,
     LoroConfig,
+    MCPConfig,
+    MCPServerConfig,
     MemoryConfig,
     PermissionRuleConfig,
     PermissionsConfig,
@@ -14,6 +16,23 @@ from loro.config import (
 )
 from loro.memory.local import LocalMemoryStore
 from loro.tool_runtime import ToolRegistry, parse_tool_calls
+
+
+class FakeRuntimeMCPService:
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
+    async def list_tools(self, server_id: str):
+        self.requests.append(server_id)
+        return {
+            "connection": {
+                "server_id": server_id,
+                "transport": "stdio",
+                "protocol_version": "2026-07-28",
+                "lifecycle": "stateless",
+            },
+            "tools": [{"name": "echo"}],
+        }
 
 
 def test_parse_tool_calls() -> None:
@@ -178,6 +197,43 @@ def test_tool_registry_unknown_tool() -> None:
     result = ToolRegistry(LoroConfig()).execute(parse_tool_calls("@tool nope {}")[0])
     assert result.ok is False
     assert result.output == "Unknown tool: nope"
+
+
+def test_tool_registry_mcp_discovery_uses_policy_and_connection_metadata() -> None:
+    service = FakeRuntimeMCPService()
+    config = LoroConfig(
+        mcp=MCPConfig(
+            enabled=True,
+            servers={"fixture": MCPServerConfig(command="fixture-server")},
+        )
+    )
+    call = parse_tool_calls('@tool mcp.tools {"server_id":"fixture","approved":true}')[0]
+
+    result = ToolRegistry(config, mcp_service=service).execute(call)
+
+    assert result.ok is True
+    assert service.requests == ["fixture"]
+    assert result.metadata["mcp_protocol_version"] == "2026-07-28"
+    assert '"name": "echo"' in result.output
+
+
+def test_model_cannot_self_approve_mcp_operation() -> None:
+    service = FakeRuntimeMCPService()
+    config = LoroConfig(
+        mcp=MCPConfig(
+            enabled=True,
+            servers={"fixture": MCPServerConfig(command="fixture-server")},
+        )
+    )
+    call = parse_tool_calls(
+        '@tool mcp.tools {"server_id":"fixture","approved":true}', origin="model"
+    )[0]
+
+    result = ToolRegistry(config, mcp_service=service).execute(call)
+
+    assert result.ok is False
+    assert "Model-provided approval arguments are not trusted" in result.output
+    assert service.requests == []
 
 
 def test_tool_registry_shell_run_requires_approval() -> None:

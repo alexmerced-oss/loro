@@ -1,9 +1,11 @@
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import tomli_w
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 try:
     import tomllib
@@ -62,6 +64,7 @@ class PermissionsConfig(BaseModel):
     edit: PermissionDecision = "ask"
     shared_memory: PermissionDecision = "ask"
     governed_data: PermissionDecision = "allow"
+    mcp: PermissionDecision = "ask"
     web: PermissionDecision = "deny"
     workspace_roots: list[str] = Field(default_factory=list)
     rules: list["PermissionRuleConfig"] = Field(default_factory=list)
@@ -120,6 +123,110 @@ class PolarisConfig(BaseModel):
     require_role_inspection: bool = True
 
 
+class MCPServerConfig(BaseModel):
+    enabled: bool = True
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
+    cwd: str | None = None
+    env_allowlist: list[str] = Field(default_factory=list)
+    protocol_mode: str = "auto"
+    allowed_protocol_versions: list[str] = Field(
+        default_factory=lambda: ["2026-07-28", "2025-11-25", "2024-11-05"]
+    )
+    minimum_protocol_version: str | None = None
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+    @field_validator("command", "url", "cwd")
+    @classmethod
+    def _normalize_optional_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("env_allowlist")
+    @classmethod
+    def _validate_environment_names(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            name = value.strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+                raise ValueError(f"Invalid environment variable name: {value!r}")
+            if name not in normalized:
+                normalized.append(name)
+        return normalized
+
+    @field_validator("allowed_protocol_versions")
+    @classmethod
+    def _validate_allowed_versions(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        if not normalized:
+            raise ValueError("MCP allowed_protocol_versions cannot be empty.")
+        if any(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None for value in normalized):
+            raise ValueError("MCP protocol versions must use YYYY-MM-DD format.")
+        return normalized
+
+    @field_validator("protocol_mode")
+    @classmethod
+    def _validate_protocol_mode(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in {"auto", "legacy"} and re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}", normalized
+        ) is None:
+            raise ValueError("MCP protocol_mode must be auto, legacy, or YYYY-MM-DD.")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_transport(self) -> "MCPServerConfig":
+        if self.transport == "stdio":
+            if not self.command:
+                raise ValueError("MCP stdio server requires command.")
+            if self.url:
+                raise ValueError("MCP stdio server cannot define url.")
+        else:
+            if not self.url:
+                raise ValueError("MCP Streamable HTTP server requires url.")
+            if self.command or self.args or self.cwd or self.env_allowlist:
+                raise ValueError(
+                    "MCP Streamable HTTP server cannot define command, args, cwd, or env_allowlist."
+                )
+            parsed = urlsplit(self.url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError(
+                    "MCP Streamable HTTP URL must be an absolute http:// or https:// URL."
+                )
+            if parsed.username or parsed.password:
+                raise ValueError("MCP Streamable HTTP URL cannot contain credentials.")
+        if self.minimum_protocol_version:
+            if self.minimum_protocol_version not in self.allowed_protocol_versions:
+                raise ValueError(
+                    "MCP minimum_protocol_version must be present in allowed_protocol_versions."
+                )
+        return self
+
+
+class MCPConfig(BaseModel):
+    enabled: bool = False
+    servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+
+    @field_validator("servers")
+    @classmethod
+    def _validate_server_ids(
+        cls, servers: dict[str, MCPServerConfig]
+    ) -> dict[str, MCPServerConfig]:
+        for server_id in servers:
+            if not server_id or any(
+                character not in "abcdefghijklmnopqrstuvwxyz0123456789-_"
+                for character in server_id
+            ):
+                raise ValueError(
+                    "MCP server ids must use lowercase letters, numbers, hyphens, or underscores."
+                )
+        return servers
+
+
 class AuditConfig(BaseModel):
     enabled: bool = True
     schema_version: str = "1.0"
@@ -153,6 +260,7 @@ class LoroConfig(BaseModel):
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     polaris: PolarisConfig = Field(default_factory=PolarisConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
@@ -201,6 +309,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"memory": {"shared": config.memory.shared.model_dump(exclude_none=True)}}
     if section == "polaris":
         return {"polaris": config.polaris.model_dump(exclude_none=True)}
+    if section == "mcp":
+        return {"mcp": config.mcp.model_dump(exclude_none=True)}
     if section == "audit":
         return {"audit": config.audit.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")

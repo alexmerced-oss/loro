@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -180,6 +181,36 @@ def provider_resource(
             "provider": provider,
             "model": model,
             "base_url": base_url or "",
+        },
+    )
+
+
+def mcp_resource(
+    *,
+    operation: str,
+    server_id: str,
+    transport: str,
+    endpoint: str,
+    name: str = "",
+    arguments: Mapping[str, Any] | None = None,
+) -> NormalizedResource:
+    canonical_arguments = json.dumps(
+        dict(arguments or {}),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return NormalizedResource(
+        kind="mcp",
+        fields={
+            "operation": operation,
+            "server_id": server_id,
+            "transport": transport,
+            "endpoint": endpoint,
+            "name": name,
+            "argument_names": sorted((arguments or {}).keys()),
+            "arguments_digest": hashlib.sha256(canonical_arguments.encode("utf-8")).hexdigest(),
         },
     )
 

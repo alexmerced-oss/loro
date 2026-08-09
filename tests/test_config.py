@@ -10,6 +10,8 @@ def test_load_project_config() -> None:
     config = load_config(Path.cwd())
     assert config.model.provider == "mock"
     assert config.permissions.web == "deny"
+    assert config.permissions.mcp == "ask"
+    assert config.mcp.enabled is False
     assert config.memory.shared.write_policy == "explicit_user_dictation_only"
     assert config.safety.enabled is True
 
@@ -138,6 +140,23 @@ def test_managed_config_can_disable_non_interactive_approvals(monkeypatch) -> No
 
     assert config.approvals.allow_non_interactive is False
     assert config.approvals.allow_session_scope is False
+
+
+def test_managed_mcp_protocol_minimum_is_non_overridable(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[mcp]\nenabled = true\n"
+        '[mcp.servers.catalog]\ntransport = "streamable_http"\n'
+        'url = "https://mcp.example/mcp"\nminimum_protocol_version = "2024-11-05"\n',
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        '[mcp.servers.catalog]\nminimum_protocol_version = "2025-11-25"\n',
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.mcp.servers["catalog"].minimum_protocol_version == "2025-11-25"
 
 
 def test_external_audit_configuration_loads(monkeypatch) -> None:

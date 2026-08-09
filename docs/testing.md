@@ -54,6 +54,20 @@ Current high-value gaps that need external services or credentials:
 
 - Live Iceberg/Polaris governed execution.
 - Bedrock requests with real AWS credentials.
+- Real subprocess and remote Streamable HTTP MCP interoperability across the published support
+  matrix. Official SDK in-process modern/classic tests run in the standard suite.
+
+## MCP Tests
+
+The `dev` extra includes the official MCP SDK. Standard CI runs hermetic adapter tests and an
+in-process server in both `auto` (`2026-07-28`) and `legacy` handshake modes:
+
+```bash
+python -m pytest tests/test_mcp.py tests/test_mcp_sdk.py
+```
+
+These tests never contact a remote MCP endpoint. Later roadmap batches add official conformance,
+real stdio subprocess fixtures, Streamable HTTP servers, authorization, and adversarial cases.
 
 ## Live Provider Smoke Checks
 

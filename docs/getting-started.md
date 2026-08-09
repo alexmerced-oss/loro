@@ -16,6 +16,7 @@ Optional extras:
 ```bash
 python -m pip install "loro-agent[data]"      # Postgres, Iceberg, and PyArrow support
 python -m pip install "loro-agent[aws]"       # AWS Bedrock adapter support
+python -m pip install "loro-agent[mcp]"       # MCP client support
 python -m pip install "loro-agent[dev]"       # Development and test tools
 ```
 
@@ -90,13 +91,19 @@ loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
+loro setup mcp
 loro setup quickstart
 ```
 
 `loro setup quickstart` runs provider, identity, approvals, audit, local memory, shared memory,
-and Polaris setup in sequence. Use `mock`, keep the JSONL audit default, disable shared memory,
-and disable Polaris for a completely local
+Polaris, and MCP setup in sequence. Use `mock`, keep the JSONL audit default, disable shared
+memory, Polaris, and MCP for a completely local
 no-key/no-service first run.
+
+To connect a trusted MCP server, install the `mcp` extra and run `loro setup mcp`. Validate it
+without invoking a remote tool using `loro mcp doctor` and `loro mcp test <server-id>`. See
+[Model Context Protocol](mcp.md) for transports, protocol policy, permissions, and current
+enterprise limitations.
 
 For a local identity, Loro uses the operating-system username and the `default` tenant. An
 enterprise launcher can instead provide `LORO_IDENTITY_*` variables and require fields through

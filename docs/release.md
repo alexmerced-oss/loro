@@ -14,7 +14,7 @@ python -m compileall src tests
 If optional services are available:
 
 ```bash
-python -m pip install -e ".[dev,integration,data,aws]"
+python -m pip install -e ".[dev,integration,data,aws,mcp]"
 LORO_INTEGRATION_POSTGRES=1 python -m pytest -m integration tests/integration/test_postgres_memory_integration.py
 LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/test_polaris_cli_integration.py
 ```
@@ -29,6 +29,7 @@ loro providers smoke "hello" --provider mock --execute --stream
 loro memory schema --backend postgres
 loro memory schema --backend iceberg
 loro data polaris catalogs list
+loro mcp doctor
 ```
 
 Only run live provider smoke checks when credentials and spend controls are approved:
@@ -54,7 +55,7 @@ Recent patch releases:
 
 - Confirm `README.md` examples still match CLI behavior.
 - Confirm `docs/roadmap.md` statuses are current.
-- Confirm `docs/providers.md`, `docs/memory.md`, and `docs/polaris-iceberg.md` reflect any
+- Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
 
 ## Packaging
@@ -89,6 +90,8 @@ python -m venv /tmp/loro-release-smoke
 /tmp/loro-release-smoke/bin/loro doctor
 /tmp/loro-release-smoke/bin/loro providers list
 /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream
+/tmp/loro-release-smoke/bin/python -m pip install "loro-agent[mcp]"
+/tmp/loro-release-smoke/bin/loro mcp doctor
 ```
 
 Publishing should be done only after local validation and CI pass on the release commit.

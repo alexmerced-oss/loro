@@ -286,13 +286,26 @@ def _canonical_json(value: Any) -> str:
 
 
 def _redacted_preview(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    preview: dict[str, Any] = {}
-    for key, value in arguments.items():
-        if key.casefold() in {"content", "new", "old", "prompt"} and isinstance(value, str):
-            preview[key] = value[:120]
-        else:
-            preview[key] = value
-    return preview
+    return {str(key): _redacted_value(str(key), value) for key, value in arguments.items()}
+
+
+def _redacted_value(key: str, value: Any) -> Any:
+    normalized_key = key.casefold().replace("-", "_")
+    if any(
+        marker in normalized_key
+        for marker in ("password", "secret", "token", "api_key", "credential")
+    ):
+        return "[REDACTED]"
+    if isinstance(value, Mapping):
+        return {
+            str(item_key): _redacted_value(str(item_key), item)
+            for item_key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [_redacted_value(key, item) for item in value]
+    if normalized_key in {"content", "new", "old", "prompt"} and isinstance(value, str):
+        return value[:120]
+    return value
 
 
 def _record_event_payload(

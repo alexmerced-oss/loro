@@ -11,7 +11,7 @@ flowchart LR
   CLI --> Runtime["Agent runtime"]
   Runtime --> Models["Model provider adapters"]
   Runtime --> Tools["Typed tool registry"]
-  Runtime -. planned .-> MCP["MCP dual-era adapter"]
+  Runtime --> MCP["MCP dual-era client adapter"]
   Runtime -. planned .-> Skills["Agent Skills loader"]
   Runtime --> Memory["Memory subsystem"]
   Runtime --> Artifacts["Artifact generators"]
@@ -47,11 +47,12 @@ flowchart LR
 - `loro.serialization`: small helpers for JSON-safe CLI output.
 - `loro.sessions`: durable JSON session records.
 
-Planned extension boundaries are `loro.mcp` for MCP client/server interoperability and
-`loro.skills` for Agent Skills discovery and progressive disclosure. They are not implemented
-yet. Both must adapt into the existing tool, permission, approval, normalized-resource,
-sandbox, session, and audit boundaries rather than create independent execution paths. See the
-[MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
+`loro.mcp` now provides the first client foundation: a typed registry, lazy official-SDK adapter,
+stdio and Streamable HTTP transports, modern/classic lifecycle normalization, tools/resources/
+prompts, CLI diagnostics, and runtime adapters. It enters through the existing permission,
+approval, normalized-resource, session, and audit boundaries. Enterprise authorization,
+extensions, server mode, and `loro.skills` remain planned. See [Model Context Protocol](docs/mcp.md)
+and the [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
 
 ## Runtime Flow
 

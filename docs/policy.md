@@ -15,6 +15,9 @@ Current normalized resource kinds are:
 - `memory`: operation, tenant, scope type/key, and backend.
 - `polaris`: operation, catalog, namespace, table/resource, role, policy, and arguments.
 - `provider`: operation, provider, model, and configured base URL.
+- `mcp`: operation, server id, transport, redacted endpoint, remote capability name, argument
+  names, and a canonical argument digest. Raw MCP argument values are approval-bound but are
+  not stored in the normalized target.
 
 Filesystem and Git paths use `Path.resolve(strict=False)`. Existing symlinks and parent
 segments are resolved before root enforcement and policy matching. Structured filesystem path
@@ -113,3 +116,5 @@ normalized resource. Explanation does not execute or approve the request.
   verified. Managed distribution must protect the policy file.
 - Memory tenant selection is represented in policy resources; storage-level tenant enforcement
   and trusted-identity-only tenant derivation remain Phase 2 work.
+- MCP policy does not replace remote-server trust, transport authentication, content trust
+  labeling, or a subprocess/network sandbox. See [Model Context Protocol](mcp.md).

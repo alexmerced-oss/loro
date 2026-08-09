@@ -1,6 +1,7 @@
+import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -13,6 +14,8 @@ from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import prompt_preview
 from loro.config import LoroConfig
 from loro.identity import IdentityContext, resolve_identity
+from loro.mcp import MCPRegistry, MCPService
+from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.permissions import PermissionEngine, PermissionRequest
@@ -20,6 +23,7 @@ from loro.polaris import PolarisClient
 from loro.resources import (
     filesystem_resource,
     git_resource,
+    mcp_resource,
     memory_resource,
     polaris_resource,
     shell_resource,
@@ -42,6 +46,7 @@ class ToolExecution:
     call: ToolCall
     ok: bool
     output: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -50,6 +55,7 @@ class ToolExecution:
             "origin": self.call.origin,
             "ok": self.ok,
             "output": self.output,
+            "metadata": self.metadata,
         }
 
 
@@ -62,6 +68,7 @@ class ToolRegistry:
         identity: IdentityContext | None = None,
         approval_manager: ApprovalManager | None = None,
         approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
+        mcp_service: MCPService | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -72,6 +79,7 @@ class ToolRegistry:
         self.git = GitTools()
         self.shell = ShellTools()
         self.safety = SafetyScanner(config.safety)
+        self.mcp = mcp_service or MCPService(config.mcp)
 
     def execute(self, call: ToolCall) -> ToolExecution:
         try:
@@ -95,6 +103,8 @@ class ToolRegistry:
                 return self._run_polaris_readonly(call)
             if call.name == "artifact.create":
                 return self._create_artifact(call)
+            if call.name.startswith("mcp."):
+                return self._run_mcp(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
@@ -440,6 +450,105 @@ class ToolRegistry:
             stderr=result.stderr,
         )
         return ToolExecution(call=call, ok=result.returncode == 0, output=output)
+
+    def _run_mcp(self, call: ToolCall) -> ToolExecution:
+        if not self.config.mcp.enabled:
+            return ToolExecution(call=call, ok=False, output="MCP is disabled.")
+        server_id = str(call.args["server_id"])
+        server = MCPRegistry(self.config.mcp).get(server_id)
+        endpoint = server_endpoint_for_display(server)
+        operation = call.name.removeprefix("mcp.")
+        name = ""
+        arguments: dict[str, Any] = {}
+        if operation == "call":
+            name = str(call.args["tool_name"])
+            raw_arguments = call.args.get("arguments", {})
+            if not isinstance(raw_arguments, dict):
+                raise ValueError("mcp.call requires arguments as an object.")
+            arguments = raw_arguments
+            action = "call tool"
+        elif operation == "tools":
+            action = "list tools"
+        elif operation == "resources":
+            action = "list resources"
+        elif operation == "read":
+            name = str(call.args["uri"])
+            action = "read resource"
+        elif operation == "prompts":
+            action = "list prompts"
+        elif operation == "prompt":
+            name = str(call.args["prompt_name"])
+            raw_arguments = call.args.get("arguments", {})
+            if not isinstance(raw_arguments, dict) or not all(
+                isinstance(value, str) for value in raw_arguments.values()
+            ):
+                raise ValueError("mcp.prompt requires string-valued arguments.")
+            arguments = raw_arguments
+            action = "get prompt"
+        else:
+            raise ValueError(
+                "MCP tool must be one of: mcp.tools, mcp.call, mcp.resources, "
+                "mcp.read, mcp.prompts, mcp.prompt."
+            )
+        resource = mcp_resource(
+            operation=operation,
+            server_id=server_id,
+            transport=server.transport,
+            endpoint=endpoint,
+            name=name,
+            arguments=arguments,
+        )
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="mcp",
+                action=action,
+                target=resource.target,
+                resource=resource,
+            ),
+            approval_target=resource.target,
+            risk_reason="Connect to an MCP server and perform the displayed remote operation.",
+        )
+        result = asyncio.run(
+            self._execute_mcp_request(
+                operation=operation,
+                server_id=server_id,
+                name=name,
+                arguments=arguments,
+            )
+        )
+        connection = result.get("connection", {})
+        return ToolExecution(
+            call=call,
+            ok=True,
+            output=json.dumps(result, sort_keys=True, ensure_ascii=True),
+            metadata={
+                "mcp_server_id": server_id,
+                "mcp_transport": connection.get("transport"),
+                "mcp_protocol_version": connection.get("protocol_version"),
+                "mcp_lifecycle": connection.get("lifecycle"),
+            },
+        )
+
+    async def _execute_mcp_request(
+        self,
+        *,
+        operation: str,
+        server_id: str,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        if operation == "call":
+            return await self.mcp.call_tool(server_id, name, arguments)
+        if operation == "tools":
+            return await self.mcp.list_tools(server_id)
+        if operation == "resources":
+            return await self.mcp.list_resources(server_id)
+        if operation == "read":
+            return await self.mcp.read_resource(server_id, name)
+        if operation == "prompts":
+            return await self.mcp.list_prompts(server_id)
+        return await self.mcp.get_prompt(server_id, name, arguments)
 
     def _assert_safe_write(self, content: str, *, allow_sensitive: bool) -> None:
         findings = self.safety.scan(content)

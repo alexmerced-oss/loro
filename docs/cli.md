@@ -14,13 +14,14 @@ loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
+loro setup mcp
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
 ```
 
 `loro configure` and `loro setup provider` run the AI provider wizard. The other setup
-commands guide identity, approvals, local memory, shared-memory, and Polaris configuration. `loro setup
+commands guide identity, approvals, local memory, shared-memory, Polaris, and MCP configuration. `loro setup
 quickstart` runs the setup wizards in sequence and preserves existing sections in
 `.loro/config.local.toml`.
 
@@ -64,6 +65,9 @@ tool registry supports:
 - `shell.run`: `{"args": ["python", "-c", "print(123)"]}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
 - `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
+- `mcp.tools`: `{"server_id": "filesystem"}`
+- `mcp.call`: `{"server_id": "filesystem", "tool_name": "read_file", "arguments": {"path": "README.md"}}`
+- `mcp.resources`, `mcp.read`, `mcp.prompts`, and `mcp.prompt`
 
 Runtime write-like calls still obey configured permissions. When policy is `ask`, Loro prompts
 the trusted terminal user; a model-provided `approved=true` cannot authorize itself. Explicit
@@ -72,6 +76,35 @@ approvals are enabled. `deny` always blocks execution. File writes/replacements 
 safety scanner as CLI write commands. Polaris runtime calls require `[polaris].enabled = true`
 and are constrained to read-only operations. Artifact runtime calls support `document`,
 `presentation`, `spreadsheet`, and `brief`; they write provenance sidecars.
+
+## MCP
+
+Install the optional SDK and configure a server:
+
+```bash
+python -m pip install "loro-agent[mcp]"
+loro setup mcp
+loro mcp add filesystem --command npx --arg=-y --arg @modelcontextprotocol/server-filesystem --arg .
+loro mcp list
+loro mcp inspect filesystem
+loro mcp doctor filesystem
+loro mcp test filesystem
+```
+
+Discover and invoke server capabilities:
+
+```bash
+loro mcp tools filesystem
+loro mcp call filesystem read_file --arguments '{"path":"README.md"}'
+loro mcp resources filesystem
+loro mcp read filesystem file:///workspace/README.md
+loro mcp prompts filesystem
+loro mcp prompt filesystem summarize --arguments '{"audience":"engineering"}'
+```
+
+Tool calls require an exact Loro approval by default. The current foundation supports stdio and
+Streamable HTTP through the official SDK, prefers stateless MCP `2026-07-28`, and falls back to
+classic initialization when policy allows. See [Model Context Protocol](mcp.md).
 
 ## Providers
 

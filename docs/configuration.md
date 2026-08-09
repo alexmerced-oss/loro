@@ -45,6 +45,7 @@ shell = "ask"
 edit = "ask"
 shared_memory = "ask"
 governed_data = "allow"
+mcp = "ask"
 web = "deny"
 workspace_roots = []
 
@@ -81,6 +82,19 @@ iceberg_table = "shared_memories"
 enabled = false
 cli_path = "polaris"
 require_role_inspection = true
+
+[mcp]
+enabled = false
+
+[mcp.servers.example]
+enabled = true
+transport = "stdio"
+command = "example-mcp-server"
+args = []
+env_allowlist = []
+protocol_mode = "auto"
+allowed_protocol_versions = ["2026-07-28", "2025-11-25", "2024-11-05"]
+timeout_seconds = 30
 
 [audit]
 enabled = true
@@ -181,7 +195,7 @@ decision = "deny"
 resolved_executable_name = "python*"
 ```
 
-Common tool names today are `edit`, `git`, `shell`, `shared_memory`, `governed_data`,
+Common tool names today are `edit`, `git`, `shell`, `shared_memory`, `governed_data`, `mcp`,
 `provider`, and `web`. See [Normalized Resource Policy](policy.md) for fields, workspace-root
 behavior, policy explanation, and security boundaries.
 
@@ -199,6 +213,7 @@ loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
+loro setup mcp
 loro setup quickstart
 ```
 
@@ -207,9 +222,10 @@ configures local or enterprise-provided identity fields and fail-closed requirem
 setup approvals` configures interactive prompts, non-interactive automation, exact session
 reuse, and expiration. `loro setup memory` configures private local memory. `loro setup shared-memory` configures
 explicit-only shared enterprise memory with either Postgres or Iceberg. `loro setup polaris`
-configures governed data discovery through the Polaris CLI. `loro setup audit` configures local
+configures governed data discovery through the Polaris CLI. `loro setup mcp` configures one
+stdio or Streamable HTTP MCP server without storing environment-secret values. `loro setup audit` configures local
 JSONL or external HTTP delivery, retry, buffering, and failure behavior. `loro setup quickstart`
-runs all seven setup areas in sequence.
+runs all eight setup areas in sequence.
 
 All setup commands preserve existing sections in the target config file. They write local
 settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain

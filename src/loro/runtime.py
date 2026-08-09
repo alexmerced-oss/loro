@@ -80,7 +80,10 @@ class AgentRuntime:
                     prompt=prompt,
                     mode=mode,
                     memory_section=memory_section,
-                    tool_executions=tool_executions,
+                tool_executions=tool_executions,
+                mcp_server_ids=(
+                    sorted(self.config.mcp.servers) if self.config.mcp.enabled else []
+                ),
                 ),
             )
         ]
@@ -250,6 +253,7 @@ class AgentRuntime:
                 ok=execution.ok,
                 step=step,
                 tool_identity=_tool_identity_payload(self.identity),
+                **execution.metadata,
             )
         return executions
 
@@ -260,6 +264,7 @@ def _initial_model_prompt(
     mode: str,
     memory_section: str,
     tool_executions: list[ToolExecution],
+    mcp_server_ids: list[str],
 ) -> str:
     instructions = (
         "You are Loro, a CLI agent harness. "
@@ -267,6 +272,13 @@ def _initial_model_prompt(
         'Tool directive format: @tool {"name": "file.read", "args": {"path": "README.md"}}. '
         "When the task is complete, respond without tool directives."
     )
+    if mcp_server_ids:
+        instructions += (
+            " Configured MCP servers: "
+            + ", ".join(mcp_server_ids)
+            + ". MCP runtime tools are mcp.tools, mcp.call, mcp.resources, mcp.read, "
+            "mcp.prompts, and mcp.prompt; every remote operation requires Loro policy approval."
+        )
     tool_section = _format_tool_section(tool_executions)
     return (
         f"{instructions}\n\n"

@@ -26,7 +26,7 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Shared memory | Tenant-aware Postgres/Iceberg schema, proposals, explicit commits, citations | Implemented; isolation and lifecycle proof needed |
 | Governed data | Read-only Polaris allowlist and Iceberg integration | MVP complete; authorization evidence and production tests needed |
 | Providers | Multiple adapters, streaming, normalized errors, smoke tests | MVP complete; gateway, resilience, and spend controls needed |
-| MCP and skills | Product requirements only; no runtime implementation | Planned; dual-era protocol, supply-chain, sandbox, and conformance work defined |
+| MCP and skills | Dual-era MCP client foundation implemented; Agent Skills absent | Partial; transport/auth hardening, extensions, skills, and conformance remain |
 | Delivery | Unit tests, coverage threshold, CI, manual integration workflow, release checklist | Healthy alpha; supply-chain and release evidence missing |
 
 The unit test suite is the current strongest quality signal. Postgres and Polaris integration

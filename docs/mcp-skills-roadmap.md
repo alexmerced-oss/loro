@@ -2,9 +2,10 @@
 
 ## Status And Scope
 
-MCP and Agent Skills are **planned, not currently implemented** in Loro. This roadmap defines
-the compatibility, security, implementation, and verification work required before either
-capability can be advertised as supported.
+MCP Batch 1 is implemented. Enterprise transport/authentication, extensions, server mode,
+release conformance, and Agent Skills remain planned. This roadmap defines the compatibility,
+security, implementation, and verification work required before the broader capability set can
+be advertised as enterprise-ready.
 
 Loro will treat these as complementary systems:
 
@@ -165,6 +166,8 @@ approved environment or credential-store reference.
 
 ### Batch 1: Dual-Era MCP Client Foundation
 
+**Status: complete for the alpha client foundation.**
+
 - Add the optional SDK dependency, typed configuration, registry, and diagnostics.
 - Implement stdio and Streamable HTTP clients.
 - Prefer `2026-07-28`; support `2025-11-25`; retain a `2024-11-05` fixture target.
@@ -174,6 +177,12 @@ approved environment or credential-store reference.
 
 Exit: one server fixture per required lifecycle works through the same Loro tool interface, and
 no-overlap, malformed response, timeout, and denied-call tests pass.
+
+Implemented evidence includes `src/loro/mcp/`, MCP CLI/setup commands, normalized `mcp`
+resources, runtime tools, `tests/test_mcp.py`, and official-SDK modern/classic coverage in
+`tests/test_mcp_sdk.py`. The `2024-11-05` revision remains a compatibility target pending the
+Batch 6 conformance matrix; current official-SDK tests prove `2026-07-28` and the SDK's latest
+classic handshake path.
 
 ### Batch 2: Enterprise Transport And Authorization
 

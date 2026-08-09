@@ -1,5 +1,6 @@
+import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -15,7 +16,7 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview
-from loro.config import LoroConfig, load_config, write_config_sections
+from loro.config import LoroConfig, MCPServerConfig, load_config, write_config_sections
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -23,6 +24,8 @@ from loro.identity import (
     diagnose_identity,
     resolve_identity,
 )
+from loro.mcp import MCPClientError, MCPRegistry, MCPRegistryError, MCPService, diagnose_mcp
+from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import (
@@ -47,6 +50,7 @@ from loro.providers import (
 from loro.resources import (
     NormalizedResource,
     filesystem_resource,
+    mcp_resource,
     memory_resource,
     resource_from_payload,
     shell_resource,
@@ -82,6 +86,7 @@ setup_app = typer.Typer(help="Guided setup wizards for Loro configuration.")
 identity_app = typer.Typer(help="Inspect and validate the active enterprise identity.")
 policy_app = typer.Typer(help="Explain normalized permission decisions.")
 audit_app = typer.Typer(help="Inspect and flush audit delivery.")
+mcp_app = typer.Typer(help="Configure and use Model Context Protocol servers.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -98,6 +103,7 @@ app.add_typer(setup_app, name="setup")
 app.add_typer(identity_app, name="identity")
 app.add_typer(policy_app, name="policy")
 app.add_typer(audit_app, name="audit")
+app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -143,6 +149,87 @@ def _permissions() -> PermissionEngine:
 
 def _safety() -> SafetyScanner:
     return SafetyScanner(load_config().safety)
+
+
+def _mcp_service() -> MCPService:
+    return MCPService(load_config().mcp)
+
+
+def _mcp_server_endpoint(server: MCPServerConfig) -> str:
+    return server_endpoint_for_display(server)
+
+
+def _authorize_explicit_mcp_read(
+    server_id: str,
+    *,
+    action: str,
+    operation: str,
+    name: str = "",
+    arguments: dict[str, Any] | None = None,
+) -> None:
+    config = load_config()
+    try:
+        server = MCPRegistry(config.mcp).get(server_id)
+    except MCPRegistryError as error:
+        raise typer.BadParameter(str(error)) from error
+    resource = mcp_resource(
+        operation=operation,
+        server_id=server_id,
+        transport=server.transport,
+        endpoint=_mcp_server_endpoint(server),
+        name=name,
+        arguments=arguments,
+    )
+    try:
+        PermissionEngine(config.permissions).require_allowed(
+            PermissionRequest(tool="mcp", action=action, target=resource.target, resource=resource),
+            approved=True,
+        )
+    except PermissionError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+def _run_mcp_operation(
+    operation: str,
+    server_id: str,
+    awaitable: Awaitable[dict[str, Any]],
+) -> dict[str, Any]:
+    audit = _audit()
+    audit.write("mcp.request_started", action=operation, target=server_id, server_id=server_id)
+    try:
+        result = asyncio.run(awaitable)
+    except (MCPClientError, ValueError) as error:
+        audit.write(
+            "mcp.request_failed",
+            action=operation,
+            target=server_id,
+            server_id=server_id,
+            result_status="failed",
+            error_type=type(error).__name__,
+        )
+        raise typer.BadParameter(str(error)) from error
+    connection = result.get("connection", result)
+    audit.write(
+        "mcp.request_completed",
+        action=operation,
+        target=server_id,
+        server_id=server_id,
+        transport=connection.get("transport"),
+        protocol_version=connection.get("protocol_version"),
+        lifecycle=connection.get("lifecycle"),
+        result_status="ok",
+    )
+    return result
+
+
+def _json_object(value: str, *, label: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise typer.BadParameter(f"Invalid {label} JSON: {error.msg}") from error
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter(f"{label} must be a JSON object.")
+    return parsed
 
 
 def _approval_manager(config: LoroConfig | None = None) -> ApprovalManager:
@@ -1177,7 +1264,7 @@ def setup_quickstart(
         typer.Option("--output", "-o", help="Config file to write."),
     ] = Path(".loro/config.local.toml"),
 ) -> None:
-    """Run provider, identity, memory, and Polaris setup in sequence."""
+    """Run provider, identity, memory, Polaris, and MCP setup in sequence."""
     console.print("Loro quickstart setup")
     setup_provider(output=output)
     setup_identity(output=output)
@@ -1186,7 +1273,66 @@ def setup_quickstart(
     setup_memory(output=output)
     setup_shared_memory(output=output)
     setup_polaris(output=output)
+    setup_mcp(output=output)
     console.print("Quickstart setup complete.")
+
+
+@setup_app.command("mcp")
+def setup_mcp(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Interactively configure one MCP server without storing secret values."""
+    config = load_config()
+    enabled = typer.confirm("Enable MCP?", default=config.mcp.enabled)
+    config.mcp.enabled = enabled
+    if enabled:
+        server_id = typer.prompt("Server id", default="example").strip().casefold()
+        transport = typer.prompt(
+            "Transport (stdio/streamable_http)", default="stdio"
+        ).strip()
+        protocol_mode = typer.prompt(
+            "Protocol mode (auto/legacy/2026-07-28)", default="auto"
+        ).strip()
+        timeout_seconds = float(typer.prompt("Request timeout seconds", default="30"))
+        if transport == "stdio":
+            command = typer.prompt("Server command").strip()
+            arguments = typer.prompt("Arguments separated by spaces", default="").split()
+            environment = [
+                item.strip()
+                for item in typer.prompt(
+                    "Environment variable names to allow (comma separated)", default=""
+                ).split(",")
+                if item.strip()
+            ]
+            server = MCPServerConfig(
+                transport="stdio",
+                command=command,
+                args=arguments,
+                env_allowlist=environment,
+                protocol_mode=protocol_mode,
+                timeout_seconds=timeout_seconds,
+            )
+        elif transport == "streamable_http":
+            server = MCPServerConfig(
+                transport="streamable_http",
+                url=typer.prompt("MCP endpoint URL").strip(),
+                protocol_mode=protocol_mode,
+                timeout_seconds=timeout_seconds,
+            )
+        else:
+            raise typer.BadParameter("Transport must be stdio or streamable_http.")
+        config.mcp.servers[server_id] = server
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.mcp_written",
+        path=str(written),
+        enabled=enabled,
+        server_count=len(config.mcp.servers),
+    )
+    console.print(f"Wrote MCP config: {written}")
 
 
 @identity_app.command("show")
@@ -1228,6 +1374,279 @@ def audit_flush() -> None:
     raise typer.Exit(code=0 if result.remaining == 0 else 1)
 
 
+@mcp_app.command("list")
+def mcp_list() -> None:
+    """List configured MCP servers without connecting to them."""
+    config = load_config().mcp
+    console.print_json(
+        data={
+            "enabled": config.enabled,
+            "servers": MCPRegistry(config).payloads(),
+        }
+    )
+
+
+@mcp_app.command("inspect")
+def mcp_inspect(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+) -> None:
+    """Inspect one redacted MCP server configuration without connecting."""
+    try:
+        payload = MCPRegistry(load_config().mcp).payload(server_id)
+    except MCPRegistryError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=payload)
+
+
+@mcp_app.command("add")
+def mcp_add(
+    server_id: Annotated[str, typer.Argument(help="Stable lowercase server id.")],
+    transport: Annotated[
+        str, typer.Option("--transport", help="stdio or streamable_http.")
+    ] = "stdio",
+    command: Annotated[
+        str | None, typer.Option("--command", help="stdio server executable.")
+    ] = None,
+    args: Annotated[
+        list[str] | None, typer.Option("--arg", help="Repeat for each stdio argument.")
+    ] = None,
+    url: Annotated[
+        str | None, typer.Option("--url", help="Streamable HTTP MCP endpoint.")
+    ] = None,
+    cwd: Annotated[
+        str | None, typer.Option("--cwd", help="stdio server working directory.")
+    ] = None,
+    env_allowlist: Annotated[
+        list[str] | None,
+        typer.Option("--env", help="Repeat for each environment variable to expose."),
+    ] = None,
+    protocol_mode: Annotated[
+        str,
+        typer.Option("--protocol-mode", help="auto, legacy, or a modern version pin."),
+    ] = "auto",
+    allowed_versions: Annotated[
+        list[str] | None,
+        typer.Option("--allowed-version", help="Repeat to replace the default allowlist."),
+    ] = None,
+    minimum_version: Annotated[
+        str | None,
+        typer.Option("--minimum-version", help="Reject negotiated versions below this date."),
+    ] = None,
+    timeout_seconds: Annotated[
+        float, typer.Option("--timeout", min=0.1, max=300, help="Request timeout seconds."),
+    ] = 30,
+    disabled: Annotated[
+        bool, typer.Option("--disabled", help="Save the server but leave it disabled."),
+    ] = False,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Config file to update."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Add or replace an MCP server configuration without connecting."""
+    config = load_config()
+    server_values: dict[str, Any] = {
+        "enabled": not disabled,
+        "transport": transport,
+        "command": command,
+        "args": args or [],
+        "url": url,
+        "cwd": cwd,
+        "env_allowlist": env_allowlist or [],
+        "protocol_mode": protocol_mode,
+        "minimum_protocol_version": minimum_version,
+        "timeout_seconds": timeout_seconds,
+    }
+    if allowed_versions:
+        server_values["allowed_protocol_versions"] = allowed_versions
+    try:
+        server = MCPServerConfig.model_validate(server_values)
+        normalized_id = server_id.strip().casefold()
+        candidate_servers = {**config.mcp.servers, normalized_id: server}
+        config.mcp = config.mcp.model_copy(
+            update={"enabled": True, "servers": candidate_servers}
+        )
+        config.mcp = type(config.mcp).model_validate(config.mcp.model_dump())
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.mcp_server_written",
+        path=str(written),
+        server_id=normalized_id,
+        transport=server.transport,
+        enabled=server.enabled,
+    )
+    console.print(f"Configured MCP server {normalized_id}: {written}")
+
+
+@mcp_app.command("remove")
+def mcp_remove(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Config file to update."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Remove an MCP server from local configuration."""
+    config = load_config()
+    if server_id not in config.mcp.servers:
+        raise typer.BadParameter(f"Unknown MCP server: {server_id}")
+    del config.mcp.servers[server_id]
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write("config.mcp_server_removed", path=str(written), server_id=server_id)
+    console.print(f"Removed MCP server {server_id}: {written}")
+
+
+@mcp_app.command("doctor")
+def mcp_doctor(
+    server_id: Annotated[
+        str | None, typer.Argument(help="Optional configured MCP server id.")
+    ] = None,
+) -> None:
+    """Validate SDK, server configuration, commands, and allowlisted environment names."""
+    diagnostic = diagnose_mcp(load_config().mcp, server_id)
+    console.print_json(data=diagnostic)
+    raise typer.Exit(code=0 if diagnostic["ok"] else 1)
+
+
+@mcp_app.command("test")
+def mcp_test(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+) -> None:
+    """Connect, negotiate, and list capability counts without invoking a tool."""
+    _authorize_explicit_mcp_read(
+        server_id, action="test connection", operation="test_connection"
+    )
+    result = _run_mcp_operation(
+        "test connection", server_id, _mcp_service().test_connection(server_id)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("tools")
+def mcp_tools(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+) -> None:
+    """List tools exposed by an MCP server without invoking them."""
+    _authorize_explicit_mcp_read(server_id, action="list tools", operation="list_tools")
+    result = _run_mcp_operation("list tools", server_id, _mcp_service().list_tools(server_id))
+    console.print_json(data=result)
+
+
+@mcp_app.command("call")
+def mcp_call(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    tool_name: Annotated[str, typer.Argument(help="Remote MCP tool name.")],
+    arguments: Annotated[
+        str, typer.Option("--arguments", "-a", help="Tool arguments as a JSON object."),
+    ] = "{}",
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Use an allowed non-interactive approval."),
+    ] = False,
+) -> None:
+    """Invoke an MCP tool after an exact Loro permission and approval decision."""
+    parsed_arguments = _json_object(arguments, label="tool arguments")
+    config = load_config()
+    try:
+        server = MCPRegistry(config.mcp).get(server_id)
+    except MCPRegistryError as error:
+        raise typer.BadParameter(str(error)) from error
+    resource = mcp_resource(
+        operation="call_tool",
+        server_id=server_id,
+        transport=server.transport,
+        endpoint=_mcp_server_endpoint(server),
+        name=tool_name,
+        arguments=parsed_arguments,
+    )
+    _authorize_cli_action(
+        tool="mcp",
+        action="call tool",
+        target=resource.target,
+        arguments={
+            "server_id": server_id,
+            "tool_name": tool_name,
+            "arguments": parsed_arguments,
+        },
+        risk_reason="Invoke a remote MCP tool with the displayed exact arguments.",
+        non_interactive_approved=yes,
+        resource=resource,
+    )
+    result = _run_mcp_operation(
+        "call tool", server_id, _mcp_service().call_tool(server_id, tool_name, parsed_arguments)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("resources")
+def mcp_resources(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+) -> None:
+    """List resources exposed by an MCP server."""
+    _authorize_explicit_mcp_read(
+        server_id, action="list resources", operation="list_resources"
+    )
+    result = _run_mcp_operation(
+        "list resources", server_id, _mcp_service().list_resources(server_id)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("read")
+def mcp_read(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    uri: Annotated[str, typer.Argument(help="MCP resource URI.")],
+) -> None:
+    """Read one MCP resource after enforcing any configured deny rule."""
+    _authorize_explicit_mcp_read(
+        server_id, action="read resource", operation="read_resource", name=uri
+    )
+    result = _run_mcp_operation(
+        "read resource", server_id, _mcp_service().read_resource(server_id, uri)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("prompts")
+def mcp_prompts(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+) -> None:
+    """List prompts exposed by an MCP server."""
+    _authorize_explicit_mcp_read(
+        server_id, action="list prompts", operation="list_prompts"
+    )
+    result = _run_mcp_operation(
+        "list prompts", server_id, _mcp_service().list_prompts(server_id)
+    )
+    console.print_json(data=result)
+
+
+@mcp_app.command("prompt")
+def mcp_prompt(
+    server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
+    prompt_name: Annotated[str, typer.Argument(help="Remote MCP prompt name.")],
+    arguments: Annotated[
+        str, typer.Option("--arguments", "-a", help="Prompt arguments as a JSON object."),
+    ] = "{}",
+) -> None:
+    """Resolve one MCP prompt; returned content remains untrusted context."""
+    parsed = _json_object(arguments, label="prompt arguments")
+    if not all(isinstance(value, str) for value in parsed.values()):
+        raise typer.BadParameter("MCP prompt argument values must be strings.")
+    _authorize_explicit_mcp_read(
+        server_id,
+        action="get prompt",
+        operation="get_prompt",
+        name=prompt_name,
+        arguments=parsed,
+    )
+    result = _run_mcp_operation(
+        "get prompt",
+        server_id,
+        _mcp_service().get_prompt(server_id, prompt_name, parsed),
+    )
+    console.print_json(data=result)
+
+
 @app.command()
 def doctor() -> None:
     """Validate provider, permission, memory, Polaris, and artifact configuration."""
@@ -1252,6 +1671,10 @@ def doctor() -> None:
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
+    console.print(
+        f"MCP: {'enabled' if config.mcp.enabled else 'disabled'} "
+        f"({len(config.mcp.servers)} configured servers)"
+    )
     console.print(f"Audit log: {'enabled' if config.audit.enabled else 'disabled'}")
     console.print(f"Audit schema: {config.audit.schema_version}")
     console.print(f"Audit sink: {config.audit.sink} ({config.audit.failure_mode})")

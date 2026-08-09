@@ -149,6 +149,27 @@ def test_denial_emits_auditable_event() -> None:
     assert events == ["approval.requested", "approval.denied"]
 
 
+def test_approval_preview_recursively_redacts_credentials() -> None:
+    manager = ApprovalManager(ApprovalsConfig(), _identity())
+    request = manager.request(
+        action="mcp.call tool",
+        target="fixture",
+        arguments={
+            "server_id": "fixture",
+            "arguments": {"api_key": "secret-value", "nested": {"password": "hidden"}},
+        },
+        policy_decision="ask",
+        policy_reason="MCP uses configured policy",
+        risk_reason="Invoke a remote tool.",
+    )
+
+    preview = request.display_arguments()
+
+    assert "secret-value" not in preview
+    assert "hidden" not in preview
+    assert preview.count("[REDACTED]") == 2
+
+
 def _request(
     manager: ApprovalManager,
     *,

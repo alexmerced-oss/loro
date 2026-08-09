@@ -16,6 +16,7 @@ Optional extras:
 ```bash
 python -m pip install "loro-agent[data]" # Postgres, Iceberg, and PyArrow support
 python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
+python -m pip install "loro-agent[mcp]"  # MCP client support
 python -m pip install "loro-agent[dev]"  # Development and test tools
 ```
 
@@ -55,6 +56,7 @@ loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
+loro setup mcp
 loro setup quickstart
 ```
 
@@ -65,7 +67,7 @@ loro setup quickstart
 - Identity context from config/environment with managed required fields and audit/session propagation.
 - Identity-bound approval records with interactive once/session/deny prompts and replay protection.
 - Permission decision primitives.
-- Normalized filesystem, shell, Git, memory, Polaris, and provider policy resources.
+- Normalized filesystem, shell, Git, memory, Polaris, provider, and MCP policy resources.
 - Local and shared memory interfaces.
 - Postgres and Iceberg shared memory adapters with explicit-only shared write flows.
 - PyIceberg execution support for governed Iceberg shared-memory search and draft commits.
@@ -80,6 +82,7 @@ loro setup quickstart
 - Safety scanner for obvious secrets before memory and artifact writes.
 - AI provider profiles and `loro configure` setup wizard.
 - Native tool-call normalization for OpenAI-compatible, Anthropic, Gemini, and Bedrock providers.
+- Dual-era MCP client support for tools, resources, and prompts through stdio or Streamable HTTP.
 
 ## Configure A Provider
 
@@ -204,6 +207,7 @@ Memory and artifact commands scan for obvious secrets by default. Use `--allow-s
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
+- [Model Context Protocol](docs/mcp.md)
 - [Development Roadmap](docs/roadmap.md)
 - [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
 - [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
