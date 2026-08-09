@@ -1,7 +1,8 @@
 import asyncio
 import json
+import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -13,6 +14,7 @@ from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import prompt_preview
 from loro.config import LoroConfig
+from loro.data_protection import DataProtectionDecision, DataProtectionEngine
 from loro.identity import IdentityContext, resolve_identity
 from loro.mcp import MCPRegistry, MCPService
 from loro.mcp.registry import server_endpoint_for_display
@@ -26,9 +28,11 @@ from loro.resources import (
     mcp_resource,
     memory_resource,
     polaris_resource,
+    session_message_resource,
     shell_resource,
 )
-from loro.safety import SafetyScanner
+from loro.session_messages import SessionMailbox, message_digest
+from loro.skills import SkillRegistry
 from loro.tools.files import FileTools
 from loro.tools.git import GitTools
 from loro.tools.shell import ShellTools
@@ -69,6 +73,7 @@ class ToolRegistry:
         approval_manager: ApprovalManager | None = None,
         approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
         mcp_service: MCPService | None = None,
+        active_session_id: str | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -76,12 +81,43 @@ class ToolRegistry:
         self.approval_provider = approval_provider
         self.permissions = PermissionEngine(config.permissions)
         self.files = FileTools()
-        self.git = GitTools()
-        self.shell = ShellTools()
-        self.safety = SafetyScanner(config.safety)
-        self.mcp = mcp_service or MCPService(config.mcp)
+        self.git = GitTools(
+            config.sandbox,
+            workspace_roots=config.permissions.workspace_roots,
+        )
+        self.shell = ShellTools(
+            config.sandbox,
+            workspace_roots=config.permissions.workspace_roots,
+        )
+        self.protection = DataProtectionEngine(config.safety)
+        self.mcp = mcp_service or MCPService(
+            config.mcp,
+            sandbox_config=config.sandbox,
+            workspace_roots=config.permissions.workspace_roots,
+        )
+        self.skills = SkillRegistry(config.skills)
+        self.mailbox = SessionMailbox(config.sessions, config.safety)
+        self.active_session_id = active_session_id
 
     def execute(self, call: ToolCall) -> ToolExecution:
+        execution = self._execute(call)
+        decision = self.protection.evaluate(execution.output, "tool_output")
+        if decision.blocked:
+            return ToolExecution(
+                call=call,
+                ok=False,
+                output="Data protection blocked tool output.",
+                metadata={**execution.metadata, "data_protection": decision.metadata()},
+            )
+        if decision.redacted:
+            return replace(
+                execution,
+                output=decision.content,
+                metadata={**execution.metadata, "data_protection": decision.metadata()},
+            )
+        return execution
+
+    def _execute(self, call: ToolCall) -> ToolExecution:
         try:
             if call.name == "file.read":
                 return self._read_file(call)
@@ -105,6 +141,10 @@ class ToolRegistry:
                 return self._create_artifact(call)
             if call.name.startswith("mcp."):
                 return self._run_mcp(call)
+            if call.name.startswith("skill."):
+                return self._run_skill(call)
+            if call.name.startswith("session."):
+                return self._run_session_message(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
@@ -233,7 +273,16 @@ class ToolRegistry:
             stdout=result.stdout,
             stderr=result.stderr,
         )
-        return ToolExecution(call=call, ok=result.returncode == 0, output=output)
+        return ToolExecution(
+            call=call,
+            ok=result.returncode == 0,
+            output=output,
+            metadata={
+                "sandbox_profile": result.profile,
+                "sandbox_os_enforced": result.os_enforced,
+                "output_truncated": result.output_truncated,
+            },
+        )
 
     def _run_git(self, call: ToolCall) -> ToolExecution:
         cwd = Path(str(call.args.get("cwd", ".")))
@@ -326,6 +375,11 @@ class ToolRegistry:
                 stdout=result.stdout,
                 stderr=result.stderr,
             ),
+            metadata={
+                "sandbox_profile": result.sandbox_profile,
+                "sandbox_os_enforced": result.sandbox_os_enforced,
+                "output_truncated": result.output_truncated,
+            },
         )
 
     def _create_artifact(self, call: ToolCall) -> ToolExecution:
@@ -333,14 +387,14 @@ class ToolRegistry:
         prompt = str(call.args["prompt"])
         output_dir = Path(str(call.args.get("output_dir", "artifacts")))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
-        findings = self.safety.scan(prompt)
-        if findings and self.config.safety.block_on_findings and not allow_sensitive:
-            kinds = ", ".join(sorted({finding.kind for finding in findings}))
+        decision = self.protection.evaluate(prompt, "artifact", allow_sensitive=allow_sensitive)
+        if decision.blocked:
+            detail = _data_protection_detail(decision)
             return ToolExecution(
                 call=call,
                 ok=False,
                 output=(
-                    f"Sensitive content detected ({kinds}). "
+                    f"Sensitive content detected ({detail}). "
                     "Set allow_sensitive only if policy allows persistence."
                 ),
             )
@@ -362,7 +416,7 @@ class ToolRegistry:
         limit = int(call.args.get("limit", 10))
         if not self.config.memory.local.enabled:
             return ToolExecution(call=call, ok=False, output="Local memory is disabled.")
-        store = LocalMemoryStore.from_config(self.config.memory.local)
+        store = LocalMemoryStore.from_config(self.config.memory.local, self.config.safety)
         memories = store.search(query)[:limit]
         output = "\n".join(f"{memory.memory_id}: {memory.content}" for memory in memories)
         return ToolExecution(call=call, ok=True, output=output or "No matching local memories.")
@@ -374,6 +428,11 @@ class ToolRegistry:
         execute = bool(call.args.get("execute", True))
         if not self.config.memory.shared.enabled:
             return ToolExecution(call=call, ok=False, output="Shared memory is disabled.")
+        if (
+            self.config.memory.shared.tenant_isolation == "identity"
+            and tenant_id != self.identity.tenant
+        ):
+            raise PermissionError(f"Cross-tenant shared-memory access denied: {tenant_id}")
         resource = memory_resource(
             operation="search",
             tenant=tenant_id,
@@ -431,13 +490,26 @@ class ToolRegistry:
             approval_target=resource.target,
             risk_reason="Read metadata from the governed enterprise catalog.",
         )
-        result = PolarisClient(self.config.polaris).run_readonly(args)
+        result = PolarisClient(
+            self.config.polaris,
+            self.config.sandbox,
+            workspace_roots=self.config.permissions.workspace_roots,
+        ).run_readonly(args)
         output = _format_process_output(
             returncode=result.returncode,
             stdout=result.stdout,
             stderr=result.stderr,
         )
-        return ToolExecution(call=call, ok=result.returncode == 0, output=output)
+        return ToolExecution(
+            call=call,
+            ok=result.returncode == 0,
+            output=output,
+            metadata={
+                "sandbox_profile": result.sandbox_profile,
+                "sandbox_os_enforced": result.sandbox_os_enforced,
+                "output_truncated": result.output_truncated,
+            },
+        )
 
     def _run_mcp(self, call: ToolCall) -> ToolExecution:
         if not self.config.mcp.enabled:
@@ -536,6 +608,128 @@ class ToolRegistry:
                 "mcp_transport": connection.get("transport"),
                 "mcp_protocol_version": connection.get("protocol_version"),
                 "mcp_lifecycle": connection.get("lifecycle"),
+                "sandbox_profile": connection.get("sandbox_profile"),
+                "sandbox_os_enforced": connection.get("sandbox_os_enforced"),
+            },
+        )
+
+    def _run_skill(self, call: ToolCall) -> ToolExecution:
+        name = str(call.args["name"])
+        path = str(call.args["path"])
+        if call.name == "skill.read":
+            self.permissions.require_allowed(
+                PermissionRequest(tool="skills", action="read", target=f"{name}/{path}"),
+                approved=True,
+            )
+            return ToolExecution(
+                call=call,
+                ok=True,
+                output=self.skills.read_supporting_file(name, path),
+                metadata={"skill_name": name, "skill_digest": self.skills.get(name).digest},
+            )
+        if call.name != "skill.run_script":
+            raise ValueError("Skill tool must be skill.read or skill.run_script.")
+        if not self.config.skills.allow_scripts:
+            raise PermissionError("Skill script execution is disabled by managed configuration.")
+        metadata = self.skills.get(name, require_enabled=True)
+        if metadata.allowed_tools and not {
+            "shell.run",
+            "skill.run_script",
+        }.intersection(metadata.allowed_tools):
+            raise PermissionError("Skill allowed-tools metadata does not permit script execution.")
+        script = self.skills.supporting_path(name, path)
+        if script.parent.name != "scripts":
+            raise ValueError("Only files directly under scripts/ may execute.")
+        raw_args = call.args.get("args", [])
+        if not isinstance(raw_args, list) or not all(isinstance(item, str) for item in raw_args):
+            raise ValueError("skill.run_script args must be a list of strings.")
+        command = (
+            [sys.executable, str(script), *raw_args]
+            if script.suffix == ".py"
+            else ["/bin/sh", str(script), *raw_args]
+        )
+        resource = shell_resource(command, operation="run skill script")
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="shell",
+                action="run skill script",
+                target=resource.target,
+                resource=resource,
+            ),
+            approval_target=resource.target,
+            risk_reason="Execute a reviewed skill script without granting the skill authority.",
+        )
+        result = self.shell.run(
+            command,
+            timeout=int(call.args.get("timeout", 120)),
+            profile=self.config.sandbox.skill_profile,
+            cwd=Path.cwd(),
+        )
+        return ToolExecution(
+            call=call,
+            ok=result.returncode == 0,
+            output=_format_process_output(
+                returncode=result.returncode, stdout=result.stdout, stderr=result.stderr
+            ),
+            metadata={
+                "skill_name": name,
+                "skill_digest": metadata.digest,
+                "sandbox_profile": result.profile,
+                "sandbox_os_enforced": result.os_enforced,
+                "output_truncated": result.output_truncated,
+            },
+        )
+
+    def _run_session_message(self, call: ToolCall) -> ToolExecution:
+        if self.active_session_id is None:
+            raise ValueError("Session messaging requires an active Loro session.")
+        if call.name == "session.inbox":
+            messages = self.mailbox.list(self.active_session_id)
+            return ToolExecution(
+                call=call,
+                ok=True,
+                output=json.dumps([message.to_payload() for message in messages], sort_keys=True),
+            )
+        if call.name != "session.send":
+            raise ValueError("Session tool must be session.send or session.inbox.")
+        recipient = str(call.args["recipient_session_id"])
+        content = str(call.args["content"])
+        self._assert_safe_write(
+            content, allow_sensitive=bool(call.args.get("allow_sensitive", False))
+        )
+        resource = session_message_resource(
+            operation="send",
+            sender_session_id=self.active_session_id,
+            recipient_session_id=recipient,
+            message_digest=message_digest(content),
+        )
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="session_message",
+                action="send",
+                target=resource.target,
+                resource=resource,
+            ),
+            approval_target=resource.target,
+            risk_reason="Send untrusted coordination context to another Loro session.",
+        )
+        message = self.mailbox.send(
+            sender_session_id=self.active_session_id,
+            recipient_session_id=recipient,
+            content=content,
+            validate_sender=False,
+            allow_sensitive=bool(call.args.get("allow_sensitive", False)),
+        )
+        return ToolExecution(
+            call=call,
+            ok=True,
+            output=json.dumps(message.to_payload(), sort_keys=True),
+            metadata={
+                "message_id": message.message_id,
+                "recipient_session_id": recipient,
+                "carries_user_authority": False,
             },
         )
 
@@ -568,11 +762,11 @@ class ToolRegistry:
         return await self.mcp.cancel_task(server_id, name, user_approved=True)
 
     def _assert_safe_write(self, content: str, *, allow_sensitive: bool) -> None:
-        findings = self.safety.scan(content)
-        if findings and self.config.safety.block_on_findings and not allow_sensitive:
-            kinds = ", ".join(sorted({finding.kind for finding in findings}))
+        decision = self.protection.evaluate(content, "artifact", allow_sensitive=allow_sensitive)
+        if decision.blocked:
+            detail = _data_protection_detail(decision)
             raise ValueError(
-                f"Sensitive content detected ({kinds}). "
+                f"Sensitive content detected ({detail}). "
                 "Set allow_sensitive only if policy allows persistence."
             )
 
@@ -703,6 +897,11 @@ def _artifact_factory(kind: str) -> Callable[[str, Path], ArtifactResult]:
         raise ValueError(
             "artifact.create kind must be one of: document, presentation, spreadsheet, brief."
         ) from error
+
+
+def _data_protection_detail(decision: DataProtectionDecision) -> str:
+    kinds = sorted({finding.kind for finding in decision.findings})
+    return ", ".join(kinds) if kinds else decision.classification
 
 
 def _format_artifact_output(result: ArtifactResult, provenance_path: Path) -> str:

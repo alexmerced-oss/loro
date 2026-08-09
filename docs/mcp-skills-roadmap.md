@@ -2,10 +2,10 @@
 
 ## Status And Scope
 
-MCP Batches 1 through 3 are implemented. Server mode, release conformance, and Agent Skills
-remain planned. This roadmap defines the compatibility, security, implementation, and
-verification work required before the broader capability set can be advertised as
-enterprise-ready.
+MCP Batches 1 through 5 are implemented, and Batch 6 release-qualification automation is in
+place. Official conformance is a release evidence gate and is complete only for commits whose
+scheduled workflow artifacts are green. This roadmap defines the compatibility, security,
+implementation, and verification boundary for the broader capability set.
 
 Loro will treat these as complementary systems:
 
@@ -206,6 +206,8 @@ replace enterprise egress enforcement.
 
 ### Batch 3: Extensions And Long-Running Work
 
+Status: implemented.
+
 - Add an extension registry with ids, versions, schemas, adapters, and managed allowlists.
 - Implement Tasks create/get/update/cancel and durable task resumption.
 - Implement bounded `subscriptions/listen` handling.
@@ -222,9 +224,11 @@ cancel, durable local resumption, preflight input deduplication, and cooperative
 Modern `subscriptions/listen` streams are bounded by event count, duration, and output size.
 Tests cover SDK aliases, restart/reconnect, trusted approval, cancellation intent, bounded event
 collection, and audit continuity. MCP Apps remain explicitly unsupported pending sandbox work.
-Batch 4 is the next implementation batch.
+Batch 4 follows below.
 
 ### Batch 4: MCP Server Mode
+
+Status: **implemented**.
 
 - Expose selected Loro tools, resources, and prompts through an explicit server allowlist.
 - Serve new and classic lifecycle clients from the same deployment where the SDK supports it.
@@ -234,7 +238,16 @@ Batch 4 is the next implementation batch.
 Exit: server conformance, tenant isolation, least-privilege export, and dual-era interoperability
 tests pass.
 
+Implemented in `src/loro/mcp/server.py` with `loro setup mcp-server`, `loro mcp
+server-inspect`, and `loro mcp serve`. The export ceiling permits only explicitly configured
+read-only file and Git operations. Memory, governed data, shell, writes, credentials, artifacts,
+and nested MCP calls cannot be exported. Streamable HTTP binds to loopback for gateway-fronted
+deployment. Hermetic tests prove the export ceiling and SDK registration; the workflow records
+official `2025-11-25` scenarios and dual-era official-SDK interoperability evidence.
+
 ### Batch 5: Agent Skills Foundation
+
+Status: **implemented**.
 
 - Add discovery, parser, validation, progressive disclosure, provenance, and lifecycle commands.
 - Integrate skill activation with model context budgeting and Loro policy.
@@ -244,7 +257,16 @@ tests pass.
 Exit: official-format fixtures validate, malicious and oversized skill suites fail closed, and
 `allowed-tools` cannot bypass a deny or approval.
 
+Implemented in `src/loro/skills.py`, runtime activation, `skill.read`, deny-by-default
+`skill.run_script`, setup/lifecycle/proposal CLI commands, and [Agent Skills](skills.md).
+Discovery is metadata-only, activation is bounded, packages are digest tracked, collisions and
+symlinks fail closed, installs require a reviewed digest, and proposals require single-use human
+review. Enterprise script use still depends on the separate sandbox readiness gate.
+
 ### Batch 6: Conformance And Release Qualification
+
+Status: **automation implemented; local qualification green; protected evidence required per
+release**.
 
 - Run the official MCP conformance suite for each advertised role and revision.
 - Add interoperability fixtures using official SDK example clients and servers.
@@ -253,6 +275,35 @@ Exit: official-format fixtures validate, malicious and oversized skill suites fa
 - Publish the supported revision/transport/extension matrix and sunset dates.
 
 Exit: only combinations with repeatable CI evidence are documented as supported.
+
+Implemented through `.github/workflows/mcp-conformance.yml`, the client process adapter under
+`tests/conformance/`, dual-era SDK fixtures, and the [MCP Support Matrix](mcp-support-matrix.md).
+The workflow runs explicit official scenarios for advertised `2025-11-25` capabilities and
+official SDK interoperability tests for both supported revisions. The published runner does not
+yet provide `2026-07-28` scenarios, so that revision remains interoperability-tested rather than
+conformance-qualified. The configured server and client scenarios passed locally with runner
+`0.1.16` on August 9, 2026. A release cannot claim conformance from local qualification alone;
+the protected workflow must attach evidence to the release commit.
+
+### Batch 7: Cross-Session Coordination
+
+Status: **implemented**.
+
+- Add a durable mailbox addressed by saved session ID.
+- Queue messages while recipients are stopped and inject them automatically on resume.
+- Mark relayed content untrusted and permanently strip user/approval authority.
+- Route model-originated sends through normalized policy, safety scanning, exact approval, and
+  audit.
+- Support send, inbox, acknowledgement, and resume commands without parsing relayed text as
+  user-authored tool directives.
+
+Exit: restart-safe delivery and acknowledgement tests pass, model self-approval cannot enqueue a
+message, and receiver actions remain governed exclusively by receiver policy.
+
+Implemented in `src/loro/session_messages.py`, session/runtime/tool integration, CLI commands,
+and [Cross-Session Messaging](session-messaging.md). The design follows the useful mailbox and
+automatic-delivery behavior of Claude Code's `SendMessage`, while adopting Anthropic's later
+hardening rule that cross-session messages carry no user authority.
 
 ## Release Acceptance Criteria
 

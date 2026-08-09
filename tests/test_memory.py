@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from loro.config import LoroConfig, MemoryConfig, SharedMemoryConfig
+from loro.config import IdentityConfig, LoroConfig, MemoryConfig, SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft
 from loro.memory.drafts import SharedMemoryDraftStore
 from loro.memory.iceberg import IcebergSharedMemoryStore
@@ -57,6 +57,17 @@ def test_shared_memory_draft_store(tmp_path) -> None:
     assert store.get("missing") is None
 
 
+def test_shared_memory_draft_store_hides_and_rejects_other_tenants(tmp_path) -> None:
+    unrestricted = SharedMemoryDraftStore(tmp_path)
+    own = unrestricted.stage(SharedMemoryDraft(content="own", summary="own", tenant_id="acme"))
+    unrestricted.stage(SharedMemoryDraft(content="other", summary="other", tenant_id="other"))
+    isolated = SharedMemoryDraftStore(tmp_path, authorized_tenant_id="acme")
+
+    assert isolated.list() == [own]
+    with pytest.raises(PermissionError, match="Cross-tenant"):
+        isolated.stage(SharedMemoryDraft(content="denied", summary="denied", tenant_id="other"))
+
+
 def test_memory_proposal_store_roundtrip(tmp_path) -> None:
     store = MemoryProposalStore(tmp_path)
     proposal = store.propose(
@@ -101,6 +112,33 @@ def test_postgres_shared_memory_search_sql() -> None:
     assert "FROM public.shared_memories" in statement.sql
     assert "ILIKE %(query)s" in statement.sql
     assert statement.params == {"tenant_id": "acme", "query": "%launch%", "limit": 5}
+
+
+def test_postgres_identity_isolation_rejects_cross_tenant_and_renders_rls() -> None:
+    config = SharedMemoryConfig(tenant_isolation="identity")
+    store = PostgresSharedMemoryStore(config, authorized_tenant_id="acme")
+
+    own = store.render_search(tenant_id="acme", query="launch")
+
+    assert own.params["tenant_id"] == "acme"
+    with pytest.raises(PermissionError, match="Cross-tenant"):
+        store.render_search(tenant_id="other", query="launch")
+    schema = store.render_schema()
+    assert "FORCE ROW LEVEL SECURITY" in schema
+    assert "current_setting('loro.tenant_id', true)" in schema
+
+
+def test_shared_memory_operation_binds_requested_tenant_to_identity() -> None:
+    config = LoroConfig(
+        identity=IdentityConfig(tenant="acme"),
+        memory=MemoryConfig(shared=SharedMemoryConfig(tenant_isolation="identity")),
+    )
+
+    own = search_shared_memories(config, query="launch", tenant_id="acme", execute=False)
+
+    assert own.tenant_id == "acme"
+    with pytest.raises(PermissionError, match="other"):
+        search_shared_memories(config, query="launch", tenant_id="other", execute=False)
 
 
 def test_search_shared_memories_renders_postgres_without_dsn(monkeypatch) -> None:
@@ -192,7 +230,7 @@ def test_search_shared_memories_renders_iceberg() -> None:
 
 
 def test_search_shared_memories_executes_iceberg(monkeypatch) -> None:
-    install_fake_iceberg_modules(
+    fake_catalog = install_fake_iceberg_modules(
         monkeypatch,
         rows=[
             {
@@ -242,6 +280,8 @@ def test_search_shared_memories_executes_iceberg(monkeypatch) -> None:
     assert len(result.records) == 1
     assert result.records[0].memory_id == "mem-1"
     assert result.records[0].citation == "iceberg:acme/team/platform/mem-1"
+    scan_options = fake_catalog.tables["enterprise_memory.agent_facts"].scan_options
+    assert scan_options["row_filter"] == "tenant_id = 'acme' AND status = 'active'"
 
 
 def test_iceberg_commit_draft_appends_memory_and_event(monkeypatch) -> None:
@@ -327,6 +367,7 @@ class FakeIcebergTable:
     def __init__(self, rows) -> None:
         self.rows = rows
         self.appended = []
+        self.scan_options = {}
 
     def schema(self):
         return FakeIcebergSchema()
@@ -334,7 +375,8 @@ class FakeIcebergTable:
     def append(self, table):
         self.appended.append(table)
 
-    def scan(self, selected_fields=None):
+    def scan(self, selected_fields=None, **options):
+        self.scan_options = {"selected_fields": selected_fields, **options}
         return FakeIcebergScan(self.rows)
 
 

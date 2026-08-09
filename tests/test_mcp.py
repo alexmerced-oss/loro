@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
-from loro.config import MCPConfig, MCPCredentialProfileConfig, MCPServerConfig
-from loro.mcp.client import MCPProtocolError, MCPService
+from loro.config import (
+    MCPConfig,
+    MCPCredentialProfileConfig,
+    MCPServerConfig,
+    SandboxConfig,
+    SandboxProfileConfig,
+)
+from loro.mcp.client import MCPClientError, MCPProtocolError, MCPService
 from loro.mcp.registry import MCPRegistry, MCPRegistryError, diagnose_mcp
 from loro.mcp.security import (
     MCPTransportPolicyError,
@@ -16,6 +25,7 @@ from loro.mcp.security import (
     dynamic_registration_guard,
     enforce_server_policy,
 )
+from loro.sandbox import SandboxError
 
 
 class FakeMCPClient:
@@ -148,9 +158,7 @@ async def test_mcp_service_calls_tool_and_normalizes_result() -> None:
 
 @pytest.mark.asyncio
 async def test_mcp_service_normalizes_resource_and_prompt_operations() -> None:
-    service = MCPService(
-        mcp_config(), client_factory=fake_factory(FakeMCPClient())
-    )
+    service = MCPService(mcp_config(), client_factory=fake_factory(FakeMCPClient()))
 
     connection = await service.inspect_connection("fixture")
     tools = await service.list_tools("fixture")
@@ -337,9 +345,7 @@ def test_mcp_cli_add_and_list(tmp_path, monkeypatch) -> None:
     assert "MCP_DEMO_TOKEN" in list_result.stdout
     assert '"-y"' in list_result.stdout
 
-    remove_result = runner.invoke(
-        app, ["mcp", "remove", "demo", "--output", str(output)]
-    )
+    remove_result = runner.invoke(app, ["mcp", "remove", "demo", "--output", str(output)])
     assert remove_result.exit_code == 0, remove_result.stdout
     assert "[mcp.servers.demo]" not in output.read_text(encoding="utf-8")
 
@@ -427,3 +433,75 @@ def test_mcp_cli_read_honors_deny_rule(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code != 0
     assert "denied by policy" in result.output
+
+
+def test_mcp_stdio_launch_is_sandboxed_and_only_adds_explicit_server_environment(
+    tmp_path,
+) -> None:
+    sandbox = SandboxConfig()
+    sandbox.profiles[sandbox.mcp_stdio_profile] = SandboxProfileConfig(
+        allowed_executables=["python*"],
+        environment_allowlist=["PATH"],
+    )
+    server = MCPServerConfig(
+        command=sys.executable,
+        args=["-m", "fixture_server"],
+        cwd=str(tmp_path),
+        env_allowlist=["MCP_SERVER_TOKEN"],
+    )
+    service = MCPService(
+        MCPConfig(enabled=True, servers={"fixture": server}),
+        sandbox_config=sandbox,
+        workspace_roots=[str(tmp_path)],
+        environ={
+            "PATH": os.environ["PATH"],
+            "MCP_SERVER_TOKEN": "approved",
+            "OPENAI_API_KEY": "must-not-leak",
+            "LORO_AUDIT_TOKEN": "must-not-leak",
+        },
+    )
+
+    launch = service.prepare_stdio_launch(server)
+
+    assert launch.args[0] == str(Path(sys.executable).resolve())
+    assert launch.args[1:] == ["-m", "fixture_server"]
+    assert launch.cwd == tmp_path.resolve()
+    assert launch.environment["MCP_SERVER_TOKEN"] == "approved"
+    assert "OPENAI_API_KEY" not in launch.environment
+    assert "LORO_AUDIT_TOKEN" not in launch.environment
+    assert launch.profile == "mcp-stdio"
+
+
+def test_mcp_stdio_launch_fails_for_missing_explicit_environment(tmp_path) -> None:
+    server = MCPServerConfig(
+        command=sys.executable,
+        cwd=str(tmp_path),
+        env_allowlist=["MISSING_MCP_TOKEN"],
+    )
+    service = MCPService(
+        MCPConfig(enabled=True, servers={"fixture": server}),
+        workspace_roots=[str(tmp_path)],
+        environ={"PATH": os.environ["PATH"]},
+    )
+
+    with pytest.raises(MCPClientError, match="MISSING_MCP_TOKEN"):
+        service.prepare_stdio_launch(server)
+
+
+def test_mcp_stdio_launch_honors_required_os_enforcement(tmp_path) -> None:
+    sandbox = SandboxConfig()
+    sandbox.profiles[sandbox.mcp_stdio_profile] = SandboxProfileConfig(
+        backend="process",
+        require_os_enforcement=True,
+        allowed_executables=["python*"],
+    )
+    server = MCPServerConfig(command=sys.executable, cwd=str(tmp_path))
+    service = MCPService(
+        MCPConfig(enabled=True, servers={"fixture": server}),
+        sandbox_config=sandbox,
+        workspace_roots=[str(tmp_path)],
+        environ={"PATH": os.environ["PATH"]},
+    )
+
+    with pytest.raises(SandboxError, match="requires OS enforcement"):
+        service.prepare_stdio_launch(server)

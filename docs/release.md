@@ -30,6 +30,8 @@ loro memory schema --backend postgres
 loro memory schema --backend iceberg
 loro data polaris catalogs list
 loro mcp doctor
+loro mcp server-inspect
+loro skills list
 ```
 
 Only run live provider smoke checks when credentials and spend controls are approved:
@@ -57,6 +59,8 @@ Recent patch releases:
 - Confirm `docs/roadmap.md` statuses are current.
 - Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
+- Confirm the MCP support matrix matches green conformance workflow artifacts for the release
+  commit, and run Agent Skills/session-message security tests.
 
 ## Packaging
 

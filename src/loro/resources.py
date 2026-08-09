@@ -185,6 +185,25 @@ def provider_resource(
     )
 
 
+def session_message_resource(
+    *,
+    operation: str,
+    sender_session_id: str,
+    recipient_session_id: str,
+    message_digest: str = "",
+) -> NormalizedResource:
+    return NormalizedResource(
+        kind="session_message",
+        fields={
+            "operation": operation,
+            "sender_session_id": sender_session_id,
+            "recipient_session_id": recipient_session_id,
+            "message_digest": message_digest,
+            "carries_user_authority": False,
+        },
+    )
+
+
 def mcp_resource(
     *,
     operation: str,

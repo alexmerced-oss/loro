@@ -52,11 +52,14 @@ Additional setup wizards are available for the enterprise pieces:
 ```bash
 loro setup identity
 loro setup approvals
+loro setup sandbox
 loro setup audit
 loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup mcp
+loro setup mcp-server
+loro setup skills
 loro setup quickstart
 ```
 
@@ -67,7 +70,8 @@ loro setup quickstart
 - Identity context from config/environment with managed required fields and audit/session propagation.
 - Identity-bound approval records with interactive once/session/deny prompts and replay protection.
 - Permission decision primitives.
-- Normalized filesystem, shell, Git, memory, Polaris, provider, and MCP policy resources.
+- Normalized filesystem, shell, Git, memory, Polaris, provider, MCP, and session-message policy resources.
+- Named subprocess profiles with minimized environments, bounded runtime/output, and optional Bubblewrap enforcement.
 - Local and shared memory interfaces.
 - Postgres and Iceberg shared memory adapters with explicit-only shared write flows.
 - PyIceberg execution support for governed Iceberg shared-memory search and draft commits.
@@ -75,7 +79,7 @@ loro setup quickstart
 - Artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
 - Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
 - Versioned JSONL/HTTP audit delivery with bounded buffering, retry, diagnostics, and flush.
-- Durable session records with `loro sessions list` and `loro sessions show`.
+- Durable session records and non-authoritative cross-session message delivery.
 - Permission-gated file and shell tools.
 - Shared memory draft staging and Postgres/Iceberg schema output.
 - Shared memory backend diagnostics.
@@ -84,6 +88,8 @@ loro setup quickstart
 - Native tool-call normalization for OpenAI-compatible, Anthropic, Gemini, and Bedrock providers.
 - Dual-era MCP client support for tools, resources, and prompts through stdio or Streamable HTTP.
 - Deny-by-default MCP extensions, durable experimental Tasks, and bounded modern subscriptions.
+- Least-privilege MCP server mode with an explicit read-only export ceiling.
+- Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 
 ## Configure A Provider
 
@@ -175,6 +181,7 @@ loro file search "Polaris" --root .
 loro file read PRD.md --limit 1000
 loro shell run --yes -- python -c "print('hello from Loro')"
 loro safety scan "api_key = 'abc123456789'"
+loro safety doctor
 loro providers list
 loro providers show nous-portal
 loro providers check nous
@@ -196,7 +203,9 @@ managed values are applied last.
 
 For shell commands, use `--` before the command when passing flags to the child process.
 
-Memory and artifact commands scan for obvious secrets by default. Use `--allow-sensitive` only when enterprise policy allows that content to be persisted.
+Managed data protection classifies and scans model, memory, artifact, session, tool-output, and
+audit flows. Use `--allow-sensitive` only for development policy that explicitly permits the
+override; enterprise overlays can disable it.
 
 ## MCP Quick Start
 
@@ -223,6 +232,22 @@ Unknown MCP extensions remain inert. Modern subscriptions are bounded by configu
 duration, and output limits. See the [MCP guide](docs/mcp.md) for authentication, managed policy,
 task input/cancellation, and compatibility details.
 
+Loro can also serve an explicit read-only capability subset and load digest-tracked Agent Skills:
+
+```bash
+loro setup mcp-server
+loro mcp server-inspect
+loro setup skills
+loro skills list
+```
+
+Saved sessions exchange durable, non-authoritative coordination messages:
+
+```bash
+loro sessions send SENDER_SESSION RECIPIENT_SESSION "Review is ready."
+loro run --resume-session RECIPIENT_SESSION "Continue."
+```
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
@@ -230,10 +255,15 @@ task input/cancellation, and compatibility details.
 - [Configuration](docs/configuration.md)
 - [Identity Context](docs/identity.md)
 - [Approvals](docs/approvals.md)
+- [Subprocess Sandbox Profiles](docs/sandbox.md)
+- [Managed Data Protection](docs/data-protection.md)
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
 - [Model Context Protocol](docs/mcp.md)
+- [MCP Support Matrix](docs/mcp-support-matrix.md)
+- [Agent Skills](docs/skills.md)
+- [Cross-Session Messaging](docs/session-messaging.md)
 - [Development Roadmap](docs/roadmap.md)
 - [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
 - [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)

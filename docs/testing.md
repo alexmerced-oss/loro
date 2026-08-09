@@ -50,12 +50,11 @@ Run normal tests without integrations:
 python -m pytest -m "not integration"
 ```
 
-Current high-value gaps that need external services or credentials:
+Current high-value gaps that need external services or workflow infrastructure:
 
 - Live Iceberg/Polaris governed execution.
 - Bedrock requests with real AWS credentials.
-- Real subprocess and remote Streamable HTTP MCP interoperability across the published support
-  matrix. Official SDK in-process modern/classic tests run in the standard suite.
+- Production-gateway MCP authorization and hostile remote-server testing.
 
 ## MCP Tests
 
@@ -64,12 +63,15 @@ in-process server in both `auto` (`2026-07-28`) and `legacy` handshake modes:
 
 ```bash
 python -m pytest tests/test_mcp.py tests/test_mcp_sdk.py tests/test_mcp_tasks.py
+agentskills validate tests/fixtures/skills/python-review
 ```
 
-These tests never contact a remote MCP endpoint. They cover inert extensions, Tasks persistence,
-restart/reconnect, approval and input deduplication, cancellation intent, bounded subscriptions,
-SDK extension claims, and task routing aliases. Later roadmap batches add official conformance,
-real stdio subprocess fixtures, Streamable HTTP servers, authorization, and adversarial cases.
+These tests never contact a remote MCP endpoint. They cover client policy, inert extensions,
+Tasks, server export restrictions, Agent Skills, and cross-session authority boundaries. The
+scheduled `MCP Conformance` workflow runs the official MCP runner against Loro's server and
+client roles for `2025-11-25`, runs official SDK interoperability for both advertised revisions,
+and uploads its results as release evidence. The runner does not yet publish `2026-07-28`
+scenarios.
 
 ## Live Provider Smoke Checks
 

@@ -22,8 +22,11 @@ class PostgresSharedMemoryStore:
     plus a DSN are available. The write path accepts only explicit drafts.
     """
 
-    def __init__(self, config: SharedMemoryConfig) -> None:
+    def __init__(
+        self, config: SharedMemoryConfig, *, authorized_tenant_id: str | None = None
+    ) -> None:
         self.config = config
+        self.authorized_tenant_id = authorized_tenant_id
         if not IDENTIFIER_PATTERN.fullmatch(config.postgres_schema):
             raise ValueError("postgres_schema must be a simple PostgreSQL identifier.")
 
@@ -31,35 +34,54 @@ class PostgresSharedMemoryStore:
         return f"{self.config.postgres_schema}.{name}"
 
     def render_schema(self) -> str:
-        if self.config.postgres_schema == "public":
-            return POSTGRES_SHARED_MEMORY_SCHEMA
         schema = self.config.postgres_schema
-        schema_sql = (
-            POSTGRES_SHARED_MEMORY_SCHEMA.replace(
-                "idx_shared_memories_scope",
-                f"idx_{schema}_shared_memories_scope",
+        schema_sql = POSTGRES_SHARED_MEMORY_SCHEMA
+        if schema != "public":
+            schema_sql = (
+                schema_sql.replace(
+                    "idx_shared_memories_scope",
+                    f"idx_{schema}_shared_memories_scope",
+                )
+                .replace(
+                    "idx_shared_memories_type",
+                    f"idx_{schema}_shared_memories_type",
+                )
+                .replace(
+                    "CREATE TABLE IF NOT EXISTS shared_memories",
+                    f"CREATE TABLE IF NOT EXISTS {self._table('shared_memories')}",
+                )
+                .replace(
+                    "CREATE TABLE IF NOT EXISTS memory_events",
+                    f"CREATE TABLE IF NOT EXISTS {self._table('memory_events')}",
+                )
+                .replace("ON shared_memories", f"ON {self._table('shared_memories')}")
             )
-            .replace(
-                "idx_shared_memories_type",
-                f"idx_{schema}_shared_memories_type",
-            )
-            .replace(
-                "CREATE TABLE IF NOT EXISTS shared_memories",
-                f"CREATE TABLE IF NOT EXISTS {self._table('shared_memories')}",
-            )
-            .replace(
-                "CREATE TABLE IF NOT EXISTS memory_events",
-                f"CREATE TABLE IF NOT EXISTS {self._table('memory_events')}",
-            )
-            .replace("ON shared_memories", f"ON {self._table('shared_memories')}")
-        )
-        return (
-            f"CREATE SCHEMA IF NOT EXISTS {schema};\n\n"
-            + schema_sql
-        )
+        prefix = f"CREATE SCHEMA IF NOT EXISTS {schema};\n\n" if schema != "public" else ""
+        if self.config.tenant_isolation == "identity":
+            schema_sql += "\n\n" + self._tenant_policy_sql()
+        return prefix + schema_sql
+
+    def _tenant_policy_sql(self) -> str:
+        memory_table = self._table("shared_memories")
+        events_table = self._table("memory_events")
+        return f"""
+ALTER TABLE {memory_table} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE {memory_table} FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS loro_tenant_isolation ON {memory_table};
+CREATE POLICY loro_tenant_isolation ON {memory_table}
+  USING (tenant_id = current_setting('loro.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('loro.tenant_id', true));
+
+ALTER TABLE {events_table} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE {events_table} FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS loro_tenant_isolation ON {events_table};
+CREATE POLICY loro_tenant_isolation ON {events_table}
+  USING (tenant_id = current_setting('loro.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('loro.tenant_id', true));
+""".strip()
 
     def check(self) -> SharedMemoryBackendCheck:
-        messages: list[str] = []
+        messages = [f"Tenant isolation: {self.config.tenant_isolation}"]
         dsn = os.environ.get(self.config.postgres_dsn_env)
         if dsn:
             messages.append(f"Found DSN env var: {self.config.postgres_dsn_env}")
@@ -80,6 +102,7 @@ class PostgresSharedMemoryStore:
         )
 
     def render_insert(self, draft: SharedMemoryDraft) -> SharedMemoryStatement:
+        self._authorize_tenant(draft.tenant_id)
         memory_id = str(uuid4())
         event_id = str(uuid4())
         sql = f"""
@@ -157,6 +180,7 @@ FROM inserted_memory;
         query: str,
         limit: int = 20,
     ) -> SharedMemoryStatement:
+        self._authorize_tenant(tenant_id)
         sql = f"""
 SELECT
   memory_id,
@@ -193,6 +217,7 @@ LIMIT %(limit)s;
         statement = self.render_insert(draft)
         with psycopg.connect(dsn) as connection:
             with connection.cursor() as cursor:
+                self._set_tenant_context(cursor)
                 cursor.execute(statement.sql, statement.params)
             connection.commit()
 
@@ -214,6 +239,7 @@ LIMIT %(limit)s;
         statement = self.render_search(tenant_id=tenant_id, query=query, limit=limit)
         with psycopg.connect(dsn, row_factory=dict_row) as connection:
             with connection.cursor() as cursor:
+                self._set_tenant_context(cursor)
                 cursor.execute(statement.sql, statement.params)
                 rows = cursor.fetchall()
         return [
@@ -246,3 +272,21 @@ LIMIT %(limit)s;
             with connection.cursor() as cursor:
                 cursor.execute(self.render_schema())
             connection.commit()
+
+    def _authorize_tenant(self, tenant_id: str) -> None:
+        if self.config.tenant_isolation != "identity":
+            return
+        if not self.authorized_tenant_id:
+            raise PermissionError("Identity tenant is required for shared-memory access.")
+        if tenant_id != self.authorized_tenant_id:
+            raise PermissionError(f"Cross-tenant shared-memory access denied: {tenant_id}")
+
+    def _set_tenant_context(self, cursor: object) -> None:
+        if self.config.tenant_isolation != "identity":
+            return
+        if not self.authorized_tenant_id:
+            raise PermissionError("Identity tenant is required for shared-memory access.")
+        cursor.execute(  # type: ignore[attr-defined]
+            "SELECT set_config('loro.tenant_id', %s, true)",
+            (self.authorized_tenant_id,),
+        )

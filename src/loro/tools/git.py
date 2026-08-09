@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
-from subprocess import CompletedProcess, run
+
+from loro.config import SandboxConfig
+from loro.tools.shell import ShellTools
 
 
 @dataclass(frozen=True)
@@ -10,25 +12,38 @@ class GitResult:
     stdout: str
     stderr: str
     returncode: int
+    sandbox_profile: str | None = None
+    sandbox_os_enforced: bool = False
+    output_truncated: bool = False
 
 
 class GitTools:
+    def __init__(
+        self,
+        sandbox: SandboxConfig | None = None,
+        *,
+        workspace_roots: list[str] | None = None,
+    ) -> None:
+        self.sandbox = sandbox or SandboxConfig()
+        self.shell = ShellTools(self.sandbox, workspace_roots=workspace_roots)
+
     def run(self, args: list[str], *, cwd: Path = Path("."), timeout: int = 120) -> GitResult:
-        cwd = cwd.expanduser()
-        completed: CompletedProcess[str] = run(
+        cwd = cwd.expanduser().resolve()
+        result = self.shell.run(
             ["git", *args],
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
             timeout=timeout,
+            profile=self.sandbox.git_profile,
         )
         return GitResult(
             args=["git", *args],
             cwd=cwd,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-            returncode=completed.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            returncode=result.returncode,
+            sandbox_profile=result.profile,
+            sandbox_os_enforced=result.os_enforced,
+            output_truncated=result.output_truncated,
         )
 
     def status(self, *, cwd: Path = Path("."), timeout: int = 120) -> GitResult:

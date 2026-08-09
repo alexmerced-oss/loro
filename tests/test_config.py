@@ -17,7 +17,7 @@ def test_load_project_config() -> None:
 
 
 def test_loro_config_content_override(monkeypatch) -> None:
-    monkeypatch.setenv("LORO_CONFIG_CONTENT", "[model]\nprovider = \"env-provider\"\n")
+    monkeypatch.setenv("LORO_CONFIG_CONTENT", '[model]\nprovider = "env-provider"\n')
     config = load_config(Path.cwd())
     assert config.model.provider == "env-provider"
 
@@ -50,8 +50,8 @@ def test_managed_config_content_is_non_overridable(monkeypatch) -> None:
 def test_managed_config_file_is_applied_after_runtime_config(tmp_path, monkeypatch) -> None:
     runtime_config = tmp_path / "runtime.toml"
     managed_config = tmp_path / "managed.toml"
-    runtime_config.write_text('[audit]\ninclude_prompt_preview = true\n', encoding="utf-8")
-    managed_config.write_text('[audit]\ninclude_prompt_preview = false\n', encoding="utf-8")
+    runtime_config.write_text("[audit]\ninclude_prompt_preview = true\n", encoding="utf-8")
+    managed_config.write_text("[audit]\ninclude_prompt_preview = false\n", encoding="utf-8")
     monkeypatch.setenv("LORO_CONFIG", str(runtime_config))
     monkeypatch.setenv("LORO_MANAGED_CONFIG", str(managed_config))
     monkeypatch.delenv("LORO_CONFIG_CONTENT", raising=False)
@@ -142,6 +142,26 @@ def test_managed_config_can_disable_non_interactive_approvals(monkeypatch) -> No
     assert config.approvals.allow_session_scope is False
 
 
+def test_managed_sandbox_profile_is_non_overridable(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[sandbox.profiles.controlled-shell]\nbackend = "process"\n'
+        'require_os_enforcement = false\nnetwork = "inherit"\n',
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        '[sandbox.profiles.controlled-shell]\nbackend = "bubblewrap"\n'
+        'require_os_enforcement = true\nnetwork = "deny"\n',
+    )
+
+    config = load_config(Path.cwd())
+    profile = config.sandbox.profiles["controlled-shell"]
+
+    assert profile.backend == "bubblewrap"
+    assert profile.require_os_enforcement is True
+    assert profile.network == "deny"
+
+
 def test_managed_mcp_protocol_minimum_is_non_overridable(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
@@ -183,3 +203,37 @@ def test_external_audit_configuration_loads(monkeypatch) -> None:
     assert config.audit.failure_mode == "fail"
     assert config.audit.max_buffer_events == 250
     assert config.audit.max_retries == 4
+
+
+def test_managed_data_protection_policy_is_non_overridable(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        "[safety]\nallow_sensitive_override = true\n"
+        '[safety.surfaces.model_input]\nmaximum_classification = "restricted"\n',
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        "[safety]\nallow_sensitive_override = false\n"
+        '[safety.surfaces.model_input]\nmaximum_classification = "internal"\n',
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.safety.allow_sensitive_override is False
+    assert config.safety.surfaces["model_input"].maximum_classification == "internal"
+    assert config.safety.surfaces["artifact"].action == "block"
+
+
+def test_managed_tenant_isolation_is_non_overridable(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[memory.shared]\ntenant_isolation = "disabled"\n',
+    )
+    monkeypatch.setenv(
+        "LORO_MANAGED_CONFIG_CONTENT",
+        '[memory.shared]\ntenant_isolation = "identity"\n',
+    )
+
+    config = load_config(Path.cwd())
+
+    assert config.memory.shared.tenant_isolation == "identity"

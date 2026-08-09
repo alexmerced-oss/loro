@@ -43,7 +43,8 @@ def write_provenance(
         "kind": result.kind,
         "paths": [str(item) for item in result.paths],
         "prompt_preview": prompt_preview,
-        "assumptions": assumptions or [
+        "assumptions": assumptions
+        or [
             "Generated from user-approved prompt text.",
             "No external governed data was queried by this artifact generator.",
         ],

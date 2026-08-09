@@ -150,7 +150,8 @@ verification, smoke checks, and packaging steps.
 
 - Identity and SSO/internal model gateway integration
 - Durable approval storage and signed policy artifacts (configured versions are already bound)
-- Enforceable sandbox profiles and data protection
+- Production sandbox proof and corporate DLP/provider policy evidence (the repository-level
+  sandbox and managed data-protection contracts are implemented)
 - Audit destination immutability, stronger authentication, and production outage evidence
 - Automated end-to-end integration tests for Postgres, Iceberg, and Polaris
 - Supply-chain controls, operational runbooks, and pilot validation
@@ -162,22 +163,22 @@ The near-term execution plan is tracked in
 
 ## MCP And Agent Skills
 
-MCP Batches 1 through 3 are implemented; MCP server mode, conformance, and Agent Skills remain
-planned. The
-[MCP And Agent Skills Roadmap](mcp-skills-roadmap.md) defines six implementation batches for:
+MCP client, transport authorization, extensions, server mode, Agent Skills, and conformance
+automation are implemented. The
+[MCP And Agent Skills Roadmap](mcp-skills-roadmap.md) defines seven implementation batches for:
 
 - MCP `2026-07-28` stateless client support and classic handshake-based compatibility through
   `2025-11-25`, with a `2024-11-05` compatibility target.
 - stdio and Streamable HTTP transports, version negotiation, typed tools/resources/prompts,
-  enterprise authorization, Tasks, subscriptions, and later MCP server mode.
+  enterprise authorization, Tasks, subscriptions, and least-privilege MCP server mode.
 - Open Agent Skills `SKILL.md` discovery, validation, progressive disclosure, provenance,
   sandboxed execution, and explicit install/publish review.
 - Official conformance and dual-era interoperability evidence before support is advertised.
 
-Batch 4 is next: expose an explicit least-privilege subset of Loro through MCP server mode while
-preserving tenant, credential, memory, governed-data, approval, and audit boundaries.
+Cross-session messaging is also implemented as a durable local mailbox inspired by Claude
+Code's `SendMessage`. Relayed content is untrusted, carries no user authority, cannot approve
+tools, and is delivered when a saved session resumes. See
+[Cross-Session Messaging](session-messaging.md).
 
-Status: Batch 1 provides official Python SDK v2 integration, stdio and Streamable HTTP clients,
-modern/classic lifecycle normalization, version policy, tools/resources/prompts, configuration
-and diagnostics commands, exact tool-call approval, runtime adapters, audit metadata, and
-official-SDK in-process interoperability tests. Batch 2 is next.
+Status: implementation batches are complete. The scheduled official conformance workflow must
+produce green release artifacts before a protocol combination is called conformance-qualified.

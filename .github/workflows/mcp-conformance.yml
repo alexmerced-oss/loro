@@ -1,0 +1,95 @@
+name: MCP Conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  server-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - run: python -m pip install -e ".[dev]"
+      - name: Start Loro MCP server
+        env:
+          LORO_CONFIG_CONTENT: |
+            [mcp.server]
+            enabled = true
+            transport = "streamable_http"
+            host = "127.0.0.1"
+            port = 8766
+            export_tools = ["file.read", "file.search", "git.status", "git.diff", "git.show"]
+            [permissions]
+            edit = "allow"
+            workspace_roots = ["."]
+            [audit]
+            path = ".loro/conformance-audit.jsonl"
+        run: |
+          loro mcp serve > /tmp/loro-mcp-server.log 2>&1 &
+          echo $! > /tmp/loro-mcp-server.pid
+          for attempt in $(seq 1 30); do
+            python -c "import socket; socket.create_connection(('127.0.0.1', 8766), 1).close()" && break
+            sleep 1
+          done
+          kill -0 "$(cat /tmp/loro-mcp-server.pid)"
+      - name: Advertised server scenarios
+        run: |
+          for scenario in \
+            server-initialize ping tools-list tools-call-simple-text tools-call-error \
+            server-sse-multiple-streams resources-list prompts-list dns-rebinding-protection
+          do
+            npx --yes @modelcontextprotocol/conformance@0.1.16 \
+              server --url http://127.0.0.1:8766/mcp \
+              --scenario "$scenario" --spec-version 2025-11-25
+          done
+      - name: Stop Loro MCP server
+        if: always()
+        run: kill "$(cat /tmp/loro-mcp-server.pid)" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-server-conformance-2025-11-25
+          path: |
+            /tmp/loro-mcp-server.log
+            .loro/conformance-audit.jsonl
+
+  client-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - run: python -m pip install -e ".[dev]"
+      - name: Advertised client scenarios
+        run: |
+          for scenario in initialize tools_call
+          do
+            npx --yes @modelcontextprotocol/conformance@0.1.16 \
+              client --command "python tests/conformance/mcp_client.py" \
+              --scenario "$scenario" --spec-version 2025-11-25
+          done
+
+  modern-sdk-interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - name: Modern and classic SDK interoperability
+        run: python -m pytest tests/test_mcp_sdk.py tests/test_mcp_server.py

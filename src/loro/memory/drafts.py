@@ -8,12 +8,14 @@ from loro.memory.base import SharedMemoryDraft
 
 
 class SharedMemoryDraftStore:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, authorized_tenant_id: str | None = None) -> None:
         self.root = root.expanduser()
+        self.authorized_tenant_id = authorized_tenant_id
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "shared-memory-drafts.jsonl"
 
     def stage(self, draft: SharedMemoryDraft) -> SharedMemoryDraft:
+        self._authorize_tenant(draft.tenant_id)
         payload = {
             "draft_id": draft.draft_id,
             "tenant_id": draft.tenant_id,
@@ -39,6 +41,11 @@ class SharedMemoryDraftStore:
             if not line.strip():
                 continue
             data = json.loads(line)
+            if (
+                self.authorized_tenant_id is not None
+                and data.get("tenant_id") != self.authorized_tenant_id
+            ):
+                continue
             drafts.append(
                 SharedMemoryDraft(
                     draft_id=data["draft_id"],
@@ -61,3 +68,7 @@ class SharedMemoryDraftStore:
             if draft.draft_id == draft_id:
                 return draft
         return None
+
+    def _authorize_tenant(self, tenant_id: str) -> None:
+        if self.authorized_tenant_id is not None and tenant_id != self.authorized_tenant_id:
+            raise PermissionError(f"Cross-tenant shared-memory draft denied: {tenant_id}")

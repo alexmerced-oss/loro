@@ -11,8 +11,9 @@ flowchart LR
   CLI --> Runtime["Agent runtime"]
   Runtime --> Models["Model provider adapters"]
   Runtime --> Tools["Typed tool registry"]
-  Runtime --> MCP["MCP dual-era client adapter"]
-  Runtime -. planned .-> Skills["Agent Skills loader"]
+  Runtime --> MCP["MCP dual-era client/server adapter"]
+  Runtime --> Skills["Agent Skills loader"]
+  Runtime --> Mailbox["Cross-session mailbox"]
   Runtime --> Memory["Memory subsystem"]
   Runtime --> Artifacts["Artifact generators"]
   Runtime --> Audit["Audit log"]
@@ -46,6 +47,8 @@ flowchart LR
 - `loro.audit`: versioned event envelope, JSONL/HTTP sinks, bounded buffer, and delivery controls.
 - `loro.serialization`: small helpers for JSON-safe CLI output.
 - `loro.sessions`: durable JSON session records.
+- `loro.session_messages`: durable queued, delivered, and acknowledged session messages.
+- `loro.skills`: Agent Skills validation, provenance, lifecycle, and progressive loading.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,
@@ -59,7 +62,9 @@ approved identifiers to trusted adapters. `loro.mcp.tasks` persists opaque handl
 from credentials and implements modern create/get/update/cancel routing. Bounded subscriptions
 share the client facade but are never left open without time and event ceilings. MCP enters
 through the existing permission, approval, normalized-resource, session, and audit boundaries.
-Server mode and `loro.skills` remain planned. See [Model Context Protocol](docs/mcp.md) and the
+`loro.mcp.server` exposes a hard-coded ceiling of explicitly configured read-only Loro tools,
+resources, and prompts. Server mode, Skills, and client calls share the same policy and audit
+boundaries. See [Model Context Protocol](docs/mcp.md) and the
 [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
 
 ## Runtime Flow
@@ -70,19 +75,22 @@ Server mode and `loro.skills` remain planned. See [Model Context Protocol](docs/
    and fails before runtime construction when they are missing.
 3. The runtime loads local memory and, when enabled, searches the identity tenant's shared
    memory for relevant cited records.
-4. The runtime emits `runtime.task_started` with identity attribution.
-5. Explicit prompt tool directives are executed before the first model call.
-6. The runtime calls the configured model and parses provider-neutral tool directives from
+4. A resumed session receives queued messages as non-authoritative context, and validated Agent
+   Skills are activated under the configured context budget.
+5. The runtime emits `runtime.task_started` with identity attribution.
+6. Explicit prompt tool directives are executed before the first model call.
+7. The runtime calls the configured model and parses provider-neutral tool directives from
    the response.
-7. Ask-gated actions create an exact approval request. Trusted interactive approval is recorded
+8. Ask-gated actions create an exact approval request. Trusted interactive approval is recorded
    before the tool executes; model-provided approval fields are not trusted.
-8. Approved tool calls are executed, audited, and sent back to the model as structured text.
-9. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
+9. Approved tool calls are executed, audited, and sent back to the model as structured text.
+10. The loop repeats until the model responds without tool directives or `[runtime].max_steps`
    is reached.
-10. The runtime creates a session summary, including identity, tool execution payloads, and stop
+11. The runtime creates a session summary, including identity, tool execution payloads, and stop
     reason, and persists it to the configured session store.
-11. The runtime emits `runtime.task_completed`.
-12. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
+12. Delivered messages are acknowledged after the resumed session persists.
+13. The runtime emits `runtime.task_completed`.
+14. Artifact and tool commands emit their own audit events with identity, previews, and metadata,
     not full sensitive payloads.
 
 Audit schema `1.0` promotes identity, trace, action/target, policy, approval, result, and

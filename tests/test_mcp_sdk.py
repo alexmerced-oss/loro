@@ -1,8 +1,18 @@
+import json
+import os
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from loro.config import MCPConfig, MCPCredentialProfileConfig, MCPServerConfig
+from loro.config import (
+    MCPConfig,
+    MCPCredentialProfileConfig,
+    MCPServerConfig,
+    SandboxConfig,
+    SandboxProfileConfig,
+)
 from loro.mcp.client import MCPService, _MemoryTokenStorage
 from loro.mcp.extensions import TASKS_EXTENSION_ID
 from loro.mcp.tasks import _sdk_types, create_sdk_tasks_extension
@@ -47,6 +57,40 @@ async def test_official_sdk_in_process_interoperability(
     assert result["connection"]["protocol_version"] == expected_version
     assert result["connection"]["lifecycle"] == expected_lifecycle
     assert result["result"]["isError"] is False
+
+
+@pytest.mark.asyncio
+async def test_official_sdk_stdio_uses_exact_sandbox_environment(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "mcp_stdio_server.py"
+    sandbox = SandboxConfig()
+    sandbox.profiles[sandbox.mcp_stdio_profile] = SandboxProfileConfig(
+        allowed_executables=["python*"],
+        environment_allowlist=["PATH"],
+    )
+    server = MCPServerConfig(
+        command=sys.executable,
+        args=[str(fixture)],
+        cwd=str(tmp_path),
+        env_allowlist=["MCP_ALLOWED"],
+        protocol_mode="legacy",
+    )
+    service = MCPService(
+        MCPConfig(enabled=True, servers={"fixture": server}),
+        sandbox_config=sandbox,
+        workspace_roots=[str(tmp_path)],
+        environ={
+            "PATH": os.environ["PATH"],
+            "MCP_ALLOWED": "present",
+            "OPENAI_API_KEY": "must-not-leak",
+        },
+    )
+
+    result = await service.call_tool("fixture", "environment")
+
+    child_environment = json.loads(result["result"]["content"][0]["text"])
+    assert child_environment["MCP_ALLOWED"] == "present"
+    assert "OPENAI_API_KEY" not in child_environment
+    assert "HOME" not in child_environment
 
 
 def test_official_sdk_oauth_profiles_use_supported_providers() -> None:

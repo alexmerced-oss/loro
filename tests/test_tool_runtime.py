@@ -12,9 +12,11 @@ from loro.config import (
     PermissionRuleConfig,
     PermissionsConfig,
     PolarisConfig,
+    SafetyConfig,
     SharedMemoryConfig,
 )
 from loro.memory.local import LocalMemoryStore
+from loro.sandbox import SandboxResult
 from loro.tool_runtime import ToolRegistry, parse_tool_calls
 
 
@@ -369,6 +371,7 @@ def test_tool_registry_git_status(tmp_path) -> None:
     result = ToolRegistry(LoroConfig()).execute(call)
     assert result.ok is True
     assert "?? note.txt" in result.output
+    assert result.metadata["sandbox_profile"] == "git"
 
 
 def test_tool_registry_git_add_requires_approval(tmp_path) -> None:
@@ -425,13 +428,19 @@ def test_tool_registry_shared_memory_search_renders_sql() -> None:
 def test_tool_registry_polaris_readonly(monkeypatch) -> None:
     commands: list[list[str]] = []
 
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        from subprocess import CompletedProcess
+    def fake_run(self, args, *, profile_name, cwd=None, timeout=None):
+        commands.append(args)
+        return SandboxResult(
+            args=args,
+            stdout="prod\n",
+            stderr="",
+            returncode=0,
+            profile=profile_name,
+            os_enforced=False,
+            output_truncated=False,
+        )
 
-        return CompletedProcess(command, 0, stdout="prod\n", stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr("loro.sandbox.SandboxRunner.run", fake_run)
     call = parse_tool_calls('@tool polaris.readonly {"args": ["catalogs", "list"]}')[0]
     result = ToolRegistry(
         LoroConfig(polaris=PolarisConfig(enabled=True, cli_path="polaris"))
@@ -439,6 +448,7 @@ def test_tool_registry_polaris_readonly(monkeypatch) -> None:
     assert result.ok is True
     assert "prod" in result.output
     assert commands == [["polaris", "catalogs", "list"]]
+    assert result.metadata["sandbox_profile"] == "governed-data"
 
 
 def test_tool_registry_polaris_readonly_rejects_mutation() -> None:
@@ -496,6 +506,48 @@ def test_tool_registry_artifact_create_blocks_sensitive_prompt(tmp_path) -> None
     assert result.ok is False
     assert "Sensitive content detected" in result.output
     assert not any(tmp_path.iterdir())
+
+
+def test_managed_policy_prevents_tool_sensitive_override(tmp_path) -> None:
+    call = parse_tool_calls(
+        "@tool artifact.create "
+        f'{{"kind": "document", "prompt": "api_key = abcdefghijklmnop", '
+        f'"output_dir": "{tmp_path}", "allow_sensitive": true}}'
+    )[0]
+    config = LoroConfig(safety=SafetyConfig(allow_sensitive_override=False))
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "Sensitive content detected" in result.output
+    assert not any(tmp_path.iterdir())
+
+
+def test_tool_registry_redacts_sensitive_tool_output(tmp_path) -> None:
+    target = tmp_path / "legacy.txt"
+    target.write_text("token=abcdefghijk", encoding="utf-8")
+    call = parse_tool_calls(f'@tool file.read {{"path": "{target}"}}')[0]
+
+    result = ToolRegistry(LoroConfig()).execute(call)
+
+    assert result.ok is True
+    assert result.output == "[redacted]"
+    assert result.metadata["data_protection"]["action"] == "redact"
+
+
+def test_tool_registry_rejects_cross_tenant_memory_before_backend() -> None:
+    config = LoroConfig(
+        memory=MemoryConfig(shared=SharedMemoryConfig(enabled=True, tenant_isolation="identity")),
+        permissions=PermissionsConfig(shared_memory="allow"),
+    )
+    call = parse_tool_calls('@tool memory.shared_search {"query": "launch", "tenant_id": "other"}')[
+        0
+    ]
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "Cross-tenant" in result.output
 
 
 def _init_repo(path) -> None:

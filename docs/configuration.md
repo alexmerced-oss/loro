@@ -26,6 +26,24 @@ temperature = 0.2
 [runtime]
 max_steps = 5
 
+[sandbox]
+enabled = true
+shell_profile = "controlled-shell"
+git_profile = "git"
+governed_data_profile = "governed-data"
+mcp_stdio_profile = "mcp-stdio"
+skill_profile = "skill-script"
+
+[sandbox.profiles.controlled-shell]
+backend = "process"
+require_os_enforcement = false
+network = "inherit"
+allowed_executables = ["*"]
+environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
+writable_roots = []
+max_seconds = 120
+max_output_bytes = 1000000
+
 [identity]
 environment_enabled = true
 environment_prefix = "LORO_IDENTITY_"
@@ -46,6 +64,8 @@ edit = "ask"
 shared_memory = "ask"
 governed_data = "allow"
 mcp = "ask"
+skills = "ask"
+session_message = "ask"
 web = "deny"
 workspace_roots = []
 
@@ -71,6 +91,7 @@ auto_propose = true
 [memory.shared]
 enabled = false
 backend = "postgres"
+tenant_isolation = "disabled"
 write_policy = "explicit_user_dictation_only"
 read_policy = "semantic_retrieval_with_citations"
 postgres_dsn_env = "LORO_POSTGRES_DSN"
@@ -104,6 +125,15 @@ protocol_mode = "auto"
 allowed_protocol_versions = ["2026-07-28", "2025-11-25", "2024-11-05"]
 timeout_seconds = 30
 
+[mcp.server]
+enabled = false
+transport = "stdio"
+host = "127.0.0.1"
+port = 8766
+export_tools = []
+export_resources = true
+export_prompts = true
+
 [audit]
 enabled = true
 schema_version = "1.0"
@@ -119,6 +149,37 @@ timeout_seconds = 10
 
 [sessions]
 path = ".loro/sessions"
+message_path = ".loro/session-messages"
+max_message_bytes = 100000
+
+[skills]
+enabled = true
+managed_paths = ["/etc/loro/skills"]
+user_paths = ["~/.config/loro/skills"]
+project_paths = [".loro/skills"]
+allow_user = true
+allow_project = true
+allow_scripts = false
+
+[safety]
+enabled = true
+default_classification = "internal"
+redaction_text = "[redacted]"
+allow_sensitive_override = true
+
+[safety.surfaces.model_input]
+action = "block"
+maximum_classification = "confidential"
+
+[safety.surfaces.tool_output]
+action = "redact"
+maximum_classification = "confidential"
+allowed_finding_kinds = ["internal_case_id"]
+
+[[safety.custom_patterns]]
+kind = "internal_case_id"
+pattern = "CASE-[0-9]{5}"
+classification = "confidential"
 ```
 
 ## Runtime Overrides
@@ -148,6 +209,14 @@ interactive = true
 allow_non_interactive = false
 allow_session_scope = true
 
+[sandbox.profiles.controlled-shell]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = ["/usr/bin/git", "/usr/bin/python3"]
+environment_allowlist = ["PATH", "LANG"]
+writable_roots = ["/work/repos/approved"]
+
 [[permissions.rules]]
 tool = "git"
 action = "commit"
@@ -169,6 +238,14 @@ max_buffer_events = 1000
 [memory.shared]
 enabled = true
 write_policy = "explicit_user_dictation_only"
+tenant_isolation = "identity"
+
+[safety]
+allow_sensitive_override = false
+
+[safety.surfaces.model_input]
+action = "block"
+maximum_classification = "internal"
 ```
 
 For test, container, or centrally launched desktop environments:
@@ -180,6 +257,9 @@ LORO_MANAGED_CONFIG_CONTENT='[permissions]\nshell = "deny"\n' loro doctor
 
 Normal runtime overrides cannot loosen values supplied by managed overlays because managed
 TOML is applied last.
+
+See [Managed Data Protection](data-protection.md) for surface defaults, decision semantics, and
+the remaining enterprise integration requirements.
 
 ## Permission Rules
 
@@ -204,7 +284,8 @@ resolved_executable_name = "python*"
 ```
 
 Common tool names today are `edit`, `git`, `shell`, `shared_memory`, `governed_data`, `mcp`,
-`provider`, and `web`. See [Normalized Resource Policy](policy.md) for fields, workspace-root
+`skills`, `session_message`, `provider`, and `web`. See [Normalized Resource Policy](policy.md)
+for fields, workspace-root
 behavior, policy explanation, and security boundaries.
 
 ## Setup Wizards
@@ -222,6 +303,8 @@ loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup mcp
+loro setup mcp-server
+loro setup skills
 loro setup quickstart
 ```
 
@@ -233,8 +316,10 @@ explicit-only shared enterprise memory with either Postgres or Iceberg. `loro se
 configures governed data discovery through the Polaris CLI. `loro setup mcp` configures one
 stdio or Streamable HTTP MCP server without storing environment-secret values and can attach the
 experimental Tasks extension. `loro setup audit` configures local
-JSONL or external HTTP delivery, retry, buffering, and failure behavior. `loro setup quickstart`
-runs all eight setup areas in sequence.
+JSONL or external HTTP delivery, retry, buffering, and failure behavior. `loro setup mcp-server`
+configures an explicit read-only export surface, and `loro setup skills` controls skill scope and
+script policy. `loro setup quickstart` configures the original core setup areas; run the two
+extension setup commands separately when those capabilities are required.
 
 All setup commands preserve existing sections in the target config file. They write local
 settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain

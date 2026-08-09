@@ -27,6 +27,11 @@ The MVP includes backend schema generation, draft staging, backend readiness dia
 Postgres execution, Iceberg SQL rendering, and optional PyIceberg execution for Iceberg
 searches and explicit draft commits through a configured governed catalog.
 
+Set `tenant_isolation = "identity"` in the enterprise managed overlay. Loro then derives the
+only permitted tenant from trusted identity, rejects caller-selected cross-tenant searches and
+commits in the operation and adapter layers, hides other tenants' local drafts, installs forced
+Postgres row-level security, and pushes the tenant/status predicate into Iceberg scans.
+
 ```bash
 loro remember --shared "Use the enterprise launch readiness template" \
   --tenant-id acme --scope-type team --scope-key platform
@@ -82,6 +87,7 @@ Configure the shared backend with a DSN environment variable:
 [memory.shared]
 enabled = true
 backend = "postgres"
+tenant_isolation = "identity"
 postgres_dsn_env = "LORO_POSTGRES_DSN"
 postgres_schema = "public"
 ```
@@ -108,6 +114,7 @@ analytics, governance, and retention workflows.
 [memory.shared]
 enabled = true
 backend = "iceberg"
+tenant_isolation = "identity"
 iceberg_catalog_name = "polaris_catalog"
 iceberg_catalog_uri_env = "LORO_ICEBERG_CATALOG_URI"
 iceberg_credential_env = "LORO_ICEBERG_CREDENTIAL"
@@ -130,8 +137,9 @@ Install optional data dependencies for execution:
 python -m pip install "loro-agent[data]"
 ```
 
-Iceberg `shared-search` uses PyIceberg scans and filters records locally against the logical
-shared-memory fields. Iceberg `commit-draft --execute` appends one memory row and one event
+Iceberg `shared-search` pushes tenant and active-status filtering into the PyIceberg scan, then
+applies a defensive record check before returning results. Iceberg `commit-draft --execute`
+appends one memory row and one event
 row to existing governed tables. DDL still renders through `loro memory schema --backend
 iceberg`; table creation should happen through the governed catalog or enterprise query
 engine.

@@ -1,9 +1,25 @@
 import json
-from subprocess import CompletedProcess
 
 from typer.testing import CliRunner
 
 from loro.cli import app
+from loro.sandbox import SandboxResult
+
+
+def fake_sandbox_run(commands: list[list[str]], stdout: str):
+    def run(self, args, *, profile_name, cwd=None, timeout=None):
+        commands.append(args)
+        return SandboxResult(
+            args=args,
+            stdout=stdout,
+            stderr="",
+            returncode=0,
+            profile=profile_name,
+            os_enforced=False,
+            output_truncated=False,
+        )
+
+    return run
 
 
 def test_version() -> None:
@@ -117,8 +133,8 @@ def test_plan_with_explicit_tool_call(tmp_path, monkeypatch) -> None:
     note.write_text("hello from tool\n", encoding="utf-8")
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[sessions]\npath = \"{tmp_path / 'sessions'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[sessions]\npath = "{tmp_path / "sessions"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -150,8 +166,8 @@ def test_brief_meeting(tmp_path) -> None:
 def test_sessions_list_after_plan(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[sessions]\npath = \"{tmp_path / 'sessions'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[sessions]\npath = "{tmp_path / "sessions"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     runner = CliRunner()
     plan_result = runner.invoke(app, ["plan", "Draft a rollout plan"])
@@ -171,18 +187,13 @@ def test_file_read_command(tmp_path) -> None:
 
 def test_data_tables_typed_command(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
-
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        return CompletedProcess(command, 0, stdout="events\n", stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr("loro.sandbox.SandboxRunner.run", fake_sandbox_run(commands, "events\n"))
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[polaris]\n"
-        'enabled = true\n'
+        "enabled = true\n"
         'cli_path = "polaris"\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -205,12 +216,7 @@ def test_data_tables_typed_command(monkeypatch, tmp_path) -> None:
 
 def test_governed_data_ask_policy_prompts_before_execution(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
-
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        return CompletedProcess(command, 0, stdout="prod\n", stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr("loro.sandbox.SandboxRunner.run", fake_sandbox_run(commands, "prod\n"))
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[polaris]\n"
@@ -218,7 +224,7 @@ def test_governed_data_ask_policy_prompts_before_execution(monkeypatch, tmp_path
         'cli_path = "polaris"\n'
         "[permissions]\n"
         'governed_data = "ask"\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
 
     result = CliRunner().invoke(app, ["data", "catalogs"], input="once\n")
@@ -230,18 +236,13 @@ def test_governed_data_ask_policy_prompts_before_execution(monkeypatch, tmp_path
 
 def test_data_applicable_policies_typed_command(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
-
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        return CompletedProcess(command, 0, stdout="pii-mask\n", stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr("loro.sandbox.SandboxRunner.run", fake_sandbox_run(commands, "pii-mask\n"))
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[polaris]\n"
-        'enabled = true\n'
+        "enabled = true\n"
         'cli_path = "polaris"\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -274,18 +275,16 @@ def test_data_applicable_policies_typed_command(monkeypatch, tmp_path) -> None:
 
 def test_data_schema_command(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
-
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        return CompletedProcess(command, 0, stdout='{"columns": []}\n', stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr(
+        "loro.sandbox.SandboxRunner.run",
+        fake_sandbox_run(commands, '{"columns": []}\n'),
+    )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[polaris]\n"
-        'enabled = true\n'
+        "enabled = true\n"
         'cli_path = "polaris"\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -309,18 +308,13 @@ def test_data_schema_command(monkeypatch, tmp_path) -> None:
 
 def test_data_explain_access_command(monkeypatch, tmp_path) -> None:
     commands: list[list[str]] = []
-
-    def fake_run(command, capture_output, text, check):
-        commands.append(command)
-        return CompletedProcess(command, 0, stdout="ok\n", stderr="")
-
-    monkeypatch.setattr("loro.polaris.run", fake_run)
+    monkeypatch.setattr("loro.sandbox.SandboxRunner.run", fake_sandbox_run(commands, "ok\n"))
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[polaris]\n"
-        'enabled = true\n'
+        "enabled = true\n"
         'cli_path = "polaris"\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -391,7 +385,7 @@ def test_shell_run_interactive_approval_is_audited(tmp_path, monkeypatch) -> Non
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{audit_path}\"\n",
+        f'[audit]\npath = "{audit_path}"\n',
     )
 
     result = CliRunner().invoke(
@@ -432,9 +426,7 @@ def test_shared_memory_schema_command() -> None:
 def test_shared_memory_schema_command_uses_iceberg_config(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        "[memory.shared]\n"
-        'iceberg_namespace = "enterprise_memory"\n'
-        'iceberg_table = "agent_facts"\n',
+        '[memory.shared]\niceberg_namespace = "enterprise_memory"\niceberg_table = "agent_facts"\n',
     )
     result = CliRunner().invoke(app, ["memory", "schema", "--backend", "iceberg"])
     assert result.exit_code == 0
@@ -470,7 +462,7 @@ def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
 def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        "[memory.shared]\nbackend = \"iceberg\"\niceberg_table = \"agent_facts\"\n",
+        '[memory.shared]\nbackend = "iceberg"\niceberg_table = "agent_facts"\n',
     )
     result = CliRunner().invoke(app, ["memory", "backend-check"])
     assert result.exit_code == 1
@@ -481,8 +473,8 @@ def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
 def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     runner = CliRunner()
     remember_result = runner.invoke(
@@ -500,8 +492,8 @@ def test_shared_memory_draft_command(tmp_path, monkeypatch) -> None:
 def test_shared_memory_commit_draft_renders_postgres_sql(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     runner = CliRunner()
     remember_result = runner.invoke(
@@ -523,8 +515,8 @@ def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
 ) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n"
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n'
         '[memory.shared]\nbackend = "iceberg"\n',
     )
     runner = CliRunner()
@@ -545,7 +537,7 @@ def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
 def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -559,8 +551,8 @@ def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
 def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     runner = CliRunner()
     propose_result = runner.invoke(
@@ -579,8 +571,8 @@ def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:
 def test_memory_proposal_accepts_shared_as_draft(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     runner = CliRunner()
     propose_result = runner.invoke(
@@ -603,11 +595,35 @@ def test_safety_scan_detects_secret() -> None:
     assert "assignment_secret" in result.stdout
 
 
+def test_shared_memory_search_rejects_cross_tenant_in_identity_mode(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'''[identity]
+tenant = "acme"
+[memory.local]
+path = "{tmp_path / "memory"}"
+[memory.shared]
+enabled = true
+tenant_isolation = "identity"
+[audit]
+enabled = false
+''',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["memory", "shared-search", "launch", "--tenant-id", "other", "--dry-run"],
+    )
+
+    assert result.exit_code != 0
+    assert "Cross-tenant" in result.stderr
+
+
 def test_memory_write_blocks_secret(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(app, ["remember", "--local", "token = 'abc123456789'"])
     assert result.exit_code != 0
@@ -617,8 +633,8 @@ def test_memory_write_blocks_secret(tmp_path, monkeypatch) -> None:
 def test_memory_write_allows_secret_with_flag(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{tmp_path / 'memory'}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     result = CliRunner().invoke(
         app,
@@ -651,7 +667,7 @@ def test_provider_show_alias() -> None:
 def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -678,7 +694,7 @@ def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
 def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -704,7 +720,7 @@ def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
 def test_setup_memory_preserves_provider_config(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     runner = CliRunner()
@@ -748,7 +764,7 @@ def test_setup_memory_preserves_provider_config(tmp_path, monkeypatch) -> None:
 def test_setup_shared_memory_postgres(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -779,7 +795,7 @@ def test_setup_shared_memory_postgres(tmp_path, monkeypatch) -> None:
 def test_setup_shared_memory_iceberg(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -818,7 +834,7 @@ def test_setup_shared_memory_iceberg(tmp_path, monkeypatch) -> None:
 def test_setup_polaris(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -907,9 +923,7 @@ def test_identity_show_uses_environment(monkeypatch) -> None:
 def test_identity_doctor_reports_missing_required_fields(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        "[identity]\n"
-        "environment_enabled = false\n"
-        'required_fields = ["organization"]\n',
+        '[identity]\nenvironment_enabled = false\nrequired_fields = ["organization"]\n',
     )
 
     result = CliRunner().invoke(app, ["identity", "doctor"])
@@ -922,9 +936,7 @@ def test_identity_doctor_reports_missing_required_fields(monkeypatch) -> None:
 def test_runtime_fails_closed_when_identity_is_incomplete(monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        "[identity]\n"
-        "environment_enabled = false\n"
-        'required_fields = ["organization"]\n',
+        '[identity]\nenvironment_enabled = false\nrequired_fields = ["organization"]\n',
     )
 
     result = CliRunner().invoke(app, ["plan", "Draft a plan"])
@@ -936,7 +948,7 @@ def test_runtime_fails_closed_when_identity_is_incomplete(monkeypatch) -> None:
 def test_setup_identity_writes_configuration(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(
@@ -967,10 +979,10 @@ def test_setup_identity_writes_configuration(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 0
     text = output.read_text(encoding="utf-8")
-    assert '[identity]' in text
+    assert "[identity]" in text
     assert 'subject = "user-123"' in text
     assert 'organization = "acme"' in text
-    assert 'required_fields = [' in text
+    assert "required_fields = [" in text
 
 
 def test_setup_identity_can_remediate_missing_required_field(tmp_path, monkeypatch) -> None:
@@ -979,7 +991,7 @@ def test_setup_identity_can_remediate_missing_required_field(tmp_path, monkeypat
         "[identity]\n"
         "environment_enabled = false\n"
         'required_fields = ["organization"]\n'
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
 
@@ -995,7 +1007,7 @@ def test_setup_identity_can_remediate_missing_required_field(tmp_path, monkeypat
 def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     output = tmp_path / "config.local.toml"
 
@@ -1072,8 +1084,8 @@ def test_shared_memory_defaults_to_active_identity(tmp_path, monkeypatch) -> Non
     memory_path = tmp_path / "memory"
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f"[memory.local]\npath = \"{memory_path}\"\n"
-        f"[audit]\npath = \"{tmp_path / 'audit.jsonl'}\"\n"
+        f'[memory.local]\npath = "{memory_path}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n'
         "[identity]\n"
         'subject = "user-123"\n'
         'tenant = "platform"\n',

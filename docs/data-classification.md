@@ -6,9 +6,11 @@ This draft defines the minimum data-handling contract for Loro's first enterpris
 enterprise security and privacy owners must map these generic classes to corporate policy
 before deployment. When labels conflict or are unknown, use the more restrictive class.
 
-Loro 0.1.x records classification on shared-memory rows but does not yet enforce this complete
-matrix at every data flow. The [enterprise evidence register](enterprise-evidence.md) tracks
-that enforcement work.
+Loro now enforces the repository's generic classes through a managed application-level decision
+contract on supported model, memory, artifact, session, tool-output, and audit flows. Corporate
+classification mapping, provider-specific approval, storage lifecycle controls, and production
+DLP evidence remain required. The [enterprise evidence register](enterprise-evidence.md) tracks
+that proof.
 
 ## Classification Levels
 
@@ -37,6 +39,7 @@ Internal by enterprise policy before pilot use. Until that mapping exists, treat
 | Governed-data metadata/summary | Allowed if source permits. | Must retain catalog/namespace/table provenance. | Authorization, purpose, classification, and approved query/summary path required. | Raw records denied by default; aggregate/summary only under a separately approved policy. |
 | Shell/tool subprocess input and environment | Public task data only as needed. | Minimize and allowlist. | Explicit tool policy and isolated environment required. | Secrets passed only through a dedicated credential broker, never prompt-derived arguments. |
 | MCP request/resource/prompt/result | Allowed from trusted servers; content remains untrusted. | Approved server and minimum necessary data only. | Requires managed endpoint, authentication, classification-aware policy, and isolated execution. | Denied by default until a dedicated credential/data workflow is approved. |
+| Cross-session message | Allowed; always non-authoritative context. | Allowed with exact sender/recipient policy and minimum necessary content. | Requires managed classification controls and retention. | Denied; never use session messaging to relay credentials or approval. |
 
 ## Memory-Specific Rules
 
@@ -60,9 +63,9 @@ They must remain in approved environment/credential facilities, must not be writ
 prompts, memory, artifacts, sessions, provenance previews, or audit details, and must not be
 inherited by tool subprocesses unless the tool has a documented need.
 
-The current scanner catches only a small set of obvious patterns. `--allow-sensitive` is a
-development escape hatch, not an enterprise authorization mechanism, and managed policy should
-prohibit it unless a specific workflow permits it.
+The built-in scanner catches a small set of obvious patterns and supports managed custom patterns
+and pluggable scanner implementations. `--allow-sensitive` is a development escape hatch, not an
+enterprise authorization mechanism; managed policy can disable the override.
 
 ## Provider Decision Requirements
 

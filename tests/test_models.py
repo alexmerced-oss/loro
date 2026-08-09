@@ -219,9 +219,7 @@ def test_gemini_complete_with_native_tool_call(monkeypatch: pytest.MonkeyPatch) 
         "candidates": [
             {
                 "content": {
-                    "parts": [
-                        {"functionCall": {"name": "file.search", "args": {"query": "TODO"}}}
-                    ]
+                    "parts": [{"functionCall": {"name": "file.search", "args": {"query": "TODO"}}}]
                 }
             }
         ]

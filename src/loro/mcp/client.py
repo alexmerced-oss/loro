@@ -6,9 +6,10 @@ import sys
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
-from loro.config import MCPConfig, MCPServerConfig
+from loro.config import MCPConfig, MCPServerConfig, SandboxConfig
 from loro.mcp.extensions import (
     TASKS_EXTENSION_ID,
     MCPExtensionError,
@@ -22,6 +23,7 @@ from loro.mcp.security import (
     enforce_server_policy,
 )
 from loro.mcp.tasks import MCPTaskStore
+from loro.sandbox import SandboxLaunch, SandboxRunner
 
 
 class MCPClientError(RuntimeError):
@@ -72,6 +74,8 @@ class MCPConnectionInfo:
     server_info: dict[str, Any] | None
     capabilities: dict[str, Any]
     extensions: list[str]
+    sandbox_profile: str | None = None
+    sandbox_os_enforced: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -82,6 +86,8 @@ class MCPConnectionInfo:
             "server_info": self.server_info,
             "capabilities": self.capabilities,
             "extensions": self.extensions,
+            "sandbox_profile": self.sandbox_profile,
+            "sandbox_os_enforced": self.sandbox_os_enforced,
         }
 
 
@@ -93,12 +99,20 @@ class MCPService:
         client_factory: ClientContextFactory | None = None,
         environ: Mapping[str, str] | None = None,
         task_store: MCPTaskStore | None = None,
+        sandbox_config: SandboxConfig | None = None,
+        workspace_roots: list[str] | None = None,
     ) -> None:
         self.config = config
         self.registry = MCPRegistry(config)
         self.environ = dict(environ if environ is not None else os.environ)
         self.extensions = MCPExtensionRegistry(config)
         self.task_store = task_store or MCPTaskStore.from_config(config)
+        self.sandbox_config = sandbox_config or SandboxConfig()
+        self.sandbox = SandboxRunner(
+            self.sandbox_config,
+            workspace_roots=workspace_roots,
+            environ=self.environ,
+        )
         self.client_factory = client_factory or self._sdk_client
 
     def extension_status(self, server_id: str | None = None) -> dict[str, Any]:
@@ -382,6 +396,17 @@ class MCPService:
                     server_info=_optional_mapping(client.server_info),
                     capabilities=capabilities,
                     extensions=sorted((capabilities.get("extensions") or {}).keys()),
+                    sandbox_profile=(
+                        self.sandbox_config.mcp_stdio_profile
+                        if server.transport == "stdio"
+                        else None
+                    ),
+                    sandbox_os_enforced=(
+                        self.sandbox_config.profiles[self.sandbox_config.mcp_stdio_profile].backend
+                        == "bubblewrap"
+                        if server.transport == "stdio"
+                        else None
+                    ),
                 )
                 yield ConnectedMCP(
                     client=client,
@@ -422,20 +447,37 @@ class MCPService:
             assert server.url is not None
             return self._http_sdk_client(Client, server, kwargs)
 
-        assert server.command is not None
+        launch = self.prepare_stdio_launch(server)
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=[
+                "-m",
+                "loro.mcp.stdio_launcher",
+                *sorted(launch.environment),
+                "--",
+                *launch.args,
+            ],
+            env=launch.environment,
+            cwd=str(launch.cwd),
+        )
+        return Client(stdio_client(parameters), **kwargs)
+
+    def prepare_stdio_launch(self, server: MCPServerConfig) -> SandboxLaunch:
+        """Build the exact sandboxed launch passed to the official stdio transport."""
+        if server.transport != "stdio" or server.command is None:
+            raise MCPClientError("MCP stdio launch preparation requires a stdio server.")
         missing = [name for name in server.env_allowlist if name not in self.environ]
         if missing:
             raise MCPClientError(
                 "Allowlisted MCP environment variables are missing: " + ", ".join(missing)
             )
         environment = {name: self.environ[name] for name in server.env_allowlist}
-        parameters = StdioServerParameters(
-            command=server.command,
-            args=list(server.args),
-            env=environment,
-            cwd=server.cwd,
+        return self.sandbox.prepare(
+            [server.command, *server.args],
+            profile_name=self.sandbox_config.mcp_stdio_profile,
+            cwd=Path(server.cwd) if server.cwd else None,
+            explicit_environment=environment,
         )
-        return Client(stdio_client(parameters), **kwargs)
 
     def _task_capture_callback(self, server: MCPServerConfig) -> Callable[..., Any]:
         server_id = next(

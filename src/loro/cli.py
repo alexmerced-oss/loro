@@ -25,6 +25,7 @@ from loro.config import (
     replace_config_section,
     write_config_sections,
 )
+from loro.data_protection import DataProtectionEngine, DataSurface
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -70,12 +71,15 @@ from loro.resources import (
     mcp_resource,
     memory_resource,
     resource_from_payload,
+    session_message_resource,
     shell_resource,
 )
 from loro.runtime import AgentRuntime
-from loro.safety import SafetyScanner
+from loro.sandbox import SandboxRunner
 from loro.serialization import jsonable_mapping
+from loro.session_messages import SessionMailbox, message_digest
 from loro.sessions import SessionStore
+from loro.skills import SkillError, SkillRegistry
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
 
@@ -104,6 +108,8 @@ identity_app = typer.Typer(help="Inspect and validate the active enterprise iden
 policy_app = typer.Typer(help="Explain normalized permission decisions.")
 audit_app = typer.Typer(help="Inspect and flush audit delivery.")
 mcp_app = typer.Typer(help="Configure and use Model Context Protocol servers.")
+skills_app = typer.Typer(help="Discover and govern portable Agent Skills packages.")
+sandbox_app = typer.Typer(help="Inspect subprocess isolation profiles.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -121,6 +127,8 @@ app.add_typer(identity_app, name="identity")
 app.add_typer(policy_app, name="policy")
 app.add_typer(audit_app, name="audit")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(skills_app, name="skills")
+app.add_typer(sandbox_app, name="sandbox")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -157,19 +165,48 @@ def _audit() -> AuditLogger:
         identity = resolve_identity(config.identity)
     except IdentityConfigurationError as error:
         raise typer.BadParameter(str(error)) from error
-    return AuditLogger(config.audit, identity)
+    return AuditLogger(config.audit, identity, safety_config=config.safety)
 
 
 def _permissions() -> PermissionEngine:
     return PermissionEngine(load_config().permissions)
 
 
-def _safety() -> SafetyScanner:
-    return SafetyScanner(load_config().safety)
+def _data_protection() -> DataProtectionEngine:
+    return DataProtectionEngine(load_config().safety)
+
+
+def _shared_memory_tenant(config: LoroConfig, requested: str | None) -> str:
+    identity_tenant = _identity().tenant
+    resolved = requested or identity_tenant
+    if config.memory.shared.tenant_isolation == "identity" and resolved != identity_tenant:
+        _audit().write(
+            "memory.tenant_denied",
+            requested_tenant=resolved,
+            identity_tenant=identity_tenant,
+            decision="deny",
+            policy_source="memory.shared.tenant_isolation",
+        )
+        raise typer.BadParameter(f"Cross-tenant shared-memory access denied: {resolved}")
+    return resolved
+
+
+def _shared_draft_store(config: LoroConfig) -> SharedMemoryDraftStore:
+    authorized_tenant = (
+        _identity().tenant if config.memory.shared.tenant_isolation == "identity" else None
+    )
+    return SharedMemoryDraftStore(
+        Path(config.memory.local.path), authorized_tenant_id=authorized_tenant
+    )
 
 
 def _mcp_service() -> MCPService:
-    return MCPService(load_config().mcp)
+    config = load_config()
+    return MCPService(
+        config.mcp,
+        sandbox_config=config.sandbox,
+        workspace_roots=config.permissions.workspace_roots,
+    )
 
 
 def _mcp_server_endpoint(server: MCPServerConfig) -> str:
@@ -289,7 +326,7 @@ def _approval_manager(config: LoroConfig | None = None) -> ApprovalManager:
         identity = resolve_identity(resolved_config.identity)
     except IdentityConfigurationError as error:
         raise typer.BadParameter(str(error)) from error
-    audit = AuditLogger(resolved_config.audit, identity)
+    audit = AuditLogger(resolved_config.audit, identity, safety_config=resolved_config.safety)
     return ApprovalManager(
         resolved_config.approvals,
         identity,
@@ -382,7 +419,9 @@ def _authorize_cli_action(
 
 
 def _enforce_safe_content(content: str, context: str, allow_sensitive: bool = False) -> None:
-    findings = _safety().scan(content)
+    surface = _surface_for_context(context)
+    decision = _data_protection().evaluate(content, surface, allow_sensitive=allow_sensitive)
+    findings = list(decision.findings)
     if not findings:
         return
     _audit().write(
@@ -390,12 +429,22 @@ def _enforce_safe_content(content: str, context: str, allow_sensitive: bool = Fa
         context=context,
         finding_kinds=sorted({finding.kind for finding in findings}),
     )
-    if load_config().safety.block_on_findings and not allow_sensitive:
+    if decision.blocked:
         kinds = ", ".join(sorted({finding.kind for finding in findings}))
         raise typer.BadParameter(
             f"Sensitive content detected ({kinds}). Re-run with --allow-sensitive "
             "only if policy allows storing this content."
         )
+
+
+def _surface_for_context(context: str) -> DataSurface:
+    if context.startswith("memory.shared"):
+        return "memory_shared"
+    if context.startswith("memory."):
+        return "memory_local"
+    if context.startswith("session"):
+        return "session_message"
+    return "artifact"
 
 
 def _print_artifact_result(result: ArtifactResult, prompt: str) -> None:
@@ -450,6 +499,9 @@ def _run_polaris_result(result: PolarisResult) -> None:
         "polaris.readonly_executed",
         command=result.command,
         returncode=result.returncode,
+        sandbox_profile=result.sandbox_profile,
+        sandbox_os_enforced=result.sandbox_os_enforced,
+        output_truncated=result.output_truncated,
     )
     if result.stdout:
         console.print(result.stdout)
@@ -496,7 +548,11 @@ def _polaris_client() -> PolarisClient:
         non_interactive_approved=bool(data_options.get("yes", False)),
         resource=resource,
     )
-    return PolarisClient(config.polaris)
+    return PolarisClient(
+        config.polaris,
+        config.sandbox,
+        workspace_roots=config.permissions.workspace_roots,
+    )
 
 
 @app.callback()
@@ -509,16 +565,34 @@ def main(
 
 
 @app.command()
-def run(prompt: Annotated[str, typer.Argument(help="Task prompt for Loro.")]) -> None:
-    """Run a one-shot agent task."""
-    result = _runtime().run(prompt, mode="run")
+def run(
+    prompt: Annotated[str, typer.Argument(help="Task prompt for Loro.")],
+    resume_session: Annotated[
+        str | None,
+        typer.Option("--resume-session", help="Resume a saved session and deliver its inbox."),
+    ] = None,
+) -> None:
+    """Run an agent task, optionally resuming a durable session."""
+    try:
+        result = _runtime().run(prompt, mode="run", session_id=resume_session)
+    except FileNotFoundError as error:
+        raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
 
 
 @app.command()
-def plan(prompt: Annotated[str, typer.Argument(help="Planning prompt for Loro.")]) -> None:
+def plan(
+    prompt: Annotated[str, typer.Argument(help="Planning prompt for Loro.")],
+    resume_session: Annotated[
+        str | None,
+        typer.Option("--resume-session", help="Resume a saved session and deliver its inbox."),
+    ] = None,
+) -> None:
     """Run a read-only planning task."""
-    result = _runtime().run(prompt, mode="plan")
+    try:
+        result = _runtime().run(prompt, mode="plan", session_id=resume_session)
+    except FileNotFoundError as error:
+        raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
 
 
@@ -1082,7 +1156,7 @@ def setup_identity(
         identity.environment_enabled = environment_enabled
     written = write_config_sections(output, config, ["identity"])
     identity_diagnostic = diagnose_identity(config.identity)
-    AuditLogger(config.audit, identity_diagnostic.context).write(
+    AuditLogger(config.audit, identity_diagnostic.context, safety_config=config.safety).write(
         "config.identity_written",
         path=str(written),
         identity_ready=identity_diagnostic.ok,
@@ -1184,6 +1258,146 @@ def setup_approvals(
         allow_session_scope=approvals.allow_session_scope,
     )
     console.print(f"Wrote approval config: {written}")
+
+
+@setup_app.command("skills")
+def setup_skills(
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable Agent Skills discovery."),
+    ] = None,
+    allow_user: Annotated[
+        bool | None,
+        typer.Option("--allow-user/--deny-user", help="Allow user-scoped skills."),
+    ] = None,
+    allow_project: Annotated[
+        bool | None,
+        typer.Option("--allow-project/--deny-project", help="Allow project-scoped skills."),
+    ] = None,
+    allow_scripts: Annotated[
+        bool | None,
+        typer.Option(
+            "--allow-scripts/--deny-scripts",
+            help="Permit reviewed skill scripts to enter shell approval.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure Agent Skills discovery and script policy."""
+    wizard = all(value is None for value in (enabled, allow_user, allow_project, allow_scripts))
+    config = load_config()
+    skills = config.skills
+    if wizard:
+        enabled = typer.confirm("Enable Agent Skills?", default=skills.enabled)
+        allow_user = typer.confirm("Allow user-scoped skills?", default=skills.allow_user)
+        allow_project = typer.confirm("Allow project-scoped skills?", default=skills.allow_project)
+        allow_scripts = typer.confirm(
+            "Allow reviewed skill scripts to request shell approval?",
+            default=skills.allow_scripts,
+        )
+    if enabled is not None:
+        skills.enabled = enabled
+    if allow_user is not None:
+        skills.allow_user = allow_user
+    if allow_project is not None:
+        skills.allow_project = allow_project
+    if allow_scripts is not None:
+        skills.allow_scripts = allow_scripts
+    written = write_config_sections(output, config, ["skills"])
+    _audit().write(
+        "config.skills_written",
+        path=str(written),
+        enabled=skills.enabled,
+        allow_user=skills.allow_user,
+        allow_project=skills.allow_project,
+        allow_scripts=skills.allow_scripts,
+    )
+    console.print(f"Wrote Agent Skills config: {written}")
+
+
+@setup_app.command("sandbox")
+def setup_sandbox(
+    profile: Annotated[
+        str, typer.Option("--profile", help="Named sandbox profile to update.")
+    ] = "controlled-shell",
+    backend: Annotated[
+        str | None, typer.Option("--backend", help="Process backend: process or bubblewrap.")
+    ] = None,
+    require_os_enforcement: Annotated[
+        bool | None,
+        typer.Option(
+            "--require-os-enforcement/--allow-advisory",
+            help="Fail closed unless the selected backend enforces OS isolation.",
+        ),
+    ] = None,
+    network: Annotated[
+        str | None, typer.Option("--network", help="Network policy: inherit or deny.")
+    ] = None,
+    allowed_executables: Annotated[
+        str | None,
+        typer.Option("--allowed-executables", help="Comma-separated executable path globs."),
+    ] = None,
+    environment_allowlist: Annotated[
+        str | None,
+        typer.Option("--environment", help="Comma-separated inherited environment names."),
+    ] = None,
+    writable_roots: Annotated[
+        str | None,
+        typer.Option("--writable-roots", help="Comma-separated writable roots for Bubblewrap."),
+    ] = None,
+    max_seconds: Annotated[
+        int | None, typer.Option("--max-seconds", help="Maximum child runtime.")
+    ] = None,
+    max_output_bytes: Annotated[
+        int | None, typer.Option("--max-output-bytes", help="Combined stdout/stderr limit.")
+    ] = None,
+    output: Annotated[Path, typer.Option("--output", "-o", help="Config file to write.")] = Path(
+        ".loro/config.local.toml"
+    ),
+) -> None:
+    """Configure a named subprocess sandbox profile."""
+    config = load_config()
+    if profile not in config.sandbox.profiles:
+        raise typer.BadParameter(f"Unknown sandbox profile: {profile}")
+    selected = config.sandbox.profiles[profile]
+    if backend is not None:
+        if backend not in {"process", "bubblewrap"}:
+            raise typer.BadParameter("Sandbox backend must be process or bubblewrap.")
+        selected.backend = backend  # type: ignore[assignment]
+    if network is not None:
+        if network not in {"inherit", "deny"}:
+            raise typer.BadParameter("Sandbox network policy must be inherit or deny.")
+        selected.network = network  # type: ignore[assignment]
+    if require_os_enforcement is not None:
+        selected.require_os_enforcement = require_os_enforcement
+    if allowed_executables is not None:
+        selected.allowed_executables = _comma_separated(allowed_executables)
+    if environment_allowlist is not None:
+        selected.environment_allowlist = _comma_separated(environment_allowlist)
+    if writable_roots is not None:
+        selected.writable_roots = _comma_separated(writable_roots)
+    if max_seconds is not None:
+        if not 1 <= max_seconds <= 3600:
+            raise typer.BadParameter("Sandbox max seconds must be between 1 and 3600.")
+        selected.max_seconds = max_seconds
+    if max_output_bytes is not None:
+        if not 1024 <= max_output_bytes <= 100_000_000:
+            raise typer.BadParameter("Sandbox max output bytes must be between 1024 and 100000000.")
+        selected.max_output_bytes = max_output_bytes
+    validated = LoroConfig.model_validate(config.model_dump())
+    written = write_config_sections(output, validated, ["sandbox"])
+    _audit().write(
+        "config.sandbox_written",
+        path=str(written),
+        profile=profile,
+        backend=selected.backend,
+        require_os_enforcement=selected.require_os_enforcement,
+        network=selected.network,
+    )
+    console.print(f"Wrote sandbox config: {written}")
 
 
 @setup_app.command("audit")
@@ -1300,7 +1514,7 @@ def setup_audit(
     if audit.sink == "http" and not audit.http_url:
         raise typer.BadParameter("HTTP audit sink requires --http-url.")
     written = write_config_sections(output, config, ["audit"])
-    AuditLogger(previous_audit, _identity()).write(
+    AuditLogger(previous_audit, _identity(), safety_config=config.safety).write(
         "config.audit_written",
         path=str(written),
         sink=audit.sink,
@@ -1401,6 +1615,66 @@ def setup_mcp(
         server_count=len(config.mcp.servers),
     )
     console.print(f"Wrote MCP config: {written}")
+
+
+@setup_app.command("mcp-server")
+def setup_mcp_server(
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Enable Loro MCP server mode."),
+    ] = None,
+    transport: Annotated[
+        str | None,
+        typer.Option(help="Server transport: stdio or streamable_http."),
+    ] = None,
+    exports: Annotated[
+        str | None,
+        typer.Option(help="Comma-separated read-only Loro tools to export."),
+    ] = None,
+    port: Annotated[int | None, typer.Option(help="Loopback HTTP port.")] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Configure Loro's least-privilege MCP server role."""
+    wizard = all(value is None for value in (enabled, transport, exports, port))
+    config = load_config()
+    server = config.mcp.server
+    if wizard:
+        enabled = typer.confirm("Enable Loro MCP server mode?", default=server.enabled)
+        transport = typer.prompt("Server transport", default=server.transport)
+        exports = typer.prompt(
+            "Read-only exports (comma-separated)", default=",".join(server.export_tools)
+        )
+        port = typer.prompt("Loopback HTTP port", default=server.port, type=int)
+    if enabled is not None:
+        server.enabled = enabled
+    if transport is not None:
+        if transport not in {"stdio", "streamable_http"}:
+            raise typer.BadParameter("MCP server transport must be stdio or streamable_http.")
+        server.transport = transport  # type: ignore[assignment]
+    if exports is not None:
+        requested = _comma_separated(exports)
+        from loro.mcp.server import LoroMCPServerCatalog
+
+        unsupported = sorted(set(requested) - LoroMCPServerCatalog.ALLOWED_TOOLS)
+        if unsupported:
+            raise typer.BadParameter("Unsupported MCP exports: " + ", ".join(unsupported))
+        server.export_tools = requested
+    if port is not None:
+        if port < 1 or port > 65535:
+            raise typer.BadParameter("MCP server port must be between 1 and 65535.")
+        server.port = port
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.mcp_server_written",
+        path=str(written),
+        enabled=server.enabled,
+        transport=server.transport,
+        exports=server.export_tools,
+    )
+    console.print(f"Wrote MCP server config: {written}")
 
 
 @identity_app.command("show")
@@ -1993,6 +2267,29 @@ def mcp_listen(
     console.print_json(data=result)
 
 
+@mcp_app.command("server-inspect")
+def mcp_server_inspect() -> None:
+    """Show the exact least-privilege surface exported by Loro server mode."""
+    from loro.mcp.server import LoroMCPServerCatalog
+
+    try:
+        catalog = LoroMCPServerCatalog(load_config())
+    except (ValueError, RuntimeError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=catalog.manifest())
+
+
+@mcp_app.command("serve")
+def mcp_serve() -> None:
+    """Run Loro as an MCP server using the configured transport and export allowlist."""
+    from loro.mcp.server import MCPServerModeError, run_mcp_server
+
+    try:
+        run_mcp_server(load_config())
+    except MCPServerModeError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
 @mcp_app.command("resources")
 def mcp_resources(
     server_id: Annotated[str, typer.Argument(help="Configured MCP server id.")],
@@ -2081,6 +2378,7 @@ def doctor() -> None:
     )
     console.print(f"Local memory: {'enabled' if config.memory.local.enabled else 'disabled'}")
     console.print(f"Shared memory: {'enabled' if config.memory.shared.enabled else 'disabled'}")
+    console.print(f"Shared memory tenant isolation: {config.memory.shared.tenant_isolation}")
     console.print(f"Polaris: {'enabled' if config.polaris.enabled else 'disabled'}")
     console.print(
         f"MCP: {'enabled' if config.mcp.enabled else 'disabled'} "
@@ -2109,7 +2407,8 @@ def doctor() -> None:
 @memory_app.command("list")
 def memory_list() -> None:
     """List local memories."""
-    store = LocalMemoryStore.from_config(load_config().memory.local)
+    config = load_config()
+    store = LocalMemoryStore.from_config(config.memory.local, config.safety)
     memories = store.list()
     if not memories:
         console.print("No local memories yet.")
@@ -2124,7 +2423,8 @@ def memory_list() -> None:
 @memory_app.command("search")
 def memory_search(query: Annotated[str, typer.Argument(help="Search query.")]) -> None:
     """Search local memories."""
-    store = LocalMemoryStore.from_config(load_config().memory.local)
+    config = load_config()
+    store = LocalMemoryStore.from_config(config.memory.local, config.safety)
     memories = store.search(query)
     if not memories:
         console.print("No matching local memories.")
@@ -2148,7 +2448,7 @@ def memory_shared_search(
 ) -> None:
     """Search shared enterprise memory or render the backend search statement."""
     config = load_config()
-    resolved_tenant = tenant_id or _identity().tenant
+    resolved_tenant = _shared_memory_tenant(config, tenant_id)
     result = search_shared_memories(
         config,
         query=query,
@@ -2259,16 +2559,18 @@ def memory_accept_proposal(
     if proposal is None:
         raise typer.BadParameter(f"Unknown memory proposal id: {proposal_id}")
     if proposal.target == "shared":
+        _enforce_safe_content(proposal.content, context="memory.shared.proposal")
+        resolved_tenant = _shared_memory_tenant(config, tenant_id)
         draft = create_shared_memory_draft(
             content=proposal.content,
-            tenant_id=tenant_id or identity.tenant,
+            tenant_id=resolved_tenant,
             scope_type=scope_type,
             scope_key=scope_key,
             memory_type="fact",
             classification="public-internal",
             created_by=created_by or identity.subject,
         )
-        SharedMemoryDraftStore(Path(config.memory.local.path)).stage(draft)
+        _shared_draft_store(config).stage(draft)
         store.update_status(proposal_id, "accepted_as_shared_draft")
         _audit().write(
             "memory.proposal_accepted",
@@ -2278,7 +2580,9 @@ def memory_accept_proposal(
         )
         console.print(f"Accepted proposal as shared memory draft: {draft.draft_id}")
         return
-    memory = LocalMemoryStore.from_config(config.memory.local).remember(proposal.content)
+    memory = LocalMemoryStore.from_config(config.memory.local, config.safety).remember(
+        proposal.content
+    )
     store.update_status(proposal_id, "accepted")
     _audit().write(
         "memory.proposal_accepted",
@@ -2299,8 +2603,9 @@ def remember_local(
 ) -> None:
     """Explicitly write a local memory."""
     _enforce_safe_content(content, context="memory.local", allow_sensitive=allow_sensitive)
-    store = LocalMemoryStore.from_config(load_config().memory.local)
-    memory = store.remember(content)
+    config = load_config()
+    store = LocalMemoryStore.from_config(config.memory.local, config.safety)
+    memory = store.remember(content, allow_sensitive=allow_sensitive)
     _audit().write(
         "memory.local_written",
         memory_id=memory.memory_id,
@@ -2313,7 +2618,8 @@ def remember_local(
 @memory_app.command("drafts")
 def memory_drafts() -> None:
     """List staged shared memory drafts."""
-    store = SharedMemoryDraftStore(Path(load_config().memory.local.path))
+    config = load_config()
+    store = _shared_draft_store(config)
     drafts = store.list()
     if not drafts:
         console.print("No shared memory drafts yet.")
@@ -2403,10 +2709,11 @@ def memory_commit_draft(
 ) -> None:
     """Render or execute an explicit shared memory draft commit."""
     config = load_config()
-    draft_store = SharedMemoryDraftStore(Path(config.memory.local.path))
+    draft_store = _shared_draft_store(config)
     draft = draft_store.get(draft_id)
     if draft is None:
         raise typer.BadParameter(f"Unknown shared memory draft id: {draft_id}")
+    _enforce_safe_content(draft.content, context="memory.shared.commit")
 
     if execute:
         resource = memory_resource(
@@ -2501,6 +2808,7 @@ def remember(
     ] = False,
 ) -> None:
     """Explicitly write a local or shared memory."""
+    config = load_config()
     _enforce_safe_content(
         content,
         context="memory.shared" if shared else "memory.local",
@@ -2508,16 +2816,17 @@ def remember(
     )
     if shared:
         identity = _identity()
+        resolved_tenant = _shared_memory_tenant(config, tenant_id)
         draft = create_shared_memory_draft(
             content=content,
-            tenant_id=tenant_id or identity.tenant,
+            tenant_id=resolved_tenant,
             scope_type=scope_type,
             scope_key=scope_key,
             memory_type=memory_type,
             classification=classification,
             created_by=created_by or identity.subject,
         )
-        SharedMemoryDraftStore(Path(load_config().memory.local.path)).stage(draft)
+        _shared_draft_store(config).stage(draft)
         _audit().write(
             "memory.shared_draft_staged",
             draft_id=draft.draft_id,
@@ -2532,8 +2841,8 @@ def remember(
         )
         return
     if local or not shared:
-        store = LocalMemoryStore.from_config(load_config().memory.local)
-        memory = store.remember(content)
+        store = LocalMemoryStore.from_config(config.memory.local, config.safety)
+        memory = store.remember(content, allow_sensitive=allow_sensitive)
         _audit().write(
             "memory.local_written",
             memory_id=memory.memory_id,
@@ -3023,12 +3332,19 @@ def shell_run(
         non_interactive_approved=yes,
         resource=resource,
     )
-    result = ShellTools().run(args, timeout=timeout)
+    config = load_config()
+    result = ShellTools(
+        config.sandbox,
+        workspace_roots=config.permissions.workspace_roots,
+    ).run(args, timeout=timeout)
     _audit().write(
         "shell.executed",
         args=result.args,
         returncode=result.returncode,
         timeout=timeout,
+        sandbox_profile=result.profile,
+        sandbox_os_enforced=result.os_enforced,
+        output_truncated=result.output_truncated,
     )
     if result.stdout:
         console.print(result.stdout)
@@ -3037,28 +3353,77 @@ def shell_run(
     raise typer.Exit(code=result.returncode)
 
 
+@sandbox_app.command("doctor")
+def sandbox_doctor() -> None:
+    """Report whether configured subprocess isolation profiles can be enforced."""
+    config = load_config()
+    report = SandboxRunner(
+        config.sandbox,
+        workspace_roots=config.permissions.workspace_roots,
+    ).diagnose()
+    console.print_json(data=report)
+    profiles = report["profiles"]
+    if isinstance(profiles, dict) and not all(
+        isinstance(profile, dict) and profile.get("ready") for profile in profiles.values()
+    ):
+        raise typer.Exit(code=1)
+
+
 @safety_app.command("scan")
 def safety_scan(
     text: Annotated[str | None, typer.Argument(help="Text to scan.")] = None,
     file: Annotated[Path | None, typer.Option("--file", "-f", help="File to scan.")] = None,
+    surface: Annotated[
+        str, typer.Option("--surface", help="Managed content surface to evaluate.")
+    ] = "artifact",
 ) -> None:
-    """Scan text or a file for obvious secrets."""
+    """Classify content and evaluate its managed data-protection policy."""
     if text is None and file is None:
         raise typer.BadParameter("Provide text or --file.")
     content = file.read_text(encoding="utf-8") if file else text or ""
-    findings = _safety().scan(content)
+    if surface not in load_config().safety.surfaces:
+        raise typer.BadParameter(f"Unknown data-protection surface: {surface}")
+    decision = _data_protection().evaluate(content, surface)  # type: ignore[arg-type]
+    findings = list(decision.findings)
     _audit().write(
         "safety.scan",
         source=str(file) if file else "argument",
         finding_count=len(findings),
         finding_kinds=sorted({finding.kind for finding in findings}),
+        data_protection=decision.metadata(),
+    )
+    console.print(
+        f"Classification: {decision.classification}; action: {decision.action}; "
+        f"surface: {decision.surface}."
     )
     if not findings:
-        console.print("No obvious secrets detected.")
+        console.print("No sensitive patterns detected.")
+        if decision.blocked:
+            raise typer.Exit(code=1)
         return
     for finding in findings:
-        console.print(f"- {finding.kind}: {finding.snippet} ({finding.start}-{finding.end})")
+        console.print(
+            f"- {finding.kind}: {finding.snippet} ({finding.start}-{finding.end})",
+            markup=False,
+        )
     raise typer.Exit(code=1)
+
+
+@safety_app.command("doctor")
+def safety_doctor() -> None:
+    """Report the effective managed data-protection policy."""
+    config = load_config().safety
+    console.print_json(
+        data={
+            "enabled": config.enabled,
+            "default_classification": config.default_classification,
+            "allow_sensitive_override": config.allow_sensitive_override,
+            "custom_pattern_count": len(config.custom_patterns),
+            "surfaces": {
+                name: policy.model_dump() for name, policy in sorted(config.surfaces.items())
+            },
+        }
+    )
 
 
 @providers_app.command("list")
@@ -3228,6 +3593,243 @@ def sessions_show(session_id: Annotated[str, typer.Argument(help="Session ID.")]
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print_json(data=record)
+
+
+@sessions_app.command("send")
+def sessions_send(
+    sender_session_id: Annotated[str, typer.Argument(help="Sending session ID.")],
+    recipient_session_id: Annotated[str, typer.Argument(help="Recipient session ID.")],
+    content: Annotated[str, typer.Argument(help="Coordination message.")],
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Use an allowed non-interactive approval.")
+    ] = False,
+    allow_sensitive: Annotated[
+        bool, typer.Option("--allow-sensitive", help="Allow policy-approved sensitive content.")
+    ] = False,
+) -> None:
+    """Queue an untrusted, non-authoritative message for another session."""
+    _enforce_safe_content(content, "session message", allow_sensitive)
+    resource = session_message_resource(
+        operation="send",
+        sender_session_id=sender_session_id,
+        recipient_session_id=recipient_session_id,
+        message_digest=message_digest(content),
+    )
+    _authorize_cli_action(
+        tool="session_message",
+        action="send",
+        target=resource.target,
+        arguments={
+            "sender_session_id": sender_session_id,
+            "recipient_session_id": recipient_session_id,
+            "content_digest": message_digest(content),
+        },
+        risk_reason="Send untrusted coordination context to another Loro session.",
+        non_interactive_approved=yes,
+        resource=resource,
+    )
+    try:
+        config = load_config()
+        message = SessionMailbox(config.sessions, config.safety).send(
+            sender_session_id=sender_session_id,
+            recipient_session_id=recipient_session_id,
+            content=content,
+            allow_sensitive=allow_sensitive,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "session.message_queued",
+        message_id=message.message_id,
+        sender_session_id=sender_session_id,
+        recipient_session_id=recipient_session_id,
+        content_digest=message_digest(content),
+        carries_user_authority=False,
+    )
+    console.print_json(data=message.to_payload())
+
+
+@sessions_app.command("inbox")
+def sessions_inbox(
+    session_id: Annotated[str, typer.Argument(help="Recipient session ID.")],
+    include_acknowledged: Annotated[
+        bool, typer.Option("--all", help="Include acknowledged messages.")
+    ] = False,
+) -> None:
+    """Inspect queued and delivered cross-session messages."""
+    messages = SessionMailbox(load_config().sessions).list(
+        session_id, include_acknowledged=include_acknowledged
+    )
+    console.print_json(data=[message.to_payload() for message in messages])
+
+
+@sessions_app.command("ack")
+def sessions_ack(
+    session_id: Annotated[str, typer.Argument(help="Recipient session ID.")],
+    message_id: Annotated[str, typer.Argument(help="Delivered message ID.")],
+) -> None:
+    """Acknowledge a delivered cross-session message."""
+    try:
+        message = SessionMailbox(load_config().sessions).acknowledge(session_id, message_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=message.to_payload())
+
+
+@sessions_app.command("wake")
+def sessions_wake(
+    session_id: Annotated[str, typer.Argument(help="Saved recipient session ID.")],
+    prompt: Annotated[
+        str,
+        typer.Option(help="Trusted user instruction accompanying queued messages."),
+    ] = "Process the queued coordination messages and continue safely.",
+) -> None:
+    """Explicitly resume a stopped session and deliver its queued messages."""
+    try:
+        result = _runtime().run(prompt, mode="run", session_id=session_id)
+    except FileNotFoundError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("session.woken", session_id=session_id, stop_reason=result.stop_reason)
+    console.print(result.summary)
+
+
+@skills_app.command("list")
+def skills_list() -> None:
+    """List validated skill metadata without loading instruction bodies."""
+    try:
+        skills = SkillRegistry(load_config().skills).discover()
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=[skill.to_payload() for skill in skills])
+
+
+@skills_app.command("show")
+def skills_show(name: Annotated[str, typer.Argument(help="Skill name.")]) -> None:
+    """Load one enabled skill after validation and show its provenance."""
+    try:
+        skill = SkillRegistry(load_config().skills).load(name)
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data={**skill.metadata.to_payload(), "instructions": skill.instructions})
+
+
+@skills_app.command("validate")
+def skills_validate(
+    source: Annotated[Path, typer.Argument(help="Skill package directory.")],
+) -> None:
+    """Validate a skill package and print its review digest."""
+    config = load_config().skills.model_copy(
+        update={"project_paths": [str(source.parent)], "allow_user": False}
+    )
+    try:
+        skill = next(
+            item
+            for item in SkillRegistry(config).discover()
+            if item.path.resolve() == source.resolve()
+        )
+    except (SkillError, StopIteration) as error:
+        raise typer.BadParameter(str(error) or f"Skill package not found: {source}") from error
+    console.print_json(data=skill.to_payload())
+
+
+def _set_skill_state(name: str, state: str) -> None:
+    try:
+        skill = SkillRegistry(load_config().skills).set_state(name, state)  # type: ignore[arg-type]
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("skill.state_changed", name=name, state=state, digest=skill.digest)
+    console.print_json(data=skill.to_payload())
+
+
+@skills_app.command("enable")
+def skills_enable(name: Annotated[str, typer.Argument(help="Skill name.")]) -> None:
+    """Enable a validated skill package."""
+    _set_skill_state(name, "enabled")
+
+
+@skills_app.command("disable")
+def skills_disable(name: Annotated[str, typer.Argument(help="Skill name.")]) -> None:
+    """Disable a skill without removing its package."""
+    _set_skill_state(name, "disabled")
+
+
+@skills_app.command("quarantine")
+def skills_quarantine(name: Annotated[str, typer.Argument(help="Skill name.")]) -> None:
+    """Quarantine a skill until its digest is reviewed again."""
+    _set_skill_state(name, "quarantined")
+
+
+@skills_app.command("install")
+def skills_install(
+    source: Annotated[Path, typer.Argument(help="Reviewed local skill package.")],
+    expected_digest: Annotated[
+        str, typer.Option("--expected-digest", help="Digest printed by skills validate.")
+    ],
+    scope: Annotated[str, typer.Option(help="Install scope: user or project.")] = "project",
+) -> None:
+    """Install a local package only when its reviewed digest matches."""
+    if scope not in {"user", "project"}:
+        raise typer.BadParameter("Skill scope must be user or project.")
+    try:
+        skill = SkillRegistry(load_config().skills).install(
+            source,
+            expected_digest=expected_digest,
+            scope=scope,  # type: ignore[arg-type]
+        )
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "skill.installed", name=skill.name, scope=scope, digest=skill.digest, source=str(source)
+    )
+    console.print_json(data=skill.to_payload())
+
+
+@skills_app.command("remove")
+def skills_remove(
+    name: Annotated[str, typer.Argument(help="Skill name.")],
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm package removal.")] = False,
+) -> None:
+    """Remove a user or project skill package."""
+    if not yes:
+        raise typer.BadParameter("Skill removal requires --yes.")
+    try:
+        removed = SkillRegistry(load_config().skills).remove(name)
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("skill.removed", name=name, path=str(removed))
+    console.print(f"Removed: {removed}")
+
+
+@skills_app.command("propose")
+def skills_propose(
+    source: Annotated[Path, typer.Argument(help="Skill package directory.")],
+) -> None:
+    """Stage an immutable skill proposal for explicit review."""
+    try:
+        proposal = SkillRegistry(load_config().skills).propose(source)
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("skill.proposed", proposal_id=proposal.name, source=str(source))
+    console.print_json(data={"proposal_id": proposal.name, "path": str(proposal)})
+
+
+@skills_app.command("review")
+def skills_review(
+    proposal_id: Annotated[str, typer.Argument(help="Proposal ID.")],
+    accept: Annotated[
+        bool, typer.Option("--accept", help="Install the reviewed proposal.")
+    ] = False,
+    reject: Annotated[bool, typer.Option("--reject", help="Reject the proposal.")] = False,
+) -> None:
+    """Accept or reject a staged skill proposal exactly once."""
+    if accept == reject:
+        raise typer.BadParameter("Choose exactly one of --accept or --reject.")
+    try:
+        result = SkillRegistry(load_config().skills).review(proposal_id, accept=accept)
+    except SkillError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("skill.reviewed", proposal_id=proposal_id, accepted=accept)
+    console.print_json(data=result)
 
 
 def _comma_separated(value: str) -> list[str]:

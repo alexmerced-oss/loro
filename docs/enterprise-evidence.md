@@ -43,14 +43,14 @@ Evidence states:
 
 | ID | Exit item | Owner | Status | Evidence and remaining proof |
 | --- | --- | --- | --- | --- |
-| E2-01 | Named sandbox profiles enforce workspace, environment, network, time, and output limits | Runtime/security (TBD) | Planned | Sandbox implementation and escape tests TBD. |
-| E2-02 | Provider credentials are isolated from tools | Runtime/security (TBD) | Planned | Subprocess environment allowlist and leak tests TBD. |
-| E2-03 | Classification/DLP controls cover all content surfaces | Security/privacy (TBD) | Partial | `src/loro/safety.py` and safety tests detect a small pattern set; managed DLP interface and flow tests TBD. |
-| E2-04 | Tenant boundaries enforced below CLI/prompt layer | Memory/data (TBD) | Partial | Tenant-aware schemas/filtering and adapter tests exist; trusted identity binding, database controls, and cross-tenant suite TBD. |
+| E2-01 | Named sandbox profiles enforce workspace, environment, network, time, and output limits | Runtime/security (TBD) | Partial | `src/loro/sandbox.py`, subprocess integrations, adversarial tests, CLI diagnostics, and [sandbox profiles](sandbox.md) cover shell, Git, Polaris, MCP stdio, and Skill execution; production Bubblewrap escape evidence remains. |
+| E2-02 | Provider credentials are isolated from tools | Runtime/security (TBD) | Partial | Every current tool subprocess family uses an allowlist-built environment; MCP adds an SDK-default scrubber and explicit-server-variable tests. Deployment inspection and production evidence remain. |
+| E2-03 | Classification/DLP controls cover all content surfaces | Security/privacy (TBD) | Partial | `src/loro/data_protection.py`, `tests/test_data_protection.py`, runtime/tool/storage integrations, CLI diagnostics, and [Managed Data Protection](data-protection.md) provide the managed decision contract, custom/pluggable scanners, ceilings, blocking, redaction, and nested audit metadata. Corporate scanner integration, provider-specific flow approval, and production policy evidence remain TBD. |
+| E2-04 | Tenant boundaries enforced below CLI/prompt layer | Memory/data (TBD) | Partial | Managed `identity` isolation binds operations, adapters, and local drafts to trusted identity; Postgres renders forced RLS/session context; Iceberg pushes tenant/status filters into scans; negative tests cover caller and adapter mismatch. Production database roles, Polaris authorization, and live cross-tenant evidence remain TBD. |
 | E2-05 | Memory retention, correction, deletion, hold, and provenance work | Memory/data (TBD) | Partial | Schema contains provenance/status/expiry fields; lifecycle execution and tests TBD. |
 | E2-06 | Encryption and key ownership documented and verified | Operations/security (TBD) | External | TLS/storage/KMS configuration and verification report TBD. |
-| E2-07 | Adversarial injection, poisoning, symlink, archive, and output tests pass | Security/runtime (TBD) | Planned | Adversarial suite and production-like result TBD. |
-| E2-08 | MCP and Agent Skills cannot bypass sandbox, credentials, policy, or approval | Security/runtime (TBD) | Partial | MCP normalized policy, exact approval, stdio environment allowlisting, managed host/auth controls, inert unknown extensions, task-input approval, audit metadata, and model self-approval tests exist; malicious-server fixtures, Agent Skills, sandbox proof, and enterprise review remain. See [MCP](mcp.md). |
+| E2-07 | Adversarial injection, poisoning, symlink, archive, and output tests pass | Security/runtime (TBD) | Partial | Workspace/symlink, secret-environment, executable, timeout, and output-limit tests exist; injection, archive, memory poisoning, and production-like escape evidence remain. |
+| E2-08 | MCP and Agent Skills cannot bypass sandbox, credentials, policy, or approval | Security/runtime (TBD) | Partial | MCP normalized policy, exact approval, least-privilege exports, sandboxed stdio, environment scrubbing, managed host/auth controls, and inert extensions exist. Agent Skills add validation/digests, script denial by default, model self-approval rejection, and named script profiles; production proof and enterprise review remain. See [MCP](mcp.md), [Agent Skills](skills.md), and [sandbox profiles](sandbox.md). |
 
 ## Phase 3: Audit, Operations, And Reliability
 
@@ -75,7 +75,7 @@ Evidence states:
 | E4-05 | Dependency, secret, license, and static scans follow triage policy | Release/security (TBD) | Planned | CI jobs, policy, SLA, and exception register TBD. |
 | E4-06 | Release has SBOM, provenance, signature, and verification | Release (TBD) | Planned | Build/Twine checklist exists; signed artifact evidence TBD. |
 | E4-07 | Upgrade, rollback, migration, support, and disclosure policies work | Release/operations (TBD) | Partial | Release checklist exists; tested upgrade/rollback and disclosure policy TBD. |
-| E4-08 | Advertised MCP revisions and Agent Skills pass conformance/interoperability | Release/runtime (TBD) | Planned | Official MCP conformance matrix, dual-era fixtures, Agent Skills validation, and published support matrix TBD. |
+| E4-08 | Advertised MCP revisions and Agent Skills pass conformance/interoperability | Release/runtime (TBD) | Partial | Dual-era SDK fixtures, server/client conformance workflow, Agent Skills validation tests, and [support matrix](mcp-support-matrix.md) exist. Local runner `0.1.16` scenarios and `skills-ref==0.1.1` validation passed on August 9, 2026; a green protected workflow artifact remains required for each release commit. |
 
 ## Phase 5: Pilot And General Availability
 

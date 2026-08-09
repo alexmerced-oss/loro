@@ -85,9 +85,7 @@ class BaseModelClient:
         except httpx.RequestError as error:
             raise ModelProviderError(f"{self.config.provider} request failed: {error}") from error
         except ValueError as error:
-            raise ModelProviderError(
-                f"{self.config.provider} returned malformed JSON."
-            ) from error
+            raise ModelProviderError(f"{self.config.provider} returned malformed JSON.") from error
         if not isinstance(payload, dict):
             raise ModelProviderError(f"{self.config.provider} returned a non-object JSON payload.")
         return payload
@@ -234,9 +232,7 @@ class GeminiClient(BaseModelClient):
             ) from error
         if not isinstance(parts, list):
             raise ModelProviderError("gemini response did not include a parts list.")
-        content = "".join(
-            part.get("text", "") for part in parts if isinstance(part, dict)
-        )
+        content = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
         if not content and not any(
             isinstance(part, dict) and "functionCall" in part for part in parts
         ):

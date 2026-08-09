@@ -205,9 +205,7 @@ def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeyp
     )
     monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
 
-    result = AgentRuntime(_runtime_config(tmp_path, max_steps=2)).run(
-        "Write the file.", mode="run"
-    )
+    result = AgentRuntime(_runtime_config(tmp_path, max_steps=2)).run("Write the file.", mode="run")
 
     assert not target.exists()
     assert len(result.tool_executions) == 1
@@ -221,9 +219,7 @@ def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeyp
     assert "approval.granted" not in events
 
 
-def test_runtime_fails_closed_after_buffering_required_audit_event(
-    tmp_path, monkeypatch
-) -> None:
+def test_runtime_fails_closed_after_buffering_required_audit_event(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["This response must not be reached."])
 
     def fail_delivery(self, payload) -> None:
@@ -243,6 +239,56 @@ def test_runtime_fails_closed_after_buffering_required_audit_event(
     buffered = (tmp_path / "audit-buffer.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(buffered) == 1
     assert json.loads(buffered[0])["event_type"] == "runtime.task_started"
+    assert client.messages == []
+
+
+def test_runtime_redacts_model_output_before_session_persistence(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["token=abcdefghijk"])
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    config = _runtime_config(tmp_path, max_steps=1)
+
+    result = AgentRuntime(config).run("Give me a status.", mode="run")
+
+    assert "token=abcdefghijk" not in result.summary
+    assert "[redacted]" in result.summary
+    session = SessionStore(config.sessions).get(result.session_id)
+    assert "token=abcdefghijk" not in json.dumps(session)
+
+
+def test_runtime_blocks_restricted_recalled_memory_before_provider(tmp_path, monkeypatch) -> None:
+    client = SequencedModelClient(["This response must not be reached."])
+    shared_record = SharedMemorySearchRecord(
+        memory_id="mem-secret",
+        tenant_id="default",
+        scope_type="team",
+        scope_key="platform",
+        memory_type="fact",
+        content="password=abcdefghijk",
+        summary="Legacy imported record",
+        classification="public-internal",
+        created_by="legacy-import",
+        created_at="2026-07-14T00:00:00+00:00",
+        status="active",
+        backend="postgres",
+    )
+
+    def fake_search(config, *, query, tenant_id, limit, execute):
+        return SharedMemorySearchResult(
+            backend="postgres",
+            query=query,
+            tenant_id=tenant_id,
+            executed=True,
+            records=[shared_record],
+        )
+
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
+    config = _runtime_config(tmp_path, max_steps=1)
+    config.memory.shared.enabled = True
+
+    with pytest.raises(ValueError, match="model_input"):
+        AgentRuntime(config).run("Prepare a status.", mode="run")
+
     assert client.messages == []
 
 

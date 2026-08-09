@@ -25,8 +25,11 @@ class IcebergSharedMemoryStore:
     a Polaris-governed REST catalog or another governed Iceberg catalog.
     """
 
-    def __init__(self, config: SharedMemoryConfig) -> None:
+    def __init__(
+        self, config: SharedMemoryConfig, *, authorized_tenant_id: str | None = None
+    ) -> None:
         self.config = config
+        self.authorized_tenant_id = authorized_tenant_id
         self._validate_identifier(config.iceberg_namespace, "iceberg_namespace")
         self._validate_identifier(config.iceberg_table, "iceberg_table")
 
@@ -82,6 +85,7 @@ PARTITIONED BY (tenant_id, event_type);
 """.strip()
 
     def render_insert(self, draft: SharedMemoryDraft) -> SharedMemoryStatement:
+        self._authorize_tenant(draft.tenant_id)
         memory_id = str(uuid4())
         event_id = str(uuid4())
         sql = f"""
@@ -173,6 +177,7 @@ VALUES (
         query: str,
         limit: int = 20,
     ) -> SharedMemoryStatement:
+        self._authorize_tenant(tenant_id)
         sql = f"""
 SELECT
   memory_id,
@@ -200,6 +205,7 @@ LIMIT :limit;
 
     def check(self) -> SharedMemoryBackendCheck:
         messages = [
+            f"Tenant isolation: {self.config.tenant_isolation}",
             f"Iceberg catalog: {self.config.iceberg_catalog_name}",
             f"Iceberg memory table: {self.memory_table}",
             f"Iceberg event table: {self.events_table}",
@@ -208,8 +214,7 @@ LIMIT :limit;
         catalog_props = self._catalog_properties()
         if catalog_props:
             messages.append(
-                "Found env-backed Iceberg catalog properties: "
-                + ", ".join(sorted(catalog_props))
+                "Found env-backed Iceberg catalog properties: " + ", ".join(sorted(catalog_props))
             )
         else:
             messages.append(
@@ -231,6 +236,7 @@ LIMIT :limit;
         )
 
     def commit_draft(self, draft: SharedMemoryDraft) -> None:
+        self._authorize_tenant(draft.tenant_id)
         try:
             import pyarrow as pa
         except ModuleNotFoundError as error:
@@ -283,13 +289,16 @@ LIMIT :limit;
         query: str,
         limit: int = 20,
     ) -> list[SharedMemorySearchRecord]:
+        self._authorize_tenant(tenant_id)
         try:
             import pyarrow as pa
         except ModuleNotFoundError as error:
             raise RuntimeError("pyarrow is required for Iceberg shared memory search.") from error
         catalog = self._load_catalog()
         table = catalog.load_table(self.memory_table)
+        escaped_tenant = tenant_id.replace("'", "''")
         arrow_table = table.scan(
+            row_filter=f"tenant_id = '{escaped_tenant}' AND status = 'active'",
             selected_fields=(
                 "memory_id",
                 "tenant_id",
@@ -302,7 +311,7 @@ LIMIT :limit;
                 "created_by",
                 "created_at",
                 "status",
-            )
+            ),
         ).to_arrow()
         if not isinstance(arrow_table, pa.Table):
             raise RuntimeError("PyIceberg search did not return a PyArrow table.")
@@ -336,6 +345,14 @@ LIMIT :limit;
                 )
             )
         return records
+
+    def _authorize_tenant(self, tenant_id: str) -> None:
+        if self.config.tenant_isolation != "identity":
+            return
+        if not self.authorized_tenant_id:
+            raise PermissionError("Identity tenant is required for shared-memory access.")
+        if tenant_id != self.authorized_tenant_id:
+            raise PermissionError(f"Cross-tenant shared-memory access denied: {tenant_id}")
 
     def _load_catalog(self) -> Any:
         try:

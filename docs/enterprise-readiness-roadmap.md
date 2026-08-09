@@ -22,11 +22,13 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Permissions | `allow` / `ask` / `deny`, normalized structured rules, identity-bound interactive approval records | Partial; signed policy artifacts and security review missing |
 | Audit | Versioned JSONL/HTTP events, retry, bounded buffer, doctor/flush | Partial; destination immutability and production evidence missing |
 | Identity | Typed local/config/environment context, managed required fields, audit/session propagation | Foundation implemented; corporate assertion verification and authorization binding missing |
-| Isolation | Tool-level policy and working-directory boundaries | Partial; enforceable sandbox profiles missing |
-| Shared memory | Tenant-aware Postgres/Iceberg schema, proposals, explicit commits, citations | Implemented; isolation and lifecycle proof needed |
+| Isolation | Named profiles cover shell, Git, Polaris, MCP stdio, and Skill scripts with minimized environments and optional fail-closed Bubblewrap | Partial; production escape and supported-platform proof missing |
+| Data protection | Managed classification ceilings, pluggable/custom scanners, per-surface allowlists, blocking/redaction, and recursive audit metadata | Partial; corporate DLP/provider approval and production evidence missing |
+| Shared memory | Identity-bound operations/drafts, Postgres RLS, Iceberg filter pushdown, explicit commits, citations | Partial; production isolation and lifecycle proof needed |
 | Governed data | Read-only Polaris allowlist and Iceberg integration | MVP complete; authorization evidence and production tests needed |
 | Providers | Multiple adapters, streaming, normalized errors, smoke tests | MVP complete; gateway, resilience, and spend controls needed |
-| MCP and skills | Dual-era client, transport/auth policy, inert extension registry, experimental Tasks, and bounded subscriptions implemented; Agent Skills absent | Partial; server mode, skills, sandbox proof, and conformance remain |
+| MCP and skills | Dual-era client/server, transport/auth policy, Tasks, bounded subscriptions, and digest-tracked Agent Skills | Partial; green conformance artifacts, sandbox proof, and enterprise review remain |
+| Session coordination | Durable cross-session mailbox with resume delivery, no-authority trust label, policy, approval, safety, and audit | Implemented locally; distributed operation and concurrency proof remain |
 | Delivery | Unit tests, coverage threshold, CI, manual integration workflow, release checklist | Healthy alpha; supply-chain and release evidence missing |
 
 The unit test suite is the current strongest quality signal. Postgres and Polaris integration
@@ -118,11 +120,15 @@ Deliverables:
 - Add policy validation and an explanation command that reports why a request is allowed,
   denied, or requires approval.
 - Fail closed when identity or managed policy cannot be loaded or validated.
+- Bind cross-session sends to exact sender/recipient identities and message digests. Relayed
+  content must never carry user authority, approval, or reusable session permissions.
 
 Exit gate:
 
 - Tests prove that the model cannot self-approve, mutate approval arguments, bypass a deny with
   path or command encoding, or reuse an expired approval.
+- Tests prove that a cross-session message cannot relay a permission request, self-approve its
+  send, or execute as a user-authored tool directive in the receiver.
 - Every consequential audit event includes actor, policy decision, policy version, approval
   identity, and normalized target.
 - Security review approves the permission model for a limited pilot.
@@ -267,16 +273,15 @@ The concrete near-term batch plan is tracked in
 
 The next implementation sequence should be:
 
-1. Complete Phase 0 ownership, threat modeling, data classification, and reference-deployment
-   decisions.
-2. Build the identity context and interactive approval flow together so approvals are
-   attributable from their first release.
-3. Add normalized resource scopes to permission decisions before expanding mutating tools.
-4. Implement the external audit-sink interface and versioned event schema early; later phases
-   depend on trustworthy evidence.
-5. Establish the Postgres-based end-to-end enterprise test path, then extend the same contract
+1. Assign accountable owners and obtain corporate review of the threat model, classification
+   mapping, provider flows, and reference deployment.
+2. Enforce tenant boundaries in storage authorization and add cross-tenant integration tests.
+3. Implement memory retention, correction, deletion, legal hold, and provenance lifecycle rules.
+4. Establish the Postgres-based end-to-end enterprise test path, then extend the same contract
    to Polaris/Iceberg.
-6. Add sandbox profiles and managed data-protection integration before broadening the pilot.
+5. Produce production Bubblewrap, corporate DLP, audit-destination, and protected MCP conformance
+   evidence.
+6. Add supply-chain controls, operational telemetry/runbooks, and pilot validation.
 
 ## Deferred Until After The First Enterprise Release
 

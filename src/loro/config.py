@@ -42,6 +42,120 @@ class RuntimeConfig(BaseModel):
     max_steps: int = 5
 
 
+class SandboxProfileConfig(BaseModel):
+    backend: Literal["process", "bubblewrap"] = "process"
+    require_os_enforcement: bool = False
+    network: Literal["inherit", "deny"] = "inherit"
+    allowed_executables: list[str] = Field(default_factory=lambda: ["*"])
+    environment_allowlist: list[str] = Field(
+        default_factory=lambda: ["PATH", "LANG", "LC_ALL", "TMPDIR"]
+    )
+    writable_roots: list[str] = Field(default_factory=list)
+    max_seconds: int = Field(default=120, ge=1, le=3600)
+    max_output_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+
+    @field_validator("environment_allowlist")
+    @classmethod
+    def _validate_environment_allowlist(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            name = value.strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+                raise ValueError(f"Invalid sandbox environment variable name: {value!r}")
+            if name not in normalized:
+                normalized.append(name)
+        return normalized
+
+    @field_validator("allowed_executables", "writable_roots")
+    @classmethod
+    def _normalize_nonempty_values(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
+def _default_sandbox_profiles() -> dict[str, SandboxProfileConfig]:
+    return {
+        "controlled-shell": SandboxProfileConfig(),
+        "git": SandboxProfileConfig(
+            allowed_executables=["git"],
+        ),
+        "governed-data": SandboxProfileConfig(
+            allowed_executables=["polaris"],
+            environment_allowlist=["PATH", "LANG", "LC_ALL"],
+            max_output_bytes=1_000_000,
+        ),
+        "mcp-stdio": SandboxProfileConfig(
+            environment_allowlist=["PATH", "LANG", "LC_ALL"],
+            max_output_bytes=1_000_000,
+        ),
+        "skill-script": SandboxProfileConfig(
+            allowed_executables=["python*", "sh"],
+            max_seconds=60,
+            max_output_bytes=250_000,
+        ),
+    }
+
+
+class SandboxConfig(BaseModel):
+    enabled: bool = True
+    shell_profile: str = "controlled-shell"
+    git_profile: str = "git"
+    governed_data_profile: str = "governed-data"
+    mcp_stdio_profile: str = "mcp-stdio"
+    skill_profile: str = "skill-script"
+    profiles: dict[str, SandboxProfileConfig] = Field(default_factory=_default_sandbox_profiles)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _supply_selected_default_profiles(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "profiles" not in value:
+            return value
+        data = dict(value)
+        profiles = dict(data.get("profiles") or {})
+        defaults = _default_sandbox_profiles()
+        for selected in (
+            str(data.get("shell_profile", "controlled-shell")),
+            str(data.get("git_profile", "git")),
+            str(data.get("governed_data_profile", "governed-data")),
+            str(data.get("mcp_stdio_profile", "mcp-stdio")),
+            str(data.get("skill_profile", "skill-script")),
+        ):
+            if selected not in profiles and selected in defaults:
+                profiles[selected] = defaults[selected]
+        data["profiles"] = profiles
+        return data
+
+    @field_validator(
+        "shell_profile",
+        "git_profile",
+        "governed_data_profile",
+        "mcp_stdio_profile",
+        "skill_profile",
+    )
+    @classmethod
+    def _normalize_profile_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Sandbox profile name cannot be empty.")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_selected_profiles(self) -> "SandboxConfig":
+        missing = {
+            name
+            for name in (
+                self.shell_profile,
+                self.git_profile,
+                self.governed_data_profile,
+                self.mcp_stdio_profile,
+                self.skill_profile,
+            )
+            if name not in self.profiles
+        }
+        if missing:
+            raise ValueError("Unknown sandbox profiles: " + ", ".join(sorted(missing)))
+        return self
+
+
 class IdentityConfig(BaseModel):
     subject: str | None = None
     display_name: str | None = None
@@ -65,6 +179,8 @@ class PermissionsConfig(BaseModel):
     shared_memory: PermissionDecision = "ask"
     governed_data: PermissionDecision = "allow"
     mcp: PermissionDecision = "ask"
+    skills: PermissionDecision = "ask"
+    session_message: PermissionDecision = "ask"
     web: PermissionDecision = "deny"
     workspace_roots: list[str] = Field(default_factory=list)
     rules: list["PermissionRuleConfig"] = Field(default_factory=list)
@@ -97,6 +213,7 @@ class LocalMemoryConfig(BaseModel):
 class SharedMemoryConfig(BaseModel):
     enabled: bool = False
     backend: Literal["postgres", "iceberg"] = "postgres"
+    tenant_isolation: Literal["disabled", "identity"] = "disabled"
     write_policy: str = "explicit_user_dictation_only"
     read_policy: str = "semantic_retrieval_with_citations"
     postgres_dsn_env: str = "LORO_POSTGRES_DSN"
@@ -286,6 +403,34 @@ class MCPExtensionConfig(BaseModel):
         return normalized
 
 
+class MCPServerModeConfig(BaseModel):
+    enabled: bool = False
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    host: str = "127.0.0.1"
+    port: int = Field(default=8766, ge=1, le=65535)
+    export_tools: list[str] = Field(default_factory=list)
+    export_resources: bool = True
+    export_prompts: bool = True
+
+    @field_validator("export_tools")
+    @classmethod
+    def _normalize_export_tools(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def _validate_listener(self) -> "MCPServerModeConfig":
+        if self.transport == "streamable_http" and self.host not in {
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        }:
+            raise ValueError(
+                "MCP server mode binds to loopback only; deploy behind an authenticated "
+                "enterprise gateway for remote access."
+            )
+        return self
+
+
 class MCPConfig(BaseModel):
     enabled: bool = False
     servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
@@ -305,6 +450,7 @@ class MCPConfig(BaseModel):
     task_store_path: str = ".loro/mcp-tasks"
     subscription_max_events: int = Field(default=100, ge=1, le=10_000)
     subscription_max_seconds: float = Field(default=30, gt=0, le=3600)
+    server: MCPServerModeConfig = Field(default_factory=MCPServerModeConfig)
 
     @field_validator("task_store_path")
     @classmethod
@@ -405,16 +551,118 @@ class AuditConfig(BaseModel):
 
 class SessionConfig(BaseModel):
     path: str = ".loro/sessions"
+    message_path: str = ".loro/session-messages"
+    max_message_bytes: int = Field(default=100_000, ge=1, le=10_000_000)
+    max_record_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
+
+
+class SkillsConfig(BaseModel):
+    enabled: bool = True
+    managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/skills"])
+    user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/skills"])
+    project_paths: list[str] = Field(default_factory=lambda: [".loro/skills"])
+    allow_user: bool = True
+    allow_project: bool = True
+    allow_scripts: bool = False
+    state_path: str = ".loro/skills-state.json"
+    proposal_path: str = ".loro/skill-proposals"
+    max_files: int = Field(default=100, ge=1, le=10_000)
+    max_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    max_instruction_bytes: int = Field(default=100_000, ge=256, le=10_000_000)
+    max_reference_depth: int = Field(default=4, ge=0, le=20)
+    max_active: int = Field(default=3, ge=1, le=20)
 
 
 class SafetyConfig(BaseModel):
     enabled: bool = True
     block_on_findings: bool = True
+    default_classification: Literal["public", "internal", "confidential", "restricted"] = "internal"
+    redaction_text: str = "[redacted]"
+    allow_sensitive_override: bool = True
+    surfaces: dict[str, "DataProtectionSurfaceConfig"] = Field(
+        default_factory=lambda: _default_data_protection_surfaces()
+    )
+    custom_patterns: list["DataProtectionPatternConfig"] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _supply_default_surfaces(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "surfaces" not in value:
+            return value
+        data = dict(value)
+        configured = dict(data.get("surfaces") or {})
+        surfaces = {
+            name: policy.model_dump()
+            for name, policy in _default_data_protection_surfaces().items()
+        }
+        surfaces.update(configured)
+        data["surfaces"] = surfaces
+        return data
+
+    @model_validator(mode="after")
+    def _validate_surface_names(self) -> "SafetyConfig":
+        expected = set(_default_data_protection_surfaces())
+        unknown = sorted(set(self.surfaces) - expected)
+        if unknown:
+            raise ValueError("Unknown data-protection surfaces: " + ", ".join(unknown))
+        return self
+
+
+class DataProtectionSurfaceConfig(BaseModel):
+    action: Literal["allow", "redact", "block"] = "block"
+    maximum_classification: Literal["public", "internal", "confidential", "restricted"] = (
+        "confidential"
+    )
+    allowed_finding_kinds: list[str] = Field(default_factory=list)
+
+    @field_validator("allowed_finding_kinds")
+    @classmethod
+    def _normalize_allowed_findings(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
+class DataProtectionPatternConfig(BaseModel):
+    kind: str
+    pattern: str
+    classification: Literal["public", "internal", "confidential", "restricted"] = "restricted"
+
+    @field_validator("kind", "pattern")
+    @classmethod
+    def _validate_nonempty(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Data-protection pattern fields cannot be empty.")
+        return normalized
+
+    @field_validator("pattern")
+    @classmethod
+    def _validate_pattern(cls, value: str) -> str:
+        try:
+            re.compile(value)
+        except re.error as error:
+            raise ValueError(f"Invalid data-protection regular expression: {error}") from error
+        return value
+
+
+def _default_data_protection_surfaces() -> dict[str, DataProtectionSurfaceConfig]:
+    persistence = DataProtectionSurfaceConfig(action="block")
+    return {
+        "model_input": DataProtectionSurfaceConfig(action="block"),
+        "model_output": DataProtectionSurfaceConfig(action="redact"),
+        "memory_local": persistence.model_copy(),
+        "memory_shared": persistence.model_copy(),
+        "artifact": persistence.model_copy(),
+        "session": persistence.model_copy(),
+        "session_message": persistence.model_copy(),
+        "tool_output": DataProtectionSurfaceConfig(action="redact"),
+        "audit": DataProtectionSurfaceConfig(action="redact", maximum_classification="internal"),
+    }
 
 
 class LoroConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     identity: IdentityConfig = Field(default_factory=IdentityConfig)
     approvals: ApprovalsConfig = Field(default_factory=ApprovalsConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
@@ -423,6 +671,7 @@ class LoroConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
 
@@ -463,6 +712,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"identity": config.identity.model_dump(exclude_none=True)}
     if section == "approvals":
         return {"approvals": config.approvals.model_dump(exclude_none=True)}
+    if section == "sandbox":
+        return {"sandbox": config.sandbox.model_dump(exclude_none=True)}
     if section == "memory.local":
         return {"memory": {"local": config.memory.local.model_dump(exclude_none=True)}}
     if section == "memory.shared":
@@ -473,6 +724,10 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"mcp": config.mcp.model_dump(exclude_none=True)}
     if section == "audit":
         return {"audit": config.audit.model_dump(exclude_none=True)}
+    if section == "skills":
+        return {"skills": config.skills.model_dump(exclude_none=True)}
+    if section == "safety":
+        return {"safety": config.safety.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")
 
 

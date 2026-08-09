@@ -9,8 +9,9 @@ python -m pip install "loro-agent[mcp]"
 ```
 
 OAuth, enterprise transport policy, a deny-by-default extension registry, experimental Tasks,
-and bounded modern subscriptions are implemented. Agent Skills, MCP Apps, legacy HTTP+SSE, and
-Loro MCP server mode remain in the [MCP And Agent Skills Roadmap](mcp-skills-roadmap.md).
+bounded modern subscriptions, and least-privilege Loro server mode are implemented. Agent
+Skills use the open filesystem format rather than an MCP extension. MCP Apps and legacy
+HTTP+SSE remain unsupported.
 
 ## Configure A Server
 
@@ -253,6 +254,33 @@ loro mcp listen tasks-server --resource-uri catalog://reports/Q2
 MCP Apps are intentionally unsupported. Loro will not render extension-provided applications
 until a sandboxed application host, capability policy, and adversarial test suite exist.
 
+## Loro MCP Server Mode
+
+Server mode exposes only an explicit subset of Loro's read-only file and Git tools. Shell,
+writes, Git mutations, local/shared memory, governed data, credentials, artifacts, and nested
+MCP calls cannot be exported.
+
+```bash
+loro setup mcp-server
+loro mcp server-inspect
+loro mcp serve
+```
+
+```toml
+[mcp.server]
+enabled = true
+transport = "stdio"
+host = "127.0.0.1"
+port = 8766
+export_tools = ["file.read", "file.search", "git.status", "git.diff", "git.show"]
+export_resources = true
+export_prompts = true
+```
+
+Streamable HTTP binds only to loopback. Put remote deployments behind a reviewed authenticated
+enterprise gateway; Loro does not treat network reachability as authentication. The same
+official SDK server handles modern stateless and classic initialized clients.
+
 ## Agent Runtime
 
 When MCP is enabled, Loro exposes protocol-neutral runtime tools:
@@ -313,5 +341,12 @@ implicit approval.
 - Official SDK in-process tests exercise both `auto` stateless and `legacy` handshake modes.
 - SDK adapter tests verify the Tasks extension claim and `Mcp-Name` task routing aliases.
 - stdio and Streamable HTTP use SDK-provided transports.
+- stdio commands are normalized through the selected sandbox profile. An `execve` launcher
+  removes environment defaults restored by the SDK, preserving only profile variables and the
+  server's explicit `env_allowlist` without placing secret values in argv.
 - `2024-11-05` remains a compatibility target; it is not yet an advertised conformance-tested
   combination.
+- The scheduled MCP Conformance workflow exercises explicit official server and client scenarios
+  for `2025-11-25`, plus official SDK interoperability for `2026-07-28`. The published runner has
+  no `2026-07-28` scenarios yet. See the
+  [support matrix](mcp-support-matrix.md); only green workflow artifacts count as release proof.

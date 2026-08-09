@@ -181,9 +181,7 @@ class ApprovalManager:
             raise ApprovalError("Non-interactive approvals are disabled by managed policy.")
         granted_at = now or datetime.now(UTC)
         ttl = (
-            self.config.session_ttl_seconds
-            if scope == "session"
-            else self.config.once_ttl_seconds
+            self.config.session_ttl_seconds if scope == "session" else self.config.once_ttl_seconds
         )
         record = ApprovalRecord(
             request_id=request.request_id,
@@ -298,8 +296,7 @@ def _redacted_value(key: str, value: Any) -> Any:
         return "[REDACTED]"
     if isinstance(value, Mapping):
         return {
-            str(item_key): _redacted_value(str(item_key), item)
-            for item_key, item in value.items()
+            str(item_key): _redacted_value(str(item_key), item) for item_key, item in value.items()
         }
     if isinstance(value, list | tuple):
         return [_redacted_value(key, item) for item in value]

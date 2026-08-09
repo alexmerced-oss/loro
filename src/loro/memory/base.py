@@ -51,8 +51,7 @@ class SharedMemorySearchRecord:
     @property
     def citation(self) -> str:
         return (
-            f"{self.backend}:{self.tenant_id}/{self.scope_type}/{self.scope_key}/"
-            f"{self.memory_id}"
+            f"{self.backend}:{self.tenant_id}/{self.scope_type}/{self.scope_key}/{self.memory_id}"
         )
 
 

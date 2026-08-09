@@ -90,9 +90,7 @@ def test_structured_filesystem_path_rule_is_case_sensitive(tmp_path: Path) -> No
         )
     )
 
-    result = engine.evaluate(
-        PermissionRequest(tool="edit", action="read file", resource=resource)
-    )
+    result = engine.evaluate(PermissionRequest(tool="edit", action="read file", resource=resource))
 
     assert result.decision == "deny"
     assert result.matched_rule is None

@@ -18,6 +18,9 @@ Current normalized resource kinds are:
 - `mcp`: operation, server id, transport, redacted endpoint, remote capability name, argument
   names, and a canonical argument digest. Raw MCP argument values are approval-bound but are
   not stored in the normalized target.
+- `session_message`: operation, sender and recipient session ids, content digest, and the
+  permanent `carries_user_authority = false` marker. Raw message content is not part of the
+  normalized target.
 
 Filesystem and Git paths use `Path.resolve(strict=False)`. Existing symlinks and parent
 segments are resolved before root enforcement and policy matching. Structured filesystem path
@@ -108,13 +111,20 @@ normalized resource. Explanation does not execute or approve the request.
 ## Security Boundaries
 
 - Resource normalization and policy evaluation do not replace an operating-system sandbox.
+  Shell and Skill subprocesses can additionally require the Bubblewrap backend; other process
+  families are not yet routed through it.
 - `strict=False` supports paths that will be created, but there remains a time-of-check/time-of-
   use window if another process can replace path components after authorization.
-- Shell policy sees exact argument boundaries and rejects NUL bytes, but subprocess environment,
-  network, output, and runtime isolation are Phase 2 controls.
+- Shell policy sees exact argument boundaries and rejects NUL bytes. Named sandbox profiles now
+  constrain its environment, cwd, executable, output, and runtime; network/filesystem isolation
+  requires an operational Bubblewrap profile and production validation.
 - The policy version is configured and approval-bound but is not yet signed or integrity-
   verified. Managed distribution must protect the policy file.
-- Memory tenant selection is represented in policy resources; storage-level tenant enforcement
-  and trusted-identity-only tenant derivation remain Phase 2 work.
+- Memory tenant selection is represented in policy resources. Managed identity isolation now
+  binds shared-memory operations/adapters and local drafts to the trusted identity tenant;
+  Postgres emits forced RLS and Iceberg pushes tenant filtering into scans. Production database
+  role and Polaris authorization evidence remains Phase 2 work.
 - MCP policy does not replace remote-server trust, transport authentication, content trust
   labeling, or a subprocess/network sandbox. See [Model Context Protocol](mcp.md).
+- Session-message policy governs delivery only. A receiver must independently authorize every
+  action considered from relayed content. See [Cross-Session Messaging](session-messaging.md).

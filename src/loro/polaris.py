@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from pathlib import Path
 from subprocess import CompletedProcess, run
 
-from loro.config import PolarisConfig
+from loro.config import PolarisConfig, SandboxConfig
+from loro.tools.shell import ShellTools
 
 
 @dataclass(frozen=True)
@@ -10,17 +12,45 @@ class PolarisResult:
     stdout: str
     stderr: str
     returncode: int
+    sandbox_profile: str | None = None
+    sandbox_os_enforced: bool = False
+    output_truncated: bool = False
 
 
 class PolarisClient:
     """Typed read-only wrapper around the Polaris CLI."""
 
-    def __init__(self, config: PolarisConfig) -> None:
+    def __init__(
+        self,
+        config: PolarisConfig,
+        sandbox: SandboxConfig | None = None,
+        *,
+        workspace_roots: list[str] | None = None,
+    ) -> None:
         self.config = config
+        self.sandbox = sandbox
+        self.shell = (
+            ShellTools(sandbox, workspace_roots=workspace_roots) if sandbox is not None else None
+        )
 
     def run_readonly(self, args: list[str]) -> PolarisResult:
         self._validate_readonly(args)
         command = [self.config.cli_path, *args]
+        if self.shell is not None and self.sandbox is not None:
+            result = self.shell.run(
+                command,
+                profile=self.sandbox.governed_data_profile,
+                cwd=Path.cwd(),
+            )
+            return PolarisResult(
+                command=command,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+                sandbox_profile=result.profile,
+                sandbox_os_enforced=result.os_enforced,
+                output_truncated=result.output_truncated,
+            )
         completed: CompletedProcess[str] = run(
             command,
             capture_output=True,

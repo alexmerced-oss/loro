@@ -15,7 +15,8 @@ from loro.audit.sinks import (
     HttpAuditSink,
     JsonlAuditSink,
 )
-from loro.config import AuditConfig
+from loro.config import AuditConfig, SafetyConfig
+from loro.data_protection import DataProtectionEngine
 from loro.identity import IdentityContext
 
 
@@ -36,12 +37,14 @@ class AuditLogger:
         config: AuditConfig,
         identity: IdentityContext | None = None,
         sink: AuditSink | None = None,
+        safety_config: SafetyConfig | None = None,
     ) -> None:
         self.config = config
         self.identity = identity
         self.path = Path(config.path).expanduser()
         self.buffer = AuditBuffer(config.buffer_path, config.max_buffer_events)
         self.sink = sink or self._configured_sink()
+        self.protection = DataProtectionEngine(safety_config) if safety_config else None
 
     def write(self, event_type: str, **details: Any) -> AuditEvent:
         if self.identity is not None:
@@ -49,6 +52,15 @@ class AuditLogger:
             details.setdefault("tenant_id", self.identity.tenant)
             details.setdefault("session_id", self.identity.session_id)
             details.setdefault("identity", self.identity.to_payload())
+        if self.protection is not None:
+            details, redacted_fields, classifications = _protect_details(details, self.protection)
+            if redacted_fields:
+                details["redaction_metadata"] = {
+                    "applied": True,
+                    "fields": redacted_fields,
+                    "method": "managed-data-protection",
+                    "classifications": sorted(classifications),
+                }
         event = AuditEvent(
             event_type=event_type,
             details=details,
@@ -149,6 +161,32 @@ class AuditLogger:
 def prompt_preview(prompt: str, limit: int = 160) -> str:
     normalized = " ".join(prompt.split())
     return normalized[:limit]
+
+
+def _protect_details(
+    details: dict[str, Any],
+    protection: DataProtectionEngine,
+) -> tuple[dict[str, Any], list[str], set[str]]:
+    redacted_fields: list[str] = []
+    classifications: set[str] = set()
+
+    def visit(value: Any, path: str) -> Any:
+        if isinstance(value, str):
+            decision = protection.evaluate(value, "audit")
+            classifications.add(decision.classification)
+            if decision.blocked:
+                raise ValueError(f"Data protection blocked audit field: {path}")
+            if decision.redacted:
+                redacted_fields.append(path)
+            return decision.content
+        if isinstance(value, dict):
+            return {key: visit(item, f"{path}.{key}") for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [visit(item, f"{path}[{index}]") for index, item in enumerate(value)]
+        return value
+
+    protected = {key: visit(value, f"details.{key}") for key, value in details.items()}
+    return protected, redacted_fields, classifications
 
 
 __all__ = [

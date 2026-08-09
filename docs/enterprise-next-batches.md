@@ -174,16 +174,54 @@ cross-process buffer locking, batching, mTLS/signing, production collector evide
 event-family completeness remain later operations/security work. See
 [Audit Events And Delivery](audit.md).
 
-## Recommended Immediate Start
+## Batch 6: Subprocess Sandbox Foundation
 
-Start with Batch 1. It is documentation-heavy, but it prevents the rest of the hardening work
-from drifting. After Batch 1, implement Batch 2 and Batch 3 together in small vertical slices:
+Goal: establish enforceable process boundaries before expanding enterprise tool reach.
 
-1. Identity model and `loro identity show`.
-2. Identity fields in audit events.
-3. Approval request/record model.
-4. Interactive approval for one tool family, preferably file writes.
-5. Extend the same approval contract to shell, Git, shared memory, and governed data.
+Status: repository implementation complete for current subprocess families. Named profiles govern
+direct shell, Git, Polaris, MCP stdio, and Agent Skill scripts with canonical executable/cwd
+checks, allowlist-built environments, timeout/output ceilings where Loro owns the pipes,
+writable-root policy, diagnostics, and optional fail-closed Bubblewrap filesystem/network
+isolation. MCP responses retain their own bounded SDK/result path, and an `execve` scrubber
+removes environment defaults restored by the official SDK. Adversarial and interoperability tests
+cover secret inheritance, executable and cwd denial, timeout, output exhaustion, explicit MCP
+environment, and required-enforcement failure. Production escape tests and other Phase 2
+data-protection controls remain open. See
+[Subprocess Sandbox Profiles](sandbox.md).
 
-The first code-producing batch should not begin with sandboxing. Sandboxing depends on stable
-identity, approval, resource-scope, and audit contracts.
+## Batch 7: Managed Data Protection
+
+Goal: apply one classification, scanning, redaction, and blocking contract at every supported
+content boundary.
+
+Status: repository implementation complete for supported application flows.
+`loro.data_protection` defines pluggable scanners and surface decisions; managed overlays control
+classification ceilings, actions, per-surface finding allowlists, custom patterns, and whether the
+development sensitive-content override exists. The runtime checks composed provider input and
+transforms model/tool output;
+memory, artifacts, sessions, cross-session messages, provenance, and recursive audit details are
+covered at their application boundaries. Negative tests cover restricted input, redaction,
+overlapping findings, classification labels, scanner injection, and managed override lockout.
+Corporate scanner/gateway integration, provider-specific approval, production policy evidence,
+and Restricted-data workflows remain external or later gates. See
+[Managed Data Protection](data-protection.md).
+
+## Batch 8: Shared-Memory Tenant Isolation
+
+Goal: make tenant scope a trusted identity property below CLI and prompt arguments.
+
+Status: repository implementation complete for the supported adapters. Managed `identity` mode
+binds search, SQL rendering, commits, and local draft visibility to the resolved identity tenant.
+Postgres schema generation adds forced row-level security and connections set transaction-local
+tenant context before reads/writes. Iceberg pushes tenant and active-status filtering into scans
+and retains a defensive record check. CLI and tool paths reject mismatches before approval or
+backend access, and negative tests cover operation, adapter, tool, and draft boundaries.
+Production least-privilege database roles, live RLS tests, and Polaris catalog authorization proof
+remain evidence gates.
+
+## Recommended Next Work
+
+Batches 1 through 8 are implemented in the repository for the current application surface. The
+next work should prioritize memory retention, correction, deletion, legal-hold, and provenance
+behavior before broader pilot use. Production database isolation, Bubblewrap, corporate
+DLP/provider approvals, and protected MCP conformance artifacts remain evidence gates.

@@ -10,6 +10,7 @@ loro configure
 loro setup provider
 loro setup identity
 loro setup approvals
+loro setup sandbox
 loro setup audit
 loro setup memory
 loro setup shared-memory
@@ -21,7 +22,7 @@ loro run "Summarize the project"
 ```
 
 `loro configure` and `loro setup provider` run the AI provider wizard. The other setup
-commands guide identity, approvals, local memory, shared-memory, Polaris, and MCP configuration. `loro setup
+commands guide identity, approvals, sandboxing, local memory, shared-memory, Polaris, and MCP configuration. `loro setup
 quickstart` runs the setup wizards in sequence and preserves existing sections in
 `.loro/config.local.toml`.
 
@@ -37,6 +38,17 @@ The active identity is attached to audit events and runtime sessions. Its tenant
 become shared-memory defaults when `--tenant-id` and `--created-by` are omitted. Managed
 configuration can require fields and make runtime/audited commands fail closed. See
 [Identity Context](identity.md) for environment variables and trust boundaries.
+
+## Sandbox
+
+```bash
+loro setup sandbox --profile controlled-shell --backend bubblewrap \
+  --require-os-enforcement --network deny
+loro sandbox doctor
+```
+
+Shell and Agent Skill scripts use named profiles with executable, cwd, environment, timeout,
+output, writable-root, and network controls. See [Subprocess Sandbox Profiles](sandbox.md).
 
 `plan` and `run` can execute explicit typed tool directives in the prompt:
 
@@ -120,6 +132,27 @@ Tool calls require an exact Loro approval by default. The current foundation sup
 Streamable HTTP through the official SDK, prefers stateless MCP `2026-07-28`, and falls back to
 classic initialization when policy allows. Tasks and `listen` require modern `2026-07-28`;
 Tasks are an experimental extension. See [Model Context Protocol](mcp.md).
+
+Serve an explicit read-only subset of Loro:
+
+```bash
+loro setup mcp-server
+loro mcp server-inspect
+loro mcp serve
+```
+
+## Agent Skills
+
+```bash
+loro setup skills
+loro skills list
+loro skills validate ./my-skill
+loro skills install ./my-skill --expected-digest sha256:REVIEWED_DIGEST
+loro skills propose ./my-skill
+loro skills review PROPOSAL_ID --accept
+```
+
+See [Agent Skills](skills.md) for trust, activation, package limits, and script controls.
 
 ## Providers
 
@@ -226,16 +259,26 @@ Use `--` before child commands that have flags.
 ```bash
 loro sessions list
 loro sessions show <session-id>
+loro sessions send <sender-id> <recipient-id> "Review is ready."
+loro sessions inbox <recipient-id>
+loro sessions wake <recipient-id>
+loro run --resume-session <recipient-id> "Continue."
 ```
+
+Relayed messages are durable untrusted context and never carry user authority. See
+[Cross-Session Messaging](session-messaging.md).
 
 ## Safety
 
 ```bash
 loro safety scan "api_key = 'abc123456789'"
 loro safety scan --file .env
+loro safety doctor
 ```
 
-Memory and artifact commands scan for obvious secrets before writing files or memory records. Use `--allow-sensitive` only when policy allows persistence.
+Managed policy classifies and scans model, memory, artifact, session, tool-output, and audit
+flows. Enterprise overlays can make `--allow-sensitive` non-overridable. See
+[Managed Data Protection](data-protection.md).
 
 ## Governed Data
 

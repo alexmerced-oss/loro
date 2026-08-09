@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from loro.audit import prompt_preview
 from loro.config import LoroConfig, SharedMemoryConfig
+from loro.identity import resolve_identity
 from loro.memory.base import (
     SharedMemoryBackendCheck,
     SharedMemoryDraft,
@@ -29,8 +30,11 @@ def search_shared_memories(
     execute: bool = True,
 ) -> SharedMemorySearchResult:
     backend = config.memory.shared.backend
+    authorized_tenant = _authorized_tenant(config, tenant_id)
     if backend == "postgres":
-        store = PostgresSharedMemoryStore(config.memory.shared)
+        store = PostgresSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
         statement = store.render_search(tenant_id=tenant_id, query=query, limit=limit)
         if not execute:
             return SharedMemorySearchResult(
@@ -61,7 +65,9 @@ def search_shared_memories(
             messages=[f"Found {len(records)} shared memories."],
         )
     if backend == "iceberg":
-        store = IcebergSharedMemoryStore(config.memory.shared)
+        store = IcebergSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
         statement = store.render_search(
             tenant_id=tenant_id,
             query=query,
@@ -143,8 +149,11 @@ def render_or_commit_shared_draft(
     execute: bool = False,
 ) -> SharedMemoryCommitResult:
     backend = config.memory.shared.backend
+    authorized_tenant = _authorized_tenant(config, draft.tenant_id)
     if backend == "postgres":
-        store = PostgresSharedMemoryStore(config.memory.shared)
+        store = PostgresSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
         if execute:
             store.commit_draft(draft)
             return SharedMemoryCommitResult(backend=backend, draft=draft, executed=True)
@@ -155,7 +164,9 @@ def render_or_commit_shared_draft(
             statement=store.render_insert(draft),
         )
     if backend == "iceberg":
-        store = IcebergSharedMemoryStore(config.memory.shared)
+        store = IcebergSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
         if execute:
             store.commit_draft(draft)
             return SharedMemoryCommitResult(backend=backend, draft=draft, executed=True)
@@ -166,3 +177,12 @@ def render_or_commit_shared_draft(
             statement=store.render_insert(draft),
         )
     raise ValueError(f"Unsupported shared memory backend: {backend}")
+
+
+def _authorized_tenant(config: LoroConfig, requested_tenant: str) -> str | None:
+    if config.memory.shared.tenant_isolation != "identity":
+        return None
+    identity_tenant = resolve_identity(config.identity).tenant
+    if requested_tenant != identity_tenant:
+        raise PermissionError(f"Cross-tenant shared-memory access denied: {requested_tenant}")
+    return identity_tenant
