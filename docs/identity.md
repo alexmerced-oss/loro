@@ -120,6 +120,8 @@ signatures, perform device flow, fetch directory groups, or cryptographically bi
 managed policy.
 
 Identity supplies attribution and safe defaults; it is not by itself an authorization decision.
-Approval records now bind exact canonical arguments to subject, tenant, identity session, policy
-decision, and expiration. An explicit CLI tenant argument can still select another tenant, and
-policy-version/resource normalization remains Batch 4 work.
+Approval records bind exact canonical arguments to subject, tenant, identity session, normalized
+resource, policy version/decision, and expiration. Managed identity mode rejects caller-selected
+tenant mismatches across shared-memory command, adapter, draft, and runtime-tool boundaries.
+Corporate assertion verification and cryptographic identity-to-policy binding remain external
+deployment requirements.

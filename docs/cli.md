@@ -26,6 +26,33 @@ commands guide identity, approvals, sandboxing, local memory, shared-memory, Pol
 quickstart` runs the setup wizards in sequence and preserves existing sections in
 `.loro/config.local.toml`.
 
+## Complete Command Map
+
+This map reflects Loro 0.2.0. Run `loro COMMAND --help` or
+`loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
+
+```text
+loro: audit, brief, config, configure, data, docs, doctor, file, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro audit: doctor, flush, verify
+loro brief: executive, incident, meeting, project
+loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views
+loro docs: create
+loro file: read, search
+loro identity: doctor, show
+loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
+loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, proposals, propose, remember, schema, search, shared-search
+loro policy: explain
+loro providers: check, list, request, show, smoke
+loro safety: doctor, scan
+loro sandbox: doctor
+loro sessions: ack, inbox, list, send, show, wake
+loro setup: approvals, audit, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
+loro sheets: analyze, create
+loro shell: run
+loro skills: disable, enable, install, list, propose, quarantine, remove, review, show, validate
+loro slides: create
+```
+
 ## Identity
 
 ```bash
@@ -60,7 +87,7 @@ loro plan '@tool file.search {"query": "Polaris", "root": ".", "limit": 5}'
 
 The runtime loop also lets model responses request tools with the JSON directive form.
 Loro executes approved tool calls, returns tool results to the model, and stops when the
-model responds without tool directives or `[runtime].max_steps` is reached. The initial
+model responds without tool directives or `[runtime].max_steps` is reached. The current
 tool registry supports:
 
 - `file.read`: `{"path": "README.md", "limit": 1000}`

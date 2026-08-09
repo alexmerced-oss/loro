@@ -13,7 +13,8 @@ an incident and support process.
 
 ## Current Position
 
-Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardening in progress.**
+Status as of August 2026: **Alpha; MVP and repository-side hardening complete for 0.2.0;
+enterprise deployment evidence in progress.**
 
 | Area | Current state | Readiness |
 | --- | --- | --- |
@@ -26,10 +27,10 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Data protection | Managed classification ceilings, pluggable/custom scanners, per-surface allowlists, blocking/redaction, and recursive audit metadata | Partial; corporate DLP/provider approval and production evidence missing |
 | Shared memory | Identity-bound operations/drafts, Postgres RLS, Iceberg filter pushdown, explicit commits, citations | Partial; production isolation and lifecycle proof needed |
 | Governed data | Read-only Polaris allowlist and Iceberg integration | MVP complete; authorization evidence and production tests needed |
-| Providers | Multiple adapters, streaming, normalized errors, smoke tests | MVP complete; gateway, resilience, and spend controls needed |
+| Providers | Multiple adapters, streaming, normalized errors, bounded retries, task budgets, and smoke tests | MVP complete; production gateway and distributed spend enforcement needed |
 | MCP and skills | Dual-era client/server, transport/auth policy, Tasks, bounded subscriptions, and digest-tracked Agent Skills | Partial; green conformance artifacts, sandbox proof, and enterprise review remain |
 | Session coordination | Durable cross-session mailbox with resume delivery, no-authority trust label, policy, approval, safety, and audit | Implemented locally; distributed operation and concurrency proof remain |
-| Delivery | Unit tests, coverage threshold, CI, manual integration workflow, release checklist | Healthy alpha; supply-chain and release evidence missing |
+| Delivery | Unit/coverage gates, scheduled integration, SCA/static/secret/license scans, SBOM, checksums, and build provenance | Healthy alpha; protected-repository settings and organizational release approval remain external |
 
 The unit test suite is the current strongest quality signal. Postgres and Polaris integration
 tests exist but are opt-in, so they do not yet prove the complete enterprise deployment path.

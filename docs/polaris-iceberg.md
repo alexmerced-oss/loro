@@ -4,7 +4,9 @@ Loro's governed data layer is centered on Apache Polaris and Apache Iceberg.
 
 ## Polaris
 
-Polaris provides governed catalog concepts such as catalogs, namespaces, tables, views, principals, roles, privileges, and policies. Loro should use Polaris to discover what the user can access and explain access denials when allowed.
+Polaris provides governed catalog concepts such as catalogs, namespaces, tables, views,
+principals, roles, privileges, and policies. Loro uses typed, read-only Polaris CLI operations to
+discover what the configured identity can access and to explain access outcomes when allowed.
 
 Current MVP behavior:
 
@@ -41,7 +43,10 @@ what the configured identity can discover through Polaris.
 
 ## Iceberg
 
-Iceberg is the target high-scale backend for shared enterprise memory and governed data table access. The initial implementation should treat Iceberg as an append-friendly, auditable storage layer with snapshots and schema evolution.
+Iceberg is the high-scale backend option for shared enterprise memory and governed data table
+access. Loro treats it as an append-friendly storage layer with snapshots and schema evolution;
+explicit draft commits and identity-filtered searches can execute through a configured PyIceberg
+catalog.
 
 Current MVP behavior:
 

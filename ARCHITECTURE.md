@@ -217,7 +217,10 @@ The Polaris integration is intentionally controlled:
 - Typed `loro data` commands cover catalog, namespace, table, view, role, privilege, and policy discovery.
 - `loro data polaris ...` validates the resource/action pair against a read-only allowlist before executing.
 
-Future work should expose governed table context to the agent loop and add higher-level access explanations.
+The runtime exposes governed metadata through the permission-gated `polaris.readonly` tool.
+Higher-level `data schema` and `data explain-access` commands compose typed read-only Polaris
+operations without querying table rows. Production authorization and denial evidence still comes
+from the adopting enterprise's Polaris deployment.
 
 ## Persistence
 
@@ -245,4 +248,7 @@ The MVP uses focused unit and CLI tests:
 - Postgres shared-memory SQL rendering and backend readiness checks.
 - Iceberg shared-memory DDL and SQL rendering.
 
-Integration tests for real Postgres, Iceberg, Polaris, and model providers should live behind optional test markers once those services are implemented.
+Optional integration tests cover ephemeral Postgres, the Polaris quickstart with object storage
+and Iceberg, a credentialed Polaris CLI, MCP conformance, and live model providers. Scheduled and
+manual GitHub Actions workflows keep credentials and external-service requirements out of the
+hermetic unit suite. See `docs/testing.md` for the current matrix and trigger requirements.

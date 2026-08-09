@@ -94,7 +94,7 @@ approval after all protected checks and external evidence gates pass.
 Confirm the version in both `pyproject.toml` and `src/loro/__init__.py`, then publish:
 
 ```bash
-python -m twine upload dist/*
+python -m twine upload dist/loro_agent-*.whl dist/loro_agent-*.tar.gz
 ```
 
 Twine should discover credentials from the standard environment variables, keyring, or

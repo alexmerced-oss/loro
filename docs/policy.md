@@ -111,15 +111,16 @@ normalized resource. Explanation does not execute or approve the request.
 ## Security Boundaries
 
 - Resource normalization and policy evaluation do not replace an operating-system sandbox.
-  Shell and Skill subprocesses can additionally require the Bubblewrap backend; other process
-  families are not yet routed through it.
+  Named profiles cover shell, Git, Polaris, MCP stdio, and Skill subprocesses; managed profiles
+  can require the Bubblewrap backend where Loro owns process execution.
 - `strict=False` supports paths that will be created, but there remains a time-of-check/time-of-
   use window if another process can replace path components after authorization.
 - Shell policy sees exact argument boundaries and rejects NUL bytes. Named sandbox profiles now
   constrain its environment, cwd, executable, output, and runtime; network/filesystem isolation
   requires an operational Bubblewrap profile and production validation.
-- The policy version is configured and approval-bound but is not yet signed or integrity-
-  verified. Managed distribution must protect the policy file.
+- The policy version is configured and approval-bound. Required managed-policy mode can pin an
+  aggregate SHA-256 digest over the exact managed inputs before TOML parsing. Distribution is not
+  signed by Loro, so configuration management must still authenticate and protect those inputs.
 - Memory tenant selection is represented in policy resources. Managed identity isolation now
   binds shared-memory operations/adapters and local drafts to the trusted identity tenant;
   Postgres emits forced RLS and Iceberg pushes tenant filtering into scans. Production database

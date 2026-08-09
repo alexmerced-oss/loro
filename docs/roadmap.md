@@ -41,9 +41,13 @@
 - Manual integration workflow for Postgres and Polaris CLI tests
 - Release checklist documentation
 
-## Next MVP Work
+## Current Status
 
-- Interactive approval prompts for write, shell, Git mutation, and governed data actions
+The five MVP batches below are complete for the 0.2.0 alpha surface. Interactive approval prompts
+and identity-bound, single-use approval records cover ask-gated write, shell, Git mutation,
+shared-memory, MCP, and governed-data actions. Remaining work is enterprise deployment evidence,
+external control integration, and defects found during controlled pilots rather than missing MVP
+command scaffolding.
 
 Managed, non-overridable enterprise configuration overlays are implemented and documented.
 Typed identity context, environment/config resolution, managed required fields, diagnostics,

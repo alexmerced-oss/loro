@@ -5,8 +5,8 @@
 Loro's first enterprise deployment is a limited pilot, not a general-purpose autonomous agent
 service. It uses a centrally managed CLI on controlled developer workstations or ephemeral
 development environments, an approved model gateway/provider, non-overridable managed policy,
-Postgres shared memory, read-only Polaris discovery, and an enterprise audit destination once
-that sink is implemented.
+Postgres shared memory, read-only Polaris discovery, and the implemented authenticated HTTP audit
+sink connected to an enterprise-owned destination.
 
 Postgres is the reference shared-memory backend for the first pilot because its transactional
 and isolation behavior is straightforward to validate. Polaris-governed Iceberg is the
@@ -28,8 +28,9 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Corporate identity, external audit delivery, and enforceable sandbox profiles are target
-components, not complete 0.1.x capabilities. A pilot must not claim those controls until their
+Loro 0.2.0 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
+profiles. Corporate identity verification, a production audit destination, and supported-platform
+sandbox evidence are deployment responsibilities; a pilot must not claim those controls until its
 evidence items are closed.
 
 ## Deployment Matrix
@@ -38,7 +39,7 @@ evidence items are closed.
 | --- | --- | --- | --- |
 | Operating system | Managed Linux workstation/container; Ubuntu is the CI reference | `ubuntu-latest` CI | Pin a tested enterprise distribution/version and endpoint baseline. |
 | Python | 3.11 or 3.12 | CI matrix | Use enterprise-patched CPython. Python 3.13 is packaged but not yet CI-proven. |
-| Loro distribution | `loro-agent` from a controlled package mirror | PyPI release and clean-install process | Pin exact version/hash; add signature, provenance, and SBOM before GA. |
+| Loro distribution | `loro-agent` from a controlled package mirror | PyPI release, clean-install smoke, SBOM, checksums, and GitHub/Sigstore provenance | Pin exact version/hash, verify provenance, and mirror approved artifacts. |
 | Model access | Internal OpenAI-compatible gateway preferred; otherwise explicitly approved direct provider | Provider unit and controlled live smoke tests | Record class ceiling, residency, retention, TLS/proxy, budgets, and fallback policy. |
 | Configuration | `/etc/loro/managed.toml` or `LORO_MANAGED_CONFIG`; managed values load last | Unit tests cover precedence | Protect distribution and integrity; validate version and fail closed when required. |
 | Identity | Typed context propagated to runtime, approvals, memory, sessions, and audit | Context foundation implemented | Integrate and verify a corporate assertion source before pilot attribution is trusted. |

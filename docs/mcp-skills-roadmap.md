@@ -115,7 +115,7 @@ only extensions for which Loro has a typed adapter and security tests.
 
 ## Agent Skills Support
 
-Loro will implement the open Agent Skills directory format. A valid skill has a `SKILL.md` file
+Loro implements the open Agent Skills directory format. A valid skill has a `SKILL.md` file
 with YAML frontmatter containing at least `name` and `description`; it may include `scripts/`,
 `references/`, and `assets/` directories.
 
@@ -149,18 +149,16 @@ depth limits.
   and explicit governed publication before enterprise sharing. Skills must never write
   themselves into shared memory or a managed skill registry.
 
-## Planned CLI
+## Implemented CLI Surface
 
-```text
-loro mcp list|add|remove|enable|disable|inspect|doctor|test
-loro mcp tools|resources|prompts|tasks
-loro skills list|show|validate|enable|disable|install|remove
-loro skills propose|review
-```
+The implemented MCP and Skills command inventory is maintained in the
+[CLI Guide](cli.md#complete-command-map). In particular, MCP server enablement is configured on
+the server record rather than through standalone `mcp enable` or `mcp disable` commands; Skills
+have explicit `enable`, `disable`, and `quarantine` lifecycle commands.
 
-Configuration wizards should collect transport/auth/version choices, display requested
-capabilities, validate connectivity without invoking tools, and write secrets only through an
-approved environment or credential-store reference.
+Configuration wizards collect transport/auth/version choices, display requested capabilities,
+validate connectivity without invoking tools, and write only environment-variable credential
+references rather than secret values.
 
 ## Implementation Batches
 
