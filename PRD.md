@@ -251,7 +251,9 @@ MVP tools:
 - Git status/diff/show/commit branch helpers.
 - Python execution in a sandboxed subprocess.
 - Web/docs fetch if enabled.
-- MCP client support.
+- Dual-era MCP client support for the current stateless specification and classic
+  handshake-based servers.
+- Agent Skills discovery, validation, progressive disclosure, and policy-governed execution.
 - Polaris CLI wrapper.
 - Iceberg REST catalog client.
 - Postgres memory backend client.
@@ -600,6 +602,7 @@ Audit events:
 - `loro.sandbox`: local, Docker, SSH, or enterprise sandbox backends.
 - `loro.hooks`: lifecycle hooks.
 - `loro.mcp`: MCP client/server bridge.
+- `loro.skills`: Agent Skills discovery, validation, provenance, and activation.
 
 ### 10.2 Suggested Python Stack
 
@@ -643,7 +646,8 @@ Audit events:
 
 - Iceberg REST catalog integration for shared memory.
 - Semantic retrieval with optional embeddings.
-- MCP client support.
+- MCP client support for `2026-07-28` plus classic compatibility through `2025-11-25`.
+- Agent Skills `SKILL.md` support with progressive disclosure and Loro policy enforcement.
 - Sandbox profiles.
 - Subagents for research, productivity artifact generation, and memory curation.
 - Query drafting for governed Iceberg tables.
@@ -654,7 +658,8 @@ Audit events:
 
 - Scheduled tasks.
 - Multi-channel gateway.
-- Agent-generated skill proposals.
+- Agent-generated skill proposals with explicit local installation and governed enterprise
+  publication review.
 - Web UI.
 - Enterprise admin console.
 - Collaborative document integrations for Google Drive, Microsoft 365, Notion, Confluence, Jira, Slack, and email.
@@ -797,5 +802,6 @@ Operational metrics:
 - SSO/internal gateway integration.
 - Secret scanning.
 - Sandbox profiles.
-- MCP support.
+- Dual-era MCP support and Agent Skills support as detailed in
+  `docs/mcp-skills-roadmap.md`.
 - Integration tests and security review.

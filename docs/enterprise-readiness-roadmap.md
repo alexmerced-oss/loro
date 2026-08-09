@@ -26,6 +26,7 @@ Status as of August 2026: **Alpha; MVP capabilities complete; enterprise hardeni
 | Shared memory | Tenant-aware Postgres/Iceberg schema, proposals, explicit commits, citations | Implemented; isolation and lifecycle proof needed |
 | Governed data | Read-only Polaris allowlist and Iceberg integration | MVP complete; authorization evidence and production tests needed |
 | Providers | Multiple adapters, streaming, normalized errors, smoke tests | MVP complete; gateway, resilience, and spend controls needed |
+| MCP and skills | Product requirements only; no runtime implementation | Planned; dual-era protocol, supply-chain, sandbox, and conformance work defined |
 | Delivery | Unit tests, coverage threshold, CI, manual integration workflow, release checklist | Healthy alpha; supply-chain and release evidence missing |
 
 The unit test suite is the current strongest quality signal. Postgres and Polaris integration
@@ -147,6 +148,9 @@ Deliverables:
 - Encrypt shared memory and audit data in transit and at rest using enterprise-managed keys.
 - Add adversarial tests for prompt injection, malicious repository content, poisoned shared
   memory, unsafe archive/symlink paths, and oversized tool output.
+- Apply the same sandbox, environment, network, trust-label, and approval controls to planned
+  MCP servers and Agent Skills; neither remote capabilities nor skill metadata may expand
+  authority.
 
 Exit gate:
 
@@ -174,6 +178,8 @@ Deliverables:
   runtime, with clear stop reasons.
 - Define provider fallback behavior without silently changing data residency or model policy.
 - Add health checks for identity, policy, provider, audit sink, Postgres, Polaris, and Iceberg.
+- Record MCP server identity, transport, negotiated protocol revision, capabilities, extensions,
+  and skill source/digest in audit and health diagnostics when those features are implemented.
 - Publish runbooks for credential rotation, provider outage, audit backlog, policy rollback,
   memory recovery, tenant offboarding, and suspected data exposure.
 
@@ -194,6 +200,8 @@ Deliverables:
 - Add end-to-end tests spanning identity, managed policy, approval, tool execution, memory,
   provider gateway, and external audit delivery.
 - Add provider contract tests using recorded sanitized fixtures plus controlled live smoke tests.
+- Run MCP conformance and dual-era interoperability tests for every advertised revision,
+  transport, extension, and client/server role; validate Agent Skills against official fixtures.
 - Raise coverage expectations for security-critical modules and add branch-focused tests for
   policy, approvals, path handling, redaction, identity, and audit delivery.
 - Add dependency vulnerability, secret, license, and static-analysis checks with an explicit

@@ -205,6 +205,7 @@ Memory and artifact commands scan for obvious secrets by default. Use `--allow-s
 - [Memory](docs/memory.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
 - [Development Roadmap](docs/roadmap.md)
+- [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
 - [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)
 

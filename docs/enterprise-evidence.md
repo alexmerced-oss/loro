@@ -50,6 +50,7 @@ Evidence states:
 | E2-05 | Memory retention, correction, deletion, hold, and provenance work | Memory/data (TBD) | Partial | Schema contains provenance/status/expiry fields; lifecycle execution and tests TBD. |
 | E2-06 | Encryption and key ownership documented and verified | Operations/security (TBD) | External | TLS/storage/KMS configuration and verification report TBD. |
 | E2-07 | Adversarial injection, poisoning, symlink, archive, and output tests pass | Security/runtime (TBD) | Planned | Adversarial suite and production-like result TBD. |
+| E2-08 | MCP and Agent Skills cannot bypass sandbox, credentials, policy, or approval | Security/runtime (TBD) | Planned | [MCP and Agent Skills roadmap](mcp-skills-roadmap.md); implementation, malicious-server/skill fixtures, and enterprise review TBD. |
 
 ## Phase 3: Audit, Operations, And Reliability
 
@@ -74,6 +75,7 @@ Evidence states:
 | E4-05 | Dependency, secret, license, and static scans follow triage policy | Release/security (TBD) | Planned | CI jobs, policy, SLA, and exception register TBD. |
 | E4-06 | Release has SBOM, provenance, signature, and verification | Release (TBD) | Planned | Build/Twine checklist exists; signed artifact evidence TBD. |
 | E4-07 | Upgrade, rollback, migration, support, and disclosure policies work | Release/operations (TBD) | Partial | Release checklist exists; tested upgrade/rollback and disclosure policy TBD. |
+| E4-08 | Advertised MCP revisions and Agent Skills pass conformance/interoperability | Release/runtime (TBD) | Planned | Official MCP conformance matrix, dual-era fixtures, Agent Skills validation, and published support matrix TBD. |
 
 ## Phase 5: Pilot And General Availability
 

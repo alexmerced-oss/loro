@@ -159,3 +159,20 @@ See the [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md) for phas
 gates, evidence requirements, and immediate priorities.
 The near-term execution plan is tracked in
 [Enterprise Next Batches](enterprise-next-batches.md).
+
+## MCP And Agent Skills
+
+MCP and Agent Skills are planned and are not currently implemented. The
+[MCP And Agent Skills Roadmap](mcp-skills-roadmap.md) defines six implementation batches for:
+
+- MCP `2026-07-28` stateless client support and classic handshake-based compatibility through
+  `2025-11-25`, with a `2024-11-05` compatibility target.
+- stdio and Streamable HTTP transports, version negotiation, typed tools/resources/prompts,
+  enterprise authorization, Tasks, subscriptions, and later MCP server mode.
+- Open Agent Skills `SKILL.md` discovery, validation, progressive disclosure, provenance,
+  sandboxed execution, and explicit install/publish review.
+- Official conformance and dual-era interoperability evidence before support is advertised.
+
+The first batch should begin after the current sandbox and credential-isolation controls are
+defined, because remote MCP tools and skill scripts must enter through those controls rather
+than introduce a parallel authority path.
