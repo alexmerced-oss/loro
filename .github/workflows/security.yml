@@ -40,7 +40,9 @@ jobs:
             pip-licenses==5.5.5
 
       - name: Audit dependencies
-        run: python -m pip_audit --local --strict --format json --output security-pip-audit.json
+        # Loro is installed editable for scanning. Exclude that local package so
+        # an unreleased version does not need to exist on PyPI before release.
+        run: python -m pip_audit --local --skip-editable --format json --output security-pip-audit.json
 
       - name: Static security analysis
         run: >-

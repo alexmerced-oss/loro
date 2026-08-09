@@ -1,8 +1,10 @@
 # Security And Supply Chain
 
 Loro's repository security gates are implemented in `.github/workflows/security.yml` and use
-pinned versions of `pip-audit`, Bandit, detect-secrets, CycloneDX, and pip-licenses. The workflow
-fails for new Bandit findings, known dependency vulnerabilities, secret-baseline drift,
+pinned versions of `pip-audit`, Bandit, detect-secrets, CycloneDX, and pip-licenses. Dependency
+audits cover installed third-party packages while excluding Loro's editable checkout, preventing
+unreleased versions from creating a circular PyPI requirement. The workflow still fails for known
+dependency vulnerabilities, new Bandit findings, secret-baseline drift,
 prohibited AGPL dependencies, overall coverage regression, or a security-critical module below
 its individual floor.
 
