@@ -33,6 +33,9 @@ loro data polaris catalogs list
 loro mcp doctor
 loro mcp server-inspect
 loro skills list
+loro graph validate docs/examples/agraph/release-readiness.agraph.yaml --strict
+loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
+loro skills validate "$(loro graph skill-path)"
 ```
 
 Only run live provider smoke checks when credentials and spend controls are approved:
@@ -54,10 +57,9 @@ Recent patch releases:
 - `0.1.3`: omitted deprecated Gemini sampling config for `gemini-3.6-flash` and
   `gemini-3.5-flash-lite`.
 
-Release `0.2.0` adds governed shared-memory lifecycle controls, tamper-evident audit chains,
-managed-policy integrity pinning, task budgets, resilient provider transport, scheduled
-ephemeral integration testing, security/SBOM automation, and CI build-provenance attestations.
-See [Loro 0.2.0](releases/0.2.0.md) for the complete release notes and external deployment gates.
+Release `0.3.0` adds AGS 1.0 conformance level 3, managed graph policy, durable graph execution,
+model-tier routing, graph generation, read-only MCP graph tools, and a bundled authoring Skill.
+See [Loro 0.3.0](releases/0.3.0.md) for the complete release notes and external deployment gates.
 
 ## Documentation
 
@@ -67,6 +69,10 @@ See [Loro 0.2.0](releases/0.2.0.md) for the complete release notes and external 
   changed command names or safety guarantees.
 - Confirm the MCP support matrix matches green conformance workflow artifacts for the release
   commit, and run Agent Skills/session-message security tests.
+- Confirm the AGS conformance workflow is green on the release commit and the bundled Skill is
+  present in the wheel.
+- Confirm [Channel Gateways](channel-gateways.md) still accurately describes unsupported bot
+  surfaces; do not advertise Slack, Discord, or Telegram without adapter and security evidence.
 
 ## Packaging
 
@@ -77,9 +83,10 @@ python -m build
 python -m twine check dist/*
 ```
 
-Tags and manual dispatches run `Release Evidence`, which builds distributions in protected CI,
-generates SHA-256 checksums, creates GitHub/Sigstore build-provenance attestations, and retains
-the artifact bundle. Verify an attested artifact with:
+Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement, builds
+distributions in protected CI, smoke-tests the wheel and bundled Agent Skill, generates SHA-256
+checksums, creates GitHub/Sigstore build-provenance attestations, and retains the artifact bundle.
+Verify an attested artifact with:
 
 ```bash
 gh attestation verify dist/loro_agent-*.whl --repo alexmerced-oss/loro

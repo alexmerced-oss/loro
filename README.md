@@ -43,6 +43,10 @@ Loro supports AGS conformance level 3 with durable resume, model-tier routing, h
 criteria, gates, branches, bounded loops/maps, subgraphs, parallel ready nodes, fallbacks, and
 compensation. See the [Agentic Graph guide](docs/agentic-graphs.md).
 
+Loro does not currently expose Slack, Discord, or Telegram bot gateways. It is a local CLI and MCP
+harness; model-provider gateway support is a separate capability. See
+[Channel Gateways](docs/channel-gateways.md) for the exact boundary and planned security model.
+
 For a no-key first run, choose the `mock` provider in the wizard. That lets you verify the CLI,
 configuration loading, memory paths, artifact folders, and health checks before connecting a
 paid model provider.

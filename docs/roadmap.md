@@ -43,7 +43,7 @@
 
 ## Current Status
 
-The five MVP batches below are complete for the 0.2.0 alpha surface. Interactive approval prompts
+The five MVP batches below are complete for the 0.3.0 alpha surface. Interactive approval prompts
 and identity-bound, single-use approval records cover ask-gated write, shell, Git mutation,
 shared-memory, MCP, and governed-data actions. Remaining work is enterprise deployment evidence,
 external control integration, and defects found during controlled pilots rather than missing MVP
@@ -166,6 +166,11 @@ See the [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md) for phas
 gates, evidence requirements, and immediate priorities.
 The near-term execution plan is tracked in
 [Enterprise Next Batches](enterprise-next-batches.md).
+
+Slack, Discord, and Telegram channel gateways are not implemented in 0.3.0. A future gateway
+batch must add authenticated adapters, channel/user-to-identity mapping, replay protection,
+rate and payload bounds, explicit approval routing, untrusted-message labeling, durable delivery,
+and audit coverage before any bot surface is advertised. See [Channel Gateways](channel-gateways.md).
 
 ## MCP And Agent Skills
 

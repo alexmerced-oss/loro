@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loro-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Enterprise memory-sharing CLI agent harness for coding, governed data, and productivity work."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Office/Business",
   "Topic :: Software Development",
   "Topic :: System :: Shells",

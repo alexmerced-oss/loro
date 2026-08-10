@@ -28,7 +28,7 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Loro 0.2.0 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
+Loro 0.3.0 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
 profiles. Corporate identity verification, a production audit destination, and supported-platform
 sandbox evidence are deployment responsibilities; a pilot must not claim those controls until its
 evidence items are closed.
@@ -38,7 +38,7 @@ evidence items are closed.
 | Component | First supported choice | Current proof | Pilot requirement |
 | --- | --- | --- | --- |
 | Operating system | Managed Linux workstation/container; Ubuntu is the CI reference | `ubuntu-latest` CI | Pin a tested enterprise distribution/version and endpoint baseline. |
-| Python | 3.11 or 3.12 | CI matrix | Use enterprise-patched CPython. Python 3.13 is packaged but not yet CI-proven. |
+| Python | 3.11 through 3.14 | CI matrix | Use enterprise-patched CPython. |
 | Loro distribution | `loro-agent` from a controlled package mirror | PyPI release, clean-install smoke, SBOM, checksums, and GitHub/Sigstore provenance | Pin exact version/hash, verify provenance, and mirror approved artifacts. |
 | Model access | Internal OpenAI-compatible gateway preferred; otherwise explicitly approved direct provider | Provider unit and controlled live smoke tests | Record class ceiling, residency, retention, TLS/proxy, budgets, and fallback policy. |
 | Configuration | `/etc/loro/managed.toml` or `LORO_MANAGED_CONFIG`; managed values load last | Unit tests cover precedence | Protect distribution and integrity; validate version and fail closed when required. |
