@@ -88,6 +88,14 @@ class BaseModelClient:
                 raise ModelProviderError(f"Credential vault lookup failed: {error}") from error
         return None
 
+    def _optional_provider_headers(self) -> dict[str, str]:
+        profile = get_provider_profile(self.config.provider)
+        return {
+            header: value
+            for header, environment_name in profile.optional_header_env
+            if (value := os.environ.get(environment_name))
+        }
+
     def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, Any]]:
         payload: list[dict[str, Any]] = []
         for message in messages:
@@ -280,7 +288,7 @@ class MockModelClient(BaseModelClient):
 class OpenAICompatibleClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
         base_url = (self.config.base_url or "https://api.openai.com/v1").rstrip("/")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", **self._optional_provider_headers()}
         api_key = self._api_key()
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"

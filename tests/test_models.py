@@ -342,6 +342,36 @@ def test_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:
     assert request.json["model"] == "gpt-test"
 
 
+def test_prime_intellect_request_adds_optional_team_header(monkeypatch) -> None:
+    monkeypatch.setenv("PRIME_API_KEY", "test-key")
+    monkeypatch.setenv("PRIME_TEAM_ID", "team-123")
+    client = OpenAICompatibleClient(
+        ModelConfig(
+            provider="prime-intellect",
+            model="openai/gpt-oss-20b",
+            api_key_env="PRIME_API_KEY",
+            base_url="https://api.pinference.ai/api/v1",
+        )
+    )
+
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+
+    assert request.url == "https://api.pinference.ai/api/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer test-key"
+    assert request.headers["X-Prime-Team-ID"] == "team-123"
+
+
+def test_prime_intellect_team_header_is_optional(monkeypatch) -> None:
+    monkeypatch.delenv("PRIME_TEAM_ID", raising=False)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="prime-intellect", model="openai/gpt-oss-20b")
+    )
+
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+
+    assert "X-Prime-Team-ID" not in request.headers
+
+
 def test_openai_gpt5_request_omits_temperature() -> None:
     client = OpenAICompatibleClient(ModelConfig(provider="openai", model="gpt-5.6-luna"))
     request = client.build_request([ModelMessage(role="user", content="hello")])

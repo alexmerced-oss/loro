@@ -19,6 +19,8 @@ def test_provider_profiles_include_common_targets() -> None:
     assert "nous" in names
     assert "opencode-zen" in names
     assert "opencode-go" in names
+    assert "trustedrouter" in names
+    assert "prime-intellect" in names
 
 
 def test_model_config_from_profile() -> None:
@@ -46,11 +48,27 @@ def test_opencode_profiles_match_hermes_plugin_metadata() -> None:
     assert go.base_url == "https://opencode.ai/zen/go/v1"
 
 
+def test_trustedrouter_and_prime_intellect_profiles_match_public_api_contracts() -> None:
+    trusted = model_config_from_profile("trusted-provider")
+    prime = model_config_from_profile("prime")
+
+    assert trusted.provider == "trustedrouter"
+    assert trusted.api_key_env == "TRUSTEDROUTER_API_KEY"
+    assert trusted.base_url == "https://api.trustedrouter.com/v1"
+    assert trusted.model == "trustedrouter/cheap"
+    assert prime.provider == "prime-intellect"
+    assert prime.api_key_env == "PRIME_API_KEY"
+    assert prime.base_url == "https://api.pinference.ai/api/v1"
+    assert prime.small_model == "openai/gpt-oss-20b"
+
+
 def test_provider_aliases() -> None:
     aliases = provider_aliases()
     assert aliases["nous-portal"] == "nous"
     assert aliases["opencode"] == "opencode-zen"
     assert aliases["opencode-go-sub"] == "opencode-go"
+    assert aliases["trusted"] == "trustedrouter"
+    assert aliases["pinference"] == "prime-intellect"
 
 
 def test_get_provider_profile_rejects_unknown() -> None:

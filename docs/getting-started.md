@@ -65,6 +65,14 @@ loro providers smoke "hello" --provider openrouter --model deepseek/deepseek-v4-
 export OPENCODE_ZEN_API_KEY="<your-opencode-key>"
 loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
 
+export TRUSTEDROUTER_API_KEY="<your-trustedrouter-key>"
+loro providers smoke "hello" --provider trustedrouter --model trustedrouter/cheap --execute
+
+export PRIME_API_KEY="<your-prime-key>"
+# Optional: charge requests to a Prime team instead of the personal account.
+export PRIME_TEAM_ID="<your-team-id>"
+loro providers smoke "hello" --provider prime --model openai/gpt-oss-20b --execute
+
 export ANTHROPIC_API_KEY="<your-anthropic-key>"
 loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
 

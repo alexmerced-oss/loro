@@ -217,6 +217,8 @@ loro providers request "hello" --provider nous --model deepseek/deepseek-v4-flas
 loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
 loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
 loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
+loro providers request "hello" --provider trustedrouter --model trustedrouter/cheap
+loro providers request "hello" --provider prime --model openai/gpt-oss-20b
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro data schema events --catalog prod --namespace analytics
 loro data explain-access events --catalog prod --namespace analytics --catalog-role reader

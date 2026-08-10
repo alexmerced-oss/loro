@@ -3696,6 +3696,7 @@ def providers_show(provider: Annotated[str, typer.Argument(help="Provider name."
             "api_key_env": profile.api_key_env,
             "base_url": profile.base_url,
             "protocol": profile.protocol,
+            "optional_header_env": dict(profile.optional_header_env),
             "notes": profile.notes,
         }
     )

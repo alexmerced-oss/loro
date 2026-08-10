@@ -93,6 +93,13 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
         messages.append(f"Base URL: {base_url}")
     else:
         messages.append("No base URL configured.")
+    for header, environment_name in profile.optional_header_env:
+        if os.environ.get(environment_name):
+            messages.append(f"Using optional {header} from {environment_name}.")
+        else:
+            messages.append(
+                f"Optional provider header environment variable not set: {environment_name}"
+            )
     if profile.protocol == "bedrock":
         if find_spec("boto3") and find_spec("botocore"):
             messages.append("boto3 and botocore are importable for Bedrock.")

@@ -11,6 +11,7 @@ class ProviderProfile:
     api_key_env: str | None = None
     base_url: str | None = None
     protocol: str = "openai-compatible"
+    optional_header_env: tuple[tuple[str, str], ...] = ()
     notes: str = ""
 
 
@@ -120,6 +121,33 @@ PROVIDER_PROFILES: dict[str, ProviderProfile] = {
         small_model="openai/gpt-5.4-mini",
         api_key_env="OPENROUTER_API_KEY",
         base_url="https://openrouter.ai/api/v1",
+    ),
+    "trustedrouter": ProviderProfile(
+        name="trustedrouter",
+        display_name="TrustedRouter",
+        default_model="trustedrouter/cheap",
+        small_model="trustedrouter/fast",
+        aliases=("trusted", "trusted-provider", "trusted-router"),
+        api_key_env="TRUSTEDROUTER_API_KEY",
+        base_url="https://api.trustedrouter.com/v1",
+        notes=(
+            "OpenAI-compatible, hardware-attested multi-provider gateway. "
+            "Use a fixed model route or a TrustedRouter routing alias."
+        ),
+    ),
+    "prime-intellect": ProviderProfile(
+        name="prime-intellect",
+        display_name="Prime Intellect Inference",
+        default_model="openai/gpt-oss-120b",
+        small_model="openai/gpt-oss-20b",
+        aliases=("prime", "primeintellect", "pinference"),
+        api_key_env="PRIME_API_KEY",
+        base_url="https://api.pinference.ai/api/v1",
+        optional_header_env=(("X-Prime-Team-ID", "PRIME_TEAM_ID"),),
+        notes=(
+            "OpenAI-compatible Prime Inference API. API keys need Inference permission; "
+            "set PRIME_TEAM_ID to charge requests to a team account."
+        ),
     ),
     "nous": ProviderProfile(
         name="nous",
