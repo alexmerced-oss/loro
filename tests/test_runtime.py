@@ -75,6 +75,7 @@ def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
                         ModelToolCall(
                             name="file.read",
                             args={"path": str(note), "limit": 100},
+                            call_id="call-native-read",
                         )
                     ],
                 )
@@ -91,6 +92,8 @@ def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
     assert len(result.tool_executions) == 1
     assert result.tool_executions[0].output == "hello from a native tool call\n"
     assert "Final answer from native path." in result.summary
+    assert client.messages[1][-2].tool_calls[0].call_id == "call-native-read"
+    assert client.messages[1][-1].tool_results[0].call_id == "call-native-read"
 
 
 def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:

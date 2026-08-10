@@ -94,8 +94,11 @@ The MVP stores provider configuration, exposes provider metadata, and includes r
 
 OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
 
-Model clients expose both `complete()` and `stream()`. Providers that do not yet have native
-streaming support use a safe fallback that yields the completed response as one chunk.
+Model clients expose `complete()`, `stream_complete()`, and the compatibility `stream()` iterator.
+OpenAI-compatible and Anthropic streams retain native tool calls as well as text, and honor the
+same proxy, custom CA, timeout, and retry configuration as non-streaming requests. Providers that
+do not yet have native streaming support use a safe fallback that yields the completed response as
+one chunk.
 
 Provider clients also normalize native tool-call response payloads into Loro's internal
 tool-call shape. The runtime can execute tool calls returned through OpenAI-compatible

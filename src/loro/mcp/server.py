@@ -59,9 +59,7 @@ class LoroMCPServerCatalog:
         # "authority": none, that is a fail-open that exposes any file on the host, so
         # refuse to export those tools rather than export them unconfined.
         if not config.permissions.workspace_roots:
-            unconfined = sorted(
-                name for name in requested if name.startswith(("agraph.", "file."))
-            )
+            unconfined = sorted(name for name in requested if name.startswith(("agraph.", "file.")))
             if unconfined:
                 raise MCPServerModeError(
                     "MCP server mode requires permissions.workspace_roots before exporting "

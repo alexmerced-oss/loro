@@ -45,8 +45,12 @@ jobs:
           wheel=$(find dist -name 'loro_agent-*.whl' -print -quit)
           /tmp/loro-release-smoke/bin/python -m pip install "${wheel}[gateway]"
           /tmp/loro-release-smoke/bin/loro --version
+          /tmp/loro-release-smoke/bin/loro doctor --help
+          /tmp/loro-release-smoke/bin/loro config check --help
           /tmp/loro-release-smoke/bin/loro credentials --help
           /tmp/loro-release-smoke/bin/loro gateway --help
+          /tmp/loro-release-smoke/bin/loro audit query --help
+          /tmp/loro-release-smoke/bin/loro memory sweep --help
           /tmp/loro-release-smoke/bin/loro skills import-claude --help
           /tmp/loro-release-smoke/bin/loro skills import-pi --help
           /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream

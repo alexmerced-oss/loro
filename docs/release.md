@@ -66,9 +66,9 @@ Recent patch releases:
 - `0.1.3`: omitted deprecated Gemini sampling config for `gemini-3.6-flash` and
   `gemini-3.5-flash-lite`.
 
-Release `0.3.0` adds AGS 1.0 conformance level 3, managed graph policy, durable graph execution,
-model-tier routing, graph generation, read-only MCP graph tools, and a bundled authoring Skill.
-See [Loro 0.3.0](releases/0.3.0.md) for the complete release notes and external deployment gates.
+Release `0.4.0` adds native provider tool calling, protocol-safe streaming, compliance queries,
+managed graph and MCP improvements, retention operations, and the August 2026 security hardening.
+See [Loro 0.4.0](releases/0.4.0.md) for the complete release notes and external deployment gates.
 
 ## Documentation
 

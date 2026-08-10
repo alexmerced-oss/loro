@@ -55,9 +55,7 @@ def test_sandbox_rejects_cwd_outside_workspace(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     workspace.mkdir()
     outside.mkdir()
-    runner = SandboxRunner(
-        sandbox_config(), workspace_roots=[str(workspace)], environ=os.environ
-    )
+    runner = SandboxRunner(sandbox_config(), workspace_roots=[str(workspace)], environ=os.environ)
 
     with pytest.raises(SandboxError, match="outside configured workspace"):
         runner.run([sys.executable, "-V"], profile_name="test", cwd=outside)

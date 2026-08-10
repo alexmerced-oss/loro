@@ -89,7 +89,9 @@ the bounded local buffer:
 
 `loro audit flush` drains the buffer under a single lock across load, delivery, and rewrite, so a
 concurrent writer cannot lose an event in the gap. When the sink supports it, buffered events are
-delivered in batches of `http_batch_size` (default 50) rather than one request per event.
+delivered in batches of `http_batch_size`. The default is `1`, which preserves the one-event HTTP
+collector contract. Set a larger value only after confirming that the collector accepts the
+`{"events": [...]}` batch envelope.
 
 Delivery is at least once. A collector should deduplicate by `event_id`, because a timeout after
 server acceptance can cause a buffered retry.

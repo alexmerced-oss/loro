@@ -150,11 +150,7 @@ def _check_sandbox(config: LoroConfig) -> list[ConfigFinding]:
                     f"{pointer}/allowed_executables",
                 )
             )
-        bare = [
-            value
-            for value in profile.allowed_executables
-            if value != "*" and "/" not in value
-        ]
+        bare = [value for value in profile.allowed_executables if value != "*" and "/" not in value]
         if bare and not profile.trusted_executable_prefixes:
             findings.append(
                 ConfigFinding(
@@ -223,8 +219,7 @@ def _check_gateway(config: LoroConfig) -> list[ConfigFinding]:
                 ConfigFinding(
                     "LC032",
                     "info",
-                    f"Gateway endpoint {endpoint_id!r} restricts neither channels nor "
-                    "workspaces.",
+                    f"Gateway endpoint {endpoint_id!r} restricts neither channels nor workspaces.",
                     pointer,
                 )
             )
@@ -238,8 +233,7 @@ def _check_identity(config: LoroConfig) -> list[ConfigFinding]:
         ConfigFinding(
             "LC040",
             "info",
-            "identity.required_fields is empty, so runs proceed with an unattested "
-            "identity.",
+            "identity.required_fields is empty, so runs proceed with an unattested identity.",
             "/identity/required_fields",
         )
     ]

@@ -56,6 +56,7 @@ def _graph_schema_validator() -> Any:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(schema)
 
+
 SUPPORTED_MAJOR = 1
 SUPPORTED_MINOR = 0
 

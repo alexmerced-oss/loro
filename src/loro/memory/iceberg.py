@@ -221,9 +221,7 @@ LIMIT :limit;
             params={"tenant_id": tenant_id, "query": like_term(query), "limit": limit},
         )
 
-    def render_lifecycle(
-        self, request: SharedMemoryLifecycleRequest
-    ) -> SharedMemoryStatement:
+    def render_lifecycle(self, request: SharedMemoryLifecycleRequest) -> SharedMemoryStatement:
         self._authorize_tenant(request.tenant_id)
         status = "'deleted'" if request.action == "delete" else "status"
         content = ":content" if request.action == "correct" else "content"
@@ -411,9 +409,7 @@ VALUES (
             "event_at": _iceberg_value(request.requested_at),
             "payload": json.dumps({"reason": request.reason}),
         }
-        events_table.append(
-            pa.Table.from_pylist([event], schema=events_table.schema().as_arrow())
-        )
+        events_table.append(pa.Table.from_pylist([event], schema=events_table.schema().as_arrow()))
 
     def search(
         self,

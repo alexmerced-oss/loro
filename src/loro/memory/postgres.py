@@ -271,17 +271,14 @@ LIMIT %(limit)s;
                     rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
-    def render_lifecycle(
-        self, request: SharedMemoryLifecycleRequest
-    ) -> SharedMemoryStatement:
+    def render_lifecycle(self, request: SharedMemoryLifecycleRequest) -> SharedMemoryStatement:
         self._authorize_tenant(request.tenant_id)
         assignments = {
             "correct": (
                 "content = %(content)s, summary = %(summary)s, updated_at = %(requested_at)s"
             ),
             "delete": (
-                "status = 'deleted', deleted_at = %(requested_at)s, "
-                "updated_at = %(requested_at)s"
+                "status = 'deleted', deleted_at = %(requested_at)s, updated_at = %(requested_at)s"
             ),
             "expire": "expires_at = %(expires_at)s, updated_at = %(requested_at)s",
             "hold": "legal_hold = TRUE, updated_at = %(requested_at)s",

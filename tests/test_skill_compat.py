@@ -155,13 +155,7 @@ def test_claude_plugin_local_mcp_executable_is_rejected(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (source / ".mcp.json").write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "local": {"command": "${CLAUDE_PLUGIN_ROOT}/bin/server"}
-                }
-            }
-        ),
+        json.dumps({"mcpServers": {"local": {"command": "${CLAUDE_PLUGIN_ROOT}/bin/server"}}}),
         encoding="utf-8",
     )
 

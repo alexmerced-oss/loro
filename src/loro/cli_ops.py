@@ -53,8 +53,7 @@ def _doctor_checks(config: LoroConfig) -> list[dict[str, Any]]:
                 f"{identity.context.subject} @ {identity.context.tenant} "
                 f"(source: {identity.context.source})"
                 if identity.ok
-                else "missing required identity fields: "
-                + ", ".join(identity.missing_fields)
+                else "missing required identity fields: " + ", ".join(identity.missing_fields)
             ),
         }
     )
@@ -73,9 +72,7 @@ def _doctor_checks(config: LoroConfig) -> list[dict[str, Any]]:
 
     sandbox = SandboxRunner(config.sandbox).diagnose()
     profiles = sandbox.get("profiles", {})
-    unready = sorted(
-        name for name, item in profiles.items() if not item.get("ready", False)
-    )
+    unready = sorted(name for name, item in profiles.items() if not item.get("ready", False))
     checks.append(
         {
             "check": "sandbox",
@@ -107,9 +104,7 @@ def _doctor_checks(config: LoroConfig) -> list[dict[str, Any]]:
             }
         )
     else:
-        checks.append(
-            {"check": "memory", "ok": True, "detail": "shared memory disabled"}
-        )
+        checks.append({"check": "memory", "ok": True, "detail": "shared memory disabled"})
 
     if config.mcp.enabled:
         mcp = diagnose_mcp(config.mcp, None)
@@ -171,9 +166,7 @@ def doctor(
 
 
 def config_check(
-    json_output: Annotated[
-        bool, typer.Option("--json", help="Emit findings as JSON.")
-    ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit findings as JSON.")] = False,
     strict: Annotated[
         bool, typer.Option("--strict", help="Exit non-zero on warnings as well as errors.")
     ] = False,
@@ -239,9 +232,7 @@ def audit_query(
 def audit_report_command(
     actor: Annotated[str | None, typer.Option("--actor", help="Exact actor subject.")] = None,
     tenant: Annotated[str | None, typer.Option("--tenant", help="Exact tenant id.")] = None,
-    event_type: Annotated[
-        str | None, typer.Option("--event-type", help="Event type glob.")
-    ] = None,
+    event_type: Annotated[str | None, typer.Option("--event-type", help="Event type glob.")] = None,
     action: Annotated[str | None, typer.Option("--action", help="Action glob.")] = None,
     since: Annotated[str | None, typer.Option("--since", help="ISO-8601 lower bound.")] = None,
     until: Annotated[str | None, typer.Option("--until", help="ISO-8601 upper bound.")] = None,

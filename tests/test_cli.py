@@ -166,8 +166,7 @@ def test_audit_verify_reports_valid_chain(tmp_path, monkeypatch) -> None:
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f'[audit]\npath = "{audit_path}"\n'
-        f'[sessions]\npath = "{tmp_path / "sessions"}"\n',
+        f'[audit]\npath = "{audit_path}"\n[sessions]\npath = "{tmp_path / "sessions"}"\n',
     )
     assert CliRunner().invoke(app, ["plan", "Prepare a short plan."]).exit_code == 0
 

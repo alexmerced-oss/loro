@@ -14,7 +14,7 @@ from loro.identity import IdentityContext, resolve_identity
 from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
-from loro.model_tools import ModelToolCall
+from loro.model_tools import ModelToolCall, ModelToolResult
 from loro.models import ModelMessage, ModelProviderError, ModelResponse, create_model_client
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.resources import memory_resource, provider_resource
@@ -205,11 +205,13 @@ class AgentRuntime:
                 latency_ms=round((monotonic() - model_started) * 1000, 3),
                 usage=self.usage.payload(),
             )
+            native_calls: list[ModelToolCall] = []
             try:
                 tool_calls = [
                     *_tool_calls_from_model_response(model_response.tool_calls),
                     *parse_tool_calls(model_response_content, origin="model"),
                 ]
+                native_calls = model_response.tool_calls
             except (ValueError, TypeError, json.JSONDecodeError) as error:
                 # Models emit malformed directives routinely; feed the parse error back
                 # instead of aborting the run.
@@ -251,17 +253,42 @@ class AgentRuntime:
                 break
             step_executions = self._execute_tool_calls(tool_calls, step=step)
             tool_executions.extend(step_executions)
-            messages.append(ModelMessage(role="assistant", content=model_response_content))
             messages.append(
                 ModelMessage(
-                    role="user",
+                    role="assistant",
+                    content=model_response_content,
+                    tool_calls=native_calls,
+                )
+            )
+            native_results = [
+                ModelToolResult(
+                    name=call.name,
+                    call_id=call.call_id,
+                    content=_format_tool_execution(execution),
+                    is_error=not execution.ok,
+                )
+                for call, execution in zip(
+                    native_calls,
+                    step_executions[: len(native_calls)],
+                    strict=True,
+                )
+            ]
+            textual_executions = step_executions[len(native_calls) :]
+            result_content = (
+                "Tool results:\n"
+                + "\n\n".join(_format_tool_execution(execution) for execution in textual_executions)
+                + "\n\n"
+                if textual_executions
+                else ""
+            )
+            messages.append(
+                ModelMessage(
+                    role="tool" if native_results else "user",
                     content=(
-                        "Tool results:\n"
-                        + "\n\n".join(
-                            _format_tool_execution(execution) for execution in step_executions
-                        )
-                        + "\n\nContinue the task. If you are done, respond without tool directives."
+                        result_content
+                        + "Continue the task. If you are done, respond without tool directives."
                     ),
+                    tool_results=native_results,
                 )
             )
         else:
@@ -532,12 +559,11 @@ def _stream_completion(
     messages: list[ModelMessage],
     on_token: Callable[[str], None],
 ) -> ModelResponse:
-    """Stream a completion to `on_token` and return the assembled response.
+    """Stream a completion to `on_token` and preserve native tool calls."""
 
-    Native tool calls are not delivered incrementally, so a streamed step falls back to a
-    normal completion when the model asks for tools; the textual `@tool` directives are
-    recovered from the streamed text either way.
-    """
+    stream_complete = getattr(client, "stream_complete", None)
+    if callable(stream_complete):
+        return stream_complete(messages, on_token)
 
     chunks: list[str] = []
     for chunk in client.stream(messages):

@@ -328,8 +328,10 @@ def test_concurrent_appends_during_drain_are_never_lost(tmp_path) -> None:
 def test_legacy_audit_file_with_blank_lines_verifies_clean(tmp_path) -> None:
     path = tmp_path / "audit.jsonl"
     path.write_text(
-        json.dumps({"event_type": "legacy.one"}) + "\n\n"
-        + json.dumps({"event_type": "legacy.two"}) + "\n\n",
+        json.dumps({"event_type": "legacy.one"})
+        + "\n\n"
+        + json.dumps({"event_type": "legacy.two"})
+        + "\n\n",
         encoding="utf-8",
     )
     JsonlAuditSink(path).deliver({"event_type": "chained.one"})
@@ -489,9 +491,7 @@ def test_corrupt_credential_index_raises_credential_error(tmp_path, monkeypatch)
 
 
 def test_tampered_session_message_content_is_rejected(tmp_path) -> None:
-    config = SessionConfig(
-        path=str(tmp_path / "sessions"), message_path=str(tmp_path / "messages")
-    )
+    config = SessionConfig(path=str(tmp_path / "sessions"), message_path=str(tmp_path / "messages"))
     mailbox = SessionMailbox(config)
     for session_id in ("sender", "recipient"):
         mailbox.sessions.save(
@@ -721,9 +721,10 @@ def test_tool_catalog_is_published_in_each_provider_wire_format() -> None:
     assert {schema.name for schema in schemas} >= {"file.read", "shell.run", "artifact.create"}
     openai = provider_tool_payload("openai-compatible", schemas)
     assert openai["tools"][0]["type"] == "function"
-    assert provider_tool_payload("anthropic", schemas)["tools"][0]["input_schema"]["type"] == (
-        "object"
-    )
+    assert all("." not in item["function"]["name"] for item in openai["tools"])
+    anthropic = provider_tool_payload("anthropic", schemas)["tools"]
+    assert anthropic[0]["input_schema"]["type"] == "object"
+    assert all("." not in item["name"] for item in anthropic)
     gemini = provider_tool_payload("gemini", schemas)["tools"][0]["functionDeclarations"]
     assert all("." not in item["name"] for item in gemini)
     bedrock = provider_tool_payload("bedrock", schemas)["toolConfig"]["tools"]
@@ -801,8 +802,11 @@ def test_spec_example_graphs_execute_not_just_validate(tmp_path) -> None:
     from loro.agraph.execute import GraphExecutionError, GraphExecutor
     from loro.agraph.record import validate_run_record
 
-    examples = sorted((Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "agraph" /
-                       "examples").glob("*.agraph.yaml"))
+    examples = sorted(
+        (Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "agraph" / "examples").glob(
+            "*.agraph.yaml"
+        )
+    )
     assert examples, "no example graphs found"
 
     @dataclass

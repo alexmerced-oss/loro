@@ -139,9 +139,7 @@ def create_shared_memory_draft(
         memory_type=memory_type,
         classification=classification,
         created_by=created_by,
-        expires_at=(datetime.now(UTC) + timedelta(days=retention_days))
-        if retention_days
-        else None,
+        expires_at=(datetime.now(UTC) + timedelta(days=retention_days)) if retention_days else None,
     )
 
 

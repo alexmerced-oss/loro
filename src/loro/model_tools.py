@@ -7,6 +7,16 @@ from typing import Any
 class ModelToolCall:
     name: str
     args: dict[str, Any]
+    call_id: str | None = None
+    provider_payload: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ModelToolResult:
+    name: str
+    content: str
+    call_id: str | None = None
+    is_error: bool = False
 
 
 class ModelToolCallParseError(ValueError):
@@ -44,8 +54,16 @@ def parse_openai_tool_calls(payload: dict[str, Any]) -> list[ModelToolCall]:
         function = raw_call.get("function", {})
         if not isinstance(function, dict):
             raise ModelToolCallParseError("OpenAI tool call function must be an object.")
+        call_id = _string_name(raw_call.get("id"), "OpenAI tool call id")
         name = _string_name(function.get("name"), "OpenAI tool call function.name")
-        calls.append(ModelToolCall(name=name, args=_json_args(function.get("arguments"))))
+        calls.append(
+            ModelToolCall(
+                name=name,
+                args=_json_args(function.get("arguments")),
+                call_id=call_id,
+                provider_payload=raw_call,
+            )
+        )
     return calls
 
 
@@ -57,8 +75,16 @@ def parse_anthropic_tool_calls(payload: dict[str, Any]) -> list[ModelToolCall]:
     for block in blocks:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
+        call_id = _string_name(block.get("id"), "Anthropic tool_use.id")
         name = _string_name(block.get("name"), "Anthropic tool_use.name")
-        calls.append(ModelToolCall(name=name, args=_object_args(block.get("input", {}))))
+        calls.append(
+            ModelToolCall(
+                name=name,
+                args=_object_args(block.get("input", {})),
+                call_id=call_id,
+                provider_payload=block,
+            )
+        )
     return calls
 
 
@@ -83,7 +109,18 @@ def parse_gemini_tool_calls(payload: dict[str, Any]) -> list[ModelToolCall]:
             if not isinstance(function_call, dict):
                 raise ModelToolCallParseError("Gemini functionCall must be an object.")
             name = _string_name(function_call.get("name"), "Gemini functionCall.name")
-            calls.append(ModelToolCall(name=name, args=_object_args(function_call.get("args", {}))))
+            calls.append(
+                ModelToolCall(
+                    name=name,
+                    args=_object_args(function_call.get("args", {})),
+                    call_id=(
+                        str(function_call["id"])
+                        if function_call.get("id") not in (None, "")
+                        else None
+                    ),
+                    provider_payload=part,
+                )
+            )
     return calls
 
 
@@ -101,8 +138,16 @@ def parse_bedrock_tool_calls(payload: dict[str, Any]) -> list[ModelToolCall]:
         tool_use = block["toolUse"]
         if not isinstance(tool_use, dict):
             raise ModelToolCallParseError("Bedrock toolUse must be an object.")
+        call_id = _string_name(tool_use.get("toolUseId"), "Bedrock toolUse.toolUseId")
         name = _string_name(tool_use.get("name"), "Bedrock toolUse.name")
-        calls.append(ModelToolCall(name=name, args=_object_args(tool_use.get("input", {}))))
+        calls.append(
+            ModelToolCall(
+                name=name,
+                args=_object_args(tool_use.get("input", {})),
+                call_id=call_id,
+                provider_payload=block,
+            )
+        )
     return calls
 
 

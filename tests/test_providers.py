@@ -96,9 +96,7 @@ def test_check_provider_config_uses_named_vault_fallback(monkeypatch) -> None:
 
     monkeypatch.delenv("NOUS_API_KEY", raising=False)
     monkeypatch.setattr("loro.providers.CredentialVault", Vault)
-    config = model_config_from_profile(
-        "nous", credential_ref="vault://provider/nous/work"
-    )
+    config = model_config_from_profile("nous", credential_ref="vault://provider/nous/work")
 
     check = check_provider_config(config)
 

@@ -13,16 +13,19 @@ from loro.credentials import CredentialError, CredentialVault
 from loro.model_tools import (
     ModelToolCall,
     ModelToolCallParseError,
+    ModelToolResult,
     parse_provider_tool_calls,
 )
 from loro.providers import get_provider_profile
-from loro.tool_schemas import ToolSchema, provider_tool_payload
+from loro.tool_schemas import ToolSchema, provider_tool_name, provider_tool_payload
 
 
 @dataclass(frozen=True)
 class ModelMessage:
     role: str
-    content: str
+    content: str = ""
+    tool_calls: list[ModelToolCall] = field(default_factory=list)
+    tool_results: list[ModelToolResult] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,12 @@ class ModelClient(Protocol):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest: ...
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse: ...
+
+    def stream_complete(
+        self,
+        messages: list[ModelMessage],
+        on_token: Callable[[str], None] | None = None,
+    ) -> ModelResponse: ...
 
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]: ...
 
@@ -79,28 +88,67 @@ class BaseModelClient:
                 raise ModelProviderError(f"Credential vault lookup failed: {error}") from error
         return None
 
-    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, str]]:
-        return [message.__dict__ for message in messages]
+    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for message in messages:
+            if message.tool_calls:
+                payload.append(
+                    {
+                        "role": "assistant",
+                        "content": message.content or None,
+                        "tool_calls": [
+                            call.provider_payload
+                            or {
+                                "id": call.call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": provider_tool_name(call.name),
+                                    "arguments": json.dumps(call.args),
+                                },
+                            }
+                            for call in message.tool_calls
+                        ],
+                    }
+                )
+                continue
+            if message.tool_results:
+                payload.extend(
+                    {
+                        "role": "tool",
+                        "tool_call_id": result.call_id,
+                        "content": result.content,
+                    }
+                    for result in message.tool_results
+                )
+                if message.content:
+                    payload.append({"role": "user", "content": message.content})
+                continue
+            payload.append({"role": message.role, "content": message.content})
+        return payload
 
-    def _send(self, request: ModelRequest) -> dict[str, Any]:
-        client_options: dict[str, Any] = {"timeout": self.config.timeout_seconds}
+    def _client_options(self) -> dict[str, Any]:
+        options: dict[str, Any] = {"timeout": self.config.timeout_seconds}
         if not self.config.verify_tls:
-            client_options["verify"] = False
+            options["verify"] = False
         if self.config.ca_bundle_env:
             ca_bundle = os.environ.get(self.config.ca_bundle_env)
             if not ca_bundle:
                 raise ModelProviderError(
-                    f"Configured CA bundle environment variable is missing: "
+                    "Configured CA bundle environment variable is missing: "
                     f"{self.config.ca_bundle_env}"
                 )
-            client_options["verify"] = ca_bundle
+            options["verify"] = ca_bundle
         if self.config.proxy_env:
             proxy = os.environ.get(self.config.proxy_env)
             if not proxy:
                 raise ModelProviderError(
                     f"Configured proxy environment variable is missing: {self.config.proxy_env}"
                 )
-            client_options["proxy"] = proxy
+            options["proxy"] = proxy
+        return options
+
+    def _send(self, request: ModelRequest) -> dict[str, Any]:
+        client_options = self._client_options()
 
         for attempt in range(self.config.max_retries + 1):
             try:
@@ -152,56 +200,62 @@ class BaseModelClient:
             time.sleep(delay)
 
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
-        yield self.complete(messages).content
+        chunks: list[str] = []
+        self.stream_complete(messages, chunks.append)
+        yield from chunks
 
-    def _stream_sse(
+    def stream_complete(
         self,
         messages: list[ModelMessage],
-        extract: Callable[[dict[str, Any]], str],
-    ) -> Iterator[str]:
-        """Yield incremental text from a server-sent-event completion stream.
+        on_token: Callable[[str], None] | None = None,
+    ) -> ModelResponse:
+        response = self.complete(messages)
+        if response.content and on_token:
+            on_token(response.content)
+        return response
 
-        If the endpoint refuses the streaming request, fall back to one non-streaming
-        completion so `--stream` never turns a working run into a failure.
+    def _stream_events(self, messages: list[ModelMessage]) -> Iterator[dict[str, Any]]:
+        """Yield SSE JSON events with the configured enterprise transport policy.
+
+        A failed stream may be retried only before an event has been emitted. Once data
+        has reached the caller, retrying could duplicate model output and tool calls.
         """
 
         request = self.build_request(messages)
-        client_options: dict[str, Any] = {"timeout": self.config.timeout_seconds}
-        if not self.config.verify_tls:
-            client_options["verify"] = False
-        streamed = False
-        try:
-            with httpx.Client(**client_options) as client:
-                with client.stream(
-                    request.method,
-                    request.url,
-                    headers=request.headers,
-                    json={**request.json, "stream": True},
-                ) as response:
-                    response.raise_for_status()
-                    for line in response.iter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if not data or data == "[DONE]":
-                            continue
-                        try:
-                            event = json.loads(data)
-                        except ValueError:
-                            continue
-                        if not isinstance(event, dict):
-                            continue
-                        chunk = extract(event)
-                        if chunk:
-                            streamed = True
-                            yield chunk
-                    return
-        except (httpx.HTTPError, OSError):
-            if streamed:
-                raise ModelProviderError(
-                    f"{self.config.provider} stream ended unexpectedly."
-                ) from None
-        yield self.complete(messages).content
+        emitted = False
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                with httpx.Client(**self._client_options()) as client:
+                    with client.stream(
+                        request.method,
+                        request.url,
+                        headers=request.headers,
+                        json={**request.json, "stream": True},
+                    ) as response:
+                        response.raise_for_status()
+                        for line in response.iter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[5:].strip()
+                            if not data or data == "[DONE]":
+                                continue
+                            try:
+                                event = json.loads(data)
+                            except ValueError:
+                                continue
+                            if isinstance(event, dict):
+                                emitted = True
+                                yield event
+                        return
+            except (httpx.HTTPError, OSError) as error:
+                if emitted:
+                    raise ModelProviderError(
+                        f"{self.config.provider} stream ended unexpectedly."
+                    ) from error
+                if attempt < self.config.max_retries:
+                    self._retry_pause(attempt)
+                    continue
+                return
 
 
 class MockModelClient(BaseModelClient):
@@ -210,7 +264,7 @@ class MockModelClient(BaseModelClient):
             method="MOCK",
             url="mock://local",
             headers={},
-            json={"messages": [message.__dict__ for message in messages]},
+            json={"messages": self._message_payload(messages)},
         )
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
@@ -264,20 +318,104 @@ class OpenAICompatibleClient(BaseModelClient):
             tool_calls=_provider_tool_calls(self.config.provider, payload),
         )
 
-    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
-        def extract(event: dict[str, Any]) -> str:
+    def stream_complete(
+        self,
+        messages: list[ModelMessage],
+        on_token: Callable[[str], None] | None = None,
+    ) -> ModelResponse:
+        content: list[str] = []
+        pending_calls: dict[int, dict[str, Any]] = {}
+        saw_event = False
+        for event in self._stream_events(messages):
+            saw_event = True
             choices = event.get("choices")
             if not isinstance(choices, list) or not choices:
-                return ""
+                continue
             delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
             if not isinstance(delta, dict):
-                return ""
-            return str(delta.get("content") or "")
-
-        return self._stream_sse(messages, extract)
+                continue
+            chunk = str(delta.get("content") or "")
+            if chunk:
+                content.append(chunk)
+                if on_token:
+                    on_token(chunk)
+            raw_calls = delta.get("tool_calls", [])
+            if not isinstance(raw_calls, list):
+                raise ModelProviderError(
+                    f"{self.config.provider} returned malformed streamed tool calls."
+                )
+            for raw_call in raw_calls:
+                if not isinstance(raw_call, dict):
+                    continue
+                index = raw_call.get("index", 0)
+                if not isinstance(index, int):
+                    continue
+                pending = pending_calls.setdefault(
+                    index,
+                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                if raw_call.get("id"):
+                    pending["id"] = str(raw_call["id"])
+                function = raw_call.get("function")
+                if isinstance(function, dict):
+                    pending["function"]["name"] += str(function.get("name") or "")
+                    pending["function"]["arguments"] += str(function.get("arguments") or "")
+        if not saw_event:
+            return super().stream_complete(messages, on_token)
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "".join(content),
+                        "tool_calls": [pending_calls[index] for index in sorted(pending_calls)],
+                    }
+                }
+            ]
+        }
+        return ModelResponse(
+            content="".join(content),
+            raw=payload,
+            tool_calls=_provider_tool_calls(self.config.provider, payload),
+        )
 
 
 class AnthropicClient(BaseModelClient):
+    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for message in messages:
+            if message.tool_calls:
+                blocks: list[dict[str, Any]] = []
+                if message.content:
+                    blocks.append({"type": "text", "text": message.content})
+                blocks.extend(
+                    call.provider_payload
+                    or {
+                        "type": "tool_use",
+                        "id": call.call_id,
+                        "name": provider_tool_name(call.name),
+                        "input": call.args,
+                    }
+                    for call in message.tool_calls
+                )
+                payload.append({"role": "assistant", "content": blocks})
+                continue
+            if message.tool_results:
+                blocks = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": result.call_id,
+                        "content": result.content,
+                        "is_error": result.is_error,
+                    }
+                    for result in message.tool_results
+                ]
+                if message.content:
+                    blocks.append({"type": "text", "text": message.content})
+                payload.append({"role": "user", "content": blocks})
+                continue
+            payload.append({"role": message.role, "content": message.content})
+        return payload
+
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
         base_url = (self.config.base_url or "https://api.anthropic.com").rstrip("/")
         headers = {
@@ -319,32 +457,107 @@ class AnthropicClient(BaseModelClient):
             tool_calls=_provider_tool_calls(self.config.provider, payload),
         )
 
-    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
-        def extract(event: dict[str, Any]) -> str:
-            if event.get("type") != "content_block_delta":
-                return ""
+    def stream_complete(
+        self,
+        messages: list[ModelMessage],
+        on_token: Callable[[str], None] | None = None,
+    ) -> ModelResponse:
+        content: list[str] = []
+        pending_calls: dict[int, dict[str, Any]] = {}
+        saw_event = False
+        for event in self._stream_events(messages):
+            saw_event = True
+            event_type = event.get("type")
+            index = event.get("index", 0)
+            if event_type == "content_block_start" and isinstance(index, int):
+                block = event.get("content_block")
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    pending_calls[index] = {
+                        "type": "tool_use",
+                        "id": block.get("id"),
+                        "name": block.get("name"),
+                        "input": block.get("input", {}),
+                    }
+                continue
+            if event_type != "content_block_delta":
+                continue
             delta = event.get("delta")
             if not isinstance(delta, dict):
-                return ""
-            return str(delta.get("text") or "")
-
-        return self._stream_sse(messages, extract)
+                continue
+            chunk = str(delta.get("text") or "")
+            if chunk:
+                content.append(chunk)
+                if on_token:
+                    on_token(chunk)
+            if delta.get("type") == "input_json_delta" and isinstance(index, int):
+                pending = pending_calls.setdefault(
+                    index,
+                    {"type": "tool_use", "id": None, "name": None, "input": {}},
+                )
+                pending["_input_json"] = pending.get("_input_json", "") + str(
+                    delta.get("partial_json") or ""
+                )
+        if not saw_event:
+            return super().stream_complete(messages, on_token)
+        blocks: list[dict[str, Any]] = []
+        if content:
+            blocks.append({"type": "text", "text": "".join(content)})
+        for index in sorted(pending_calls):
+            block = pending_calls[index]
+            raw_input = block.pop("_input_json", "")
+            if raw_input:
+                try:
+                    block["input"] = json.loads(raw_input)
+                except json.JSONDecodeError as error:
+                    raise ModelProviderError(
+                        "anthropic returned malformed streamed tool-call JSON."
+                    ) from error
+            blocks.append(block)
+        payload = {"content": blocks}
+        return ModelResponse(
+            content="".join(content),
+            raw=payload,
+            tool_calls=_provider_tool_calls(self.config.provider, payload),
+        )
 
 
 class GeminiClient(BaseModelClient):
+    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, Any]]:
+        contents: list[dict[str, Any]] = []
+        for message in messages:
+            role = "model" if message.role == "assistant" else "user"
+            parts: list[dict[str, Any]] = []
+            if message.content:
+                parts.append({"text": message.content})
+            parts.extend(
+                call.provider_payload
+                or {
+                    "functionCall": {
+                        "name": provider_tool_name(call.name),
+                        "args": call.args,
+                    }
+                }
+                for call in message.tool_calls
+            )
+            parts.extend(
+                {
+                    "functionResponse": {
+                        "name": provider_tool_name(result.name),
+                        "response": {"output": result.content, "is_error": result.is_error},
+                    }
+                }
+                for result in message.tool_results
+            )
+            contents.append({"role": role, "parts": parts or [{"text": ""}]})
+        return contents
+
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
         base_url = (self.config.base_url or "https://generativelanguage.googleapis.com").rstrip("/")
         api_key = self._api_key()
         url = f"{base_url}/v1beta/models/{self.config.model}:generateContent"
         if api_key:
             url = f"{url}?key={api_key}"
-        contents = [
-            {
-                "role": "model" if message.role == "assistant" else "user",
-                "parts": [{"text": message.content}],
-            }
-            for message in messages
-        ]
+        contents = self._message_payload(messages)
         return ModelRequest(
             method="POST",
             url=url,
@@ -408,6 +621,37 @@ class OllamaClient(BaseModelClient):
 
 
 class BedrockClient(BaseModelClient):
+    def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for message in messages:
+            role = "assistant" if message.role == "assistant" else "user"
+            blocks: list[dict[str, Any]] = []
+            if message.content:
+                blocks.append({"text": message.content})
+            blocks.extend(
+                call.provider_payload
+                or {
+                    "toolUse": {
+                        "toolUseId": call.call_id,
+                        "name": provider_tool_name(call.name),
+                        "input": call.args,
+                    }
+                }
+                for call in message.tool_calls
+            )
+            blocks.extend(
+                {
+                    "toolResult": {
+                        "toolUseId": result.call_id,
+                        "content": [{"text": result.content}],
+                        "status": "error" if result.is_error else "success",
+                    }
+                }
+                for result in message.tool_results
+            )
+            payload.append({"role": role, "content": blocks or [{"text": ""}]})
+        return payload
+
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
         return ModelRequest(
             method="AWS_BEDROCK",
@@ -433,13 +677,7 @@ class BedrockClient(BaseModelClient):
             client = boto3.client("bedrock-runtime")
             response = client.converse(
                 modelId=self.config.model,
-                messages=[
-                    {
-                        "role": "assistant" if message.role == "assistant" else "user",
-                        "content": [{"text": message.content}],
-                    }
-                    for message in messages
-                ],
+                messages=self._message_payload(messages),
                 inferenceConfig={"temperature": self.config.temperature},
                 **self._tool_payload(),
             )

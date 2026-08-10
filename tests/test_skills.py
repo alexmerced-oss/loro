@@ -148,8 +148,7 @@ def test_skill_install_removes_copy_if_digest_changes_during_copy(tmp_path, monk
             "space-separated string",
         ),
         (
-            "name: aliased\ndescription: &description repeated\n"
-            "compatibility: *description\n",
+            "name: aliased\ndescription: &description repeated\ncompatibility: *description\n",
             "YAML aliases",
         ),
     ],

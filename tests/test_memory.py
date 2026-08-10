@@ -379,9 +379,7 @@ def test_iceberg_lifecycle_appends_version_and_event(monkeypatch) -> None:
         summary="New summary",
     )
     store = IcebergSharedMemoryStore(
-        SharedMemoryConfig(
-            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
-        )
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
     )
     store.apply_lifecycle(request)
 
@@ -412,9 +410,7 @@ def test_iceberg_lifecycle_blocks_delete_under_legal_hold(monkeypatch) -> None:
         reason="Deletion request",
     )
     store = IcebergSharedMemoryStore(
-        SharedMemoryConfig(
-            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
-        )
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
     )
 
     with pytest.raises(RuntimeError, match="legal hold"):

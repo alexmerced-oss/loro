@@ -250,9 +250,7 @@ class AuditBuffer:
     def _raw_lines_unlocked(self) -> list[bytes]:
         if not self.path.exists():
             return []
-        return [
-            line for line in self.path.read_bytes().splitlines(keepends=True) if line.strip()
-        ]
+        return [line for line in self.path.read_bytes().splitlines(keepends=True) if line.strip()]
 
     def _count_unlocked(self) -> int:
         """Event count without re-parsing every buffered event.

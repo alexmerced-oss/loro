@@ -113,9 +113,7 @@ def _validate_child_environment_names(values: list[str]) -> list[str]:
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
             raise ValueError(f"Invalid environment variable name: {value!r}")
         if name.upper() in FORBIDDEN_CHILD_ENVIRONMENT:
-            raise ValueError(
-                f"Environment variable cannot be forwarded to a child process: {name}"
-            )
+            raise ValueError(f"Environment variable cannot be forwarded to a child process: {name}")
         if name not in normalized:
             normalized.append(name)
     return normalized
@@ -650,7 +648,7 @@ class AuditConfig(BaseModel):
     max_buffer_events: int = Field(default=1000, ge=1)
     # Events delivered per HTTP request when flushing the buffer. 1 preserves the
     # one-request-per-event wire format for collectors that cannot accept a batch.
-    http_batch_size: int = Field(default=50, ge=1, le=1000)
+    http_batch_size: int = Field(default=1, ge=1, le=1000)
     max_retries: int = Field(default=2, ge=0, le=10)
     backoff_seconds: float = Field(default=0.25, ge=0, le=60)
     timeout_seconds: float = Field(default=10, gt=0, le=300)

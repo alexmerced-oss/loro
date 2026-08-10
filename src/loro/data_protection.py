@@ -80,9 +80,7 @@ def _shannon_entropy(value: str) -> float:
     if not value:
         return 0.0
     total = len(value)
-    return -sum(
-        (count / total) * math.log2(count / total) for count in Counter(value).values()
-    )
+    return -sum((count / total) * math.log2(count / total) for count in Counter(value).values())
 
 
 def _looks_like_aws_secret_key(value: str) -> bool:

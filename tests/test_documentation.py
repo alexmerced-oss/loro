@@ -29,9 +29,7 @@ def test_documented_loro_command_paths_exist() -> None:
     for path in MARKDOWN_FILES:
         for line_number, line in enumerate(path.read_text().splitlines(), start=1):
             command = line.strip().removesuffix("\\").strip()
-            if not command.startswith("loro ") or re.match(
-                r"^loro(?: [a-z-]+)?: ", command
-            ):
+            if not command.startswith("loro ") or re.match(r"^loro(?: [a-z-]+)?: ", command):
                 continue
             try:
                 parts = shlex.split(command)
