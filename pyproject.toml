@@ -41,6 +41,8 @@ dependencies = [
   "xlsxwriter>=3.2.0",
   "PyYAML>=6.0.2",
   "jsonschema>=4.23.0",
+  "keyring>=25.6.0",
+  "cryptography>=50.0.0; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +60,9 @@ aws = [
 ]
 mcp = [
   "mcp>=2.0,<3",
+]
+gateway = [
+  "cryptography>=50.0.0",
 ]
 integration = [
   "psycopg[binary]>=3.2.0",

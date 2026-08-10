@@ -16,6 +16,7 @@ loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup mcp
+loro setup gateway
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
@@ -36,12 +37,14 @@ This map reflects Loro 0.3.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: audit, brief, config, configure, data, docs, doctor, file, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
 loro audit: doctor, flush, verify
 loro brief: executive, incident, meeting, project
+loro credentials: delete, doctor, list, set
 loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views
 loro docs: create
 loro file: read, search
+loro gateway: doctor, serve, setup
 loro graph: generate, plan, policy, resume, run, skill-path, status, validate
 loro identity: doctor, show
 loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
@@ -51,7 +54,7 @@ loro providers: check, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
-loro setup: approvals, audit, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
+loro setup: approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
 loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, install, list, propose, quarantine, remove, review, show, validate

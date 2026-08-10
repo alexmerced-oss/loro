@@ -354,6 +354,7 @@ loro setup shared-memory
 loro setup polaris
 loro setup mcp
 loro setup mcp-server
+loro setup gateway
 loro setup skills
 loro setup quickstart
 ```
@@ -371,9 +372,39 @@ configures an explicit read-only export surface, and `loro setup skills` control
 script policy. `loro setup quickstart` configures the original core setup areas; run the two
 extension setup commands separately when those capabilities are required.
 
-All setup commands preserve existing sections in the target config file. They write local
-settings only; provider secrets, Postgres DSNs, Iceberg credentials, and tokens should remain
-in environment variables.
+All setup commands preserve existing sections in the target config file. Secret values belong in
+environment variables or the [Credential Vault](credentials.md); local TOML stores only vault
+references. `loro setup gateway` configures one signed endpoint and trusted identity mapping.
+
+## Credential Vault And Named Provider Accounts
+
+```toml
+[model]
+provider = "openai"
+model = "gpt-5.6-luna"
+api_key_env = "OPENAI_API_KEY" # pragma: allowlist secret
+credential_ref = "vault://provider/openai/work-api-key"
+```
+
+The environment value wins when present; otherwise Loro resolves `credential_ref` through the
+operating-system keyring. This lets projects select different accounts for one provider without
+placing keys in TOML. See [Credential Vault](credentials.md).
+
+## Channel Gateways
+
+```toml
+[gateway]
+enabled = true
+host = "127.0.0.1"
+port = 8765
+state_path = ".loro/gateway-state.json"
+max_body_bytes = 1000000
+max_pending_tasks = 32
+max_workers = 4
+```
+
+Endpoint-specific routes, credential references, workspace/channel allowlists, and platform-user
+identity mappings live under `[gateway.endpoints.ID]`. See [Channel Gateways](channel-gateways.md).
 
 See [Identity Context](identity.md) for identity precedence, supported environment variables,
 managed requirements, propagation, and current trust limitations.

@@ -9,8 +9,10 @@ THRESHOLDS = {
     "src/loro/approvals.py": 85.0,
     "src/loro/audit/": 85.0,
     "src/loro/budgets.py": 90.0,
+    "src/loro/credentials.py": 75.0,
     "src/loro/data_protection.py": 85.0,
     "src/loro/identity.py": 90.0,
+    "src/loro/gateway/": 55.0,
     "src/loro/resources.py": 85.0,
     "src/loro/sandbox.py": 70.0,
 }

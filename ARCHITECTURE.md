@@ -7,6 +7,10 @@ Loro is a Python CLI agent harness for enterprise coding, governed data access, 
 ```mermaid
 flowchart LR
   User["Enterprise user"] --> CLI["Loro CLI / TUI"]
+  Chat["Signed chat platforms / bridges"] --> Gateway["Bounded channel gateway"]
+  Gateway --> CLI
+  Vault["OS credential service"] --> Models
+  Vault --> Gateway
   Identity["Managed identity assertion"] --> CLI
   CLI --> Runtime["Agent runtime"]
   Runtime --> Models["Model provider adapters"]
@@ -56,6 +60,9 @@ flowchart LR
 - `loro.skills`: Agent Skills validation, provenance, lifecycle, and progressive loading.
 - `loro.agraph`: AGS 1.0 loading, validation, expressions, managed policy, planning, scheduling,
   criteria, tier routing, durable execution, run records, and graph generation.
+- `loro.credentials`: strict vault references, OS-keyring access, and non-secret metadata indexing.
+- `loro.gateway`: signed Slack, Discord, Telegram, Teams, Signal-bridge, and generic adapters plus
+  identity mapping, durable replay suppression, bounded dispatch, and asynchronous replies.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,
@@ -236,6 +243,7 @@ Runtime files are ignored by Git:
 - `.loro/audit-buffer.jsonl`
 - `.loro/memory/`
 - `.loro/sessions/`
+- `.loro/gateway-state.json`
 - `artifacts/`
 
 This keeps local usage out of source control while preserving inspectable state on disk.

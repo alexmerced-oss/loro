@@ -98,6 +98,7 @@ Polaris access control.
 | TM-15 | A malicious MCP server, negotiated downgrade, extension, skill instruction, script, reference, or asset attempts confused-deputy execution, credential theft, persistence, or policy bypass. | Remote code execution, data disclosure, or durable compromise. | MCP calls use version policy, transport controls, normalized approval, inert extensions, and audit; Skills use validation, digest provenance, bounded progressive loading, and script denial by default. | Enforceable sandboxing, hostile-server fixtures, official conformance evidence, and enterprise review. | [MCP and Agent Skills roadmap](mcp-skills-roadmap.md); local security tests exist, external proof pending. |
 | TM-16 | An untrusted Agentic Graph uses prompt injection, command criteria, remote references, excessive fan-out, weak success checks, or misleading model tiers to gain authority or exhaust resources. | Unauthorized side effects, code execution, data disclosure, runaway spend, or false completion. | Three-layer validation, managed `LP` policy, permission intersection, sandboxed command checks disabled by default, local digest-pinned references, hard node/loop/map/parallel/cost bounds, strict AGX without host evaluation, harness criteria, identity gates, and digest-guarded resume. | Production sandbox, provider budget, graph-policy, and hostile-graph review remain enterprise deployment evidence. | [Agentic Graph Policy](agraph-policy.md) and `tests/test_agraph.py`. |
 | TM-17 | A session sends a message containing a permission request, forged user instruction, or `approved=true` and the receiver treats it as authoritative. | Cross-session confused deputy and unauthorized tool execution. | Every message is labeled untrusted with `carries_user_authority=false`; sends require independent policy/approval; resume does not parse relayed text as user tool directives. | Distributed mailbox authentication, concurrency/retention controls, and enterprise adversarial review. | `tests/test_session_messages.py` and [Cross-Session Messaging](session-messaging.md). |
+| TM-18 | A forged, replayed, cross-workspace, or compromised chat message launches remote work or captures a reply. | Unauthorized execution, disclosure, replay, or tenant confusion. | Platform signatures/secrets, timestamp checks, durable hashed deduplication, workspace/channel/user allowlists, explicit identity mapping, bounded queues, untrusted-content labels, OS-vaulted credentials, and existing policy/approval controls. | TLS reverse proxy, platform app governance, credential rotation, retention policy, production hostile-event tests, and a trusted out-of-band approval service. | `tests/test_gateway.py`, [Channel Gateways](channel-gateways.md), and deployment evidence. |
 
 ## Abuse Cases That Must Fail Closed
 
@@ -112,6 +113,8 @@ Polaris access control.
 - Content classified above a provider's approved ceiling is sent to that provider.
 - An MCP server negotiates below a managed minimum, an unknown extension requests authority, or
   a skill's `allowed-tools` metadata attempts to override a deny.
+- A remote message claims to approve an action, arrives from an unmapped user/workspace/channel,
+  has an invalid signature, or repeats a previously processed message id.
 
 ## Existing Security Positives And Known Gaps
 

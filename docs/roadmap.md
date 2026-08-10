@@ -167,10 +167,10 @@ gates, evidence requirements, and immediate priorities.
 The near-term execution plan is tracked in
 [Enterprise Next Batches](enterprise-next-batches.md).
 
-Slack, Discord, and Telegram channel gateways are not implemented in 0.3.0. A future gateway
-batch must add authenticated adapters, channel/user-to-identity mapping, replay protection,
-rate and payload bounds, explicit approval routing, untrusted-message labeling, durable delivery,
-and audit coverage before any bot surface is advertised. See [Channel Gateways](channel-gateways.md).
+Authenticated Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways are implemented
+for 0.3.0 with OS-vaulted credentials, identity/channel/workspace mapping, replay protection,
+bounded asynchronous work, untrusted-message labeling, and runtime policy enforcement. See
+[Channel Gateways](channel-gateways.md) and [Credential Vault](credentials.md).
 
 ## MCP And Agent Skills
 

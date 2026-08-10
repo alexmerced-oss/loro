@@ -808,3 +808,12 @@ Operational metrics:
 - Dual-era MCP support and Agent Skills support as detailed in
   `docs/mcp-skills-roadmap.md`.
 - Integration tests and security review.
+
+### Milestone 8: Secure Remote Work And Credentials
+
+- OS-keyring credential vault with named accounts and environment override compatibility.
+- Signed Slack, Discord, and Telegram gateways with tenant-scoped identity mapping.
+- Teams Workflow/outgoing-webhook support and a generic signed bridge for Signal and other chat
+  systems.
+- Durable replay suppression, bounded asynchronous work, safe replies, and no remote approval
+  authority.

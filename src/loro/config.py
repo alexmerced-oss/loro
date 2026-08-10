@@ -38,6 +38,7 @@ class ModelTierConfig(BaseModel):
     model: str
     context_tokens: int | None = Field(default=None, ge=1)
     api_key_env: str | None = None
+    credential_ref: str | None = None
     base_url: str | None = None
 
 
@@ -46,6 +47,7 @@ class ModelConfig(BaseModel):
     model: str = "mock-agent"
     small_model: str = "mock-small"
     api_key_env: str | None = None
+    credential_ref: str | None = None
     base_url: str | None = None
     timeout_seconds: int = 120
     max_retries: int = Field(default=2, ge=0, le=10)
@@ -587,6 +589,79 @@ class SessionConfig(BaseModel):
     max_record_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
 
 
+class CredentialsConfig(BaseModel):
+    index_path: str = "~/.config/loro/credentials.json"
+
+
+class GatewayIdentityConfig(BaseModel):
+    subject: str
+    display_name: str | None = None
+    organization: str | None = None
+    tenant: str
+    groups: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+
+
+class GatewayEndpointConfig(BaseModel):
+    platform: Literal["slack", "discord", "telegram", "teams", "signal", "generic"]
+    enabled: bool = True
+    route: str
+    credentials: dict[str, str] = Field(default_factory=dict)
+    identities: dict[str, GatewayIdentityConfig] = Field(default_factory=dict)
+    allowed_workspaces: list[str] = Field(default_factory=list)
+    allowed_channels: list[str] = Field(default_factory=list)
+    ephemeral_responses: bool = True
+
+    @field_validator("route")
+    @classmethod
+    def _validate_route(cls, value: str) -> str:
+        if re.fullmatch(r"/[A-Za-z0-9/_-]{1,128}", value) is None or ".." in value:
+            raise ValueError("gateway route must be an absolute safe URL path")
+        return value
+
+    @field_validator("credentials")
+    @classmethod
+    def _validate_credential_references(cls, values: dict[str, str]) -> dict[str, str]:
+        pattern = re.compile(
+            r"vault://[a-z0-9][a-z0-9._-]{0,63}/"
+            r"[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,63}"
+        )
+        for name, value in values.items():
+            if not name.strip() or pattern.fullmatch(value) is None:
+                raise ValueError(
+                    "gateway credentials must map names to vault://namespace/profile/key references"
+                )
+        return values
+
+
+class GatewayConfig(BaseModel):
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(default=8765, ge=1, le=65535)
+    max_body_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
+    max_pending_tasks: int = Field(default=32, ge=1, le=10_000)
+    max_workers: int = Field(default=4, ge=1, le=128)
+    state_path: str = ".loro/gateway-state.json"
+    max_seen_messages: int = Field(default=10_000, ge=100, le=1_000_000)
+    request_max_age_seconds: int = Field(default=300, ge=30, le=3600)
+    request_timeout_seconds: int = Field(default=15, ge=1, le=120)
+    endpoints: dict[str, GatewayEndpointConfig] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _unique_routes(self) -> "GatewayConfig":
+        invalid_ids = [
+            endpoint_id
+            for endpoint_id in self.endpoints
+            if re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", endpoint_id) is None
+        ]
+        if invalid_ids:
+            raise ValueError("gateway endpoint ids must use lowercase safe names")
+        routes = [endpoint.route for endpoint in self.endpoints.values()]
+        if len(routes) != len(set(routes)):
+            raise ValueError("gateway endpoint routes must be unique")
+        return self
+
+
 class AGraphConfig(BaseModel):
     enabled: bool = True
     conformance_level: int = Field(default=3, ge=0, le=3)
@@ -724,6 +799,8 @@ class LoroConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
+    credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
+    gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
@@ -760,6 +837,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         }
         if config.model.api_key_env:
             data["api_key_env"] = config.model.api_key_env
+        if config.model.credential_ref:
+            data["credential_ref"] = config.model.credential_ref
         if config.model.base_url:
             data["base_url"] = config.model.base_url
         if config.model.ca_bundle_env:
@@ -789,6 +868,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"mcp": config.mcp.model_dump(exclude_none=True)}
     if section == "audit":
         return {"audit": config.audit.model_dump(exclude_none=True)}
+    if section == "gateway":
+        return {"gateway": config.gateway.model_dump(exclude_none=True)}
     if section == "skills":
         return {"skills": config.skills.model_dump(exclude_none=True)}
     if section == "safety":

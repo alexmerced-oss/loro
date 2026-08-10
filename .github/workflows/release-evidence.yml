@@ -42,8 +42,11 @@ jobs:
       - name: Smoke test built wheel
         run: |
           python -m venv /tmp/loro-release-smoke
-          /tmp/loro-release-smoke/bin/python -m pip install dist/loro_agent-*.whl
+          wheel=$(find dist -name 'loro_agent-*.whl' -print -quit)
+          /tmp/loro-release-smoke/bin/python -m pip install "${wheel}[gateway]"
           /tmp/loro-release-smoke/bin/loro --version
+          /tmp/loro-release-smoke/bin/loro credentials --help
+          /tmp/loro-release-smoke/bin/loro gateway --help
           /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream
           /tmp/loro-release-smoke/bin/loro graph validate \
             docs/examples/agraph/release-readiness.agraph.yaml --strict

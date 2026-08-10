@@ -17,6 +17,7 @@ Optional extras:
 python -m pip install "loro-agent[data]" # Postgres, Iceberg, and PyArrow support
 python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
 python -m pip install "loro-agent[mcp]"  # MCP client support
+python -m pip install "loro-agent[gateway]" # Discord and signed chat gateway support
 python -m pip install "loro-agent[dev]"  # Development and test tools
 ```
 
@@ -43,9 +44,13 @@ Loro supports AGS conformance level 3 with durable resume, model-tier routing, h
 criteria, gates, branches, bounded loops/maps, subgraphs, parallel ready nodes, fallbacks, and
 compensation. See the [Agentic Graph guide](docs/agentic-graphs.md).
 
-Loro does not currently expose Slack, Discord, or Telegram bot gateways. It is a local CLI and MCP
-harness; model-provider gateway support is a separate capability. See
-[Channel Gateways](docs/channel-gateways.md) for the exact boundary and planned security model.
+Loro supports authenticated remote work through Slack, Discord, Telegram, Teams, Signal bridges,
+and generic signed webhooks. Platform users map to tenant-scoped Loro identities, while remote
+message text never carries approval authority. See [Channel Gateways](docs/channel-gateways.md).
+
+Provider and gateway secrets can live in the operating-system credential vault, including multiple
+named accounts for the same provider. Environment variables remain an override for automation. See
+the [Credential Vault](docs/credentials.md).
 
 For a no-key first run, choose the `mock` provider in the wizard. That lets you verify the CLI,
 configuration loading, memory paths, artifact folders, and health checks before connecting a
@@ -76,6 +81,7 @@ loro setup shared-memory
 loro setup polaris
 loro setup mcp
 loro setup mcp-server
+loro setup gateway
 loro setup skills
 loro setup quickstart
 ```
@@ -108,6 +114,8 @@ loro setup quickstart
 - Least-privilege MCP server mode with an explicit read-only export ceiling.
 - Read-only Agentic Graph validation and planning over explicitly exported MCP tools.
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
+- OS-keyring credential vault references with named provider and integration accounts.
+- Signed, identity-mapped Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways.
 
 ## Configure A Provider
 

@@ -85,3 +85,22 @@ def test_check_provider_config_present_key(monkeypatch) -> None:
     check = check_provider_config(config)
     assert check.ok is True
     assert check.api_key_present is True
+    assert "No API key environment variable required by this profile." not in check.messages
+
+
+def test_check_provider_config_uses_named_vault_fallback(monkeypatch) -> None:
+    class Vault:
+        def get(self, ref: str) -> str:
+            assert ref == "vault://provider/nous/work"
+            return "vault-value"
+
+    monkeypatch.delenv("NOUS_API_KEY", raising=False)
+    monkeypatch.setattr("loro.providers.CredentialVault", Vault)
+    config = model_config_from_profile(
+        "nous", credential_ref="vault://provider/nous/work"
+    )
+
+    check = check_provider_config(config)
+
+    assert check.ok is True
+    assert check.credential_present is True

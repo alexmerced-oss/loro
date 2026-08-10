@@ -4,6 +4,7 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from loro.config import LoroConfig, ModelConfig, write_config_sections
+from loro.credentials import CredentialError, CredentialVault
 from loro.provider_profiles import PROVIDER_PROFILES, ProviderProfile
 
 
@@ -13,6 +14,8 @@ class ProviderCheck:
     ok: bool
     api_key_env: str | None
     api_key_present: bool
+    credential_ref: str | None
+    credential_present: bool
     base_url: str | None
     protocol: str
     messages: list[str]
@@ -45,6 +48,7 @@ def model_config_from_profile(
     model: str | None = None,
     small_model: str | None = None,
     api_key_env: str | None = None,
+    credential_ref: str | None = None,
     base_url: str | None = None,
 ) -> ModelConfig:
     profile = get_provider_profile(provider)
@@ -53,6 +57,7 @@ def model_config_from_profile(
         model=model or profile.default_model,
         small_model=small_model or profile.small_model,
         api_key_env=api_key_env if api_key_env is not None else profile.api_key_env,
+        credential_ref=credential_ref,
         base_url=base_url if base_url is not None else profile.base_url,
     )
 
@@ -62,7 +67,8 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
     api_key_env = config.api_key_env if config.api_key_env is not None else profile.api_key_env
     base_url = config.base_url if config.base_url is not None else profile.base_url
     messages: list[str] = []
-    api_key_present = True
+    api_key_present = not api_key_env and not config.credential_ref
+    credential_present = False
     if api_key_env:
         api_key_present = bool(os.environ.get(api_key_env))
         if api_key_present:
@@ -71,6 +77,18 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
             messages.append(f"Missing API key environment variable: {api_key_env}")
     else:
         messages.append("No API key environment variable required by this profile.")
+    if not api_key_present and config.credential_ref:
+        try:
+            credential_present = CredentialVault().get(config.credential_ref) is not None
+        except CredentialError as error:
+            messages.append(f"Credential vault unavailable: {error}")
+        else:
+            messages.append(
+                "Found credential vault entry."
+                if credential_present
+                else "Credential vault entry is missing."
+            )
+        api_key_present = credential_present
     if base_url:
         messages.append(f"Base URL: {base_url}")
     else:
@@ -90,6 +108,8 @@ def check_provider_config(config: ModelConfig) -> ProviderCheck:
         ok=ok,
         api_key_env=api_key_env,
         api_key_present=api_key_present,
+        credential_ref=config.credential_ref,
+        credential_present=credential_present,
         base_url=base_url,
         protocol=profile.protocol,
         messages=messages,

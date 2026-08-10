@@ -17,6 +17,8 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.cli_credentials import credentials_app
+from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
 from loro.config import (
     LoroConfig,
@@ -133,6 +135,9 @@ app.add_typer(audit_app, name="audit")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(skills_app, name="skills")
 app.add_typer(sandbox_app, name="sandbox")
+app.add_typer(credentials_app, name="credentials")
+app.add_typer(gateway_app, name="gateway")
+setup_app.command("gateway")(gateway_setup)
 app.add_typer(graph_app, name="graph")
 
 console = Console()
@@ -697,6 +702,10 @@ def configure(
         str | None,
         typer.Option("--api-key-env", help="Environment variable containing API key."),
     ] = None,
+    credential_ref: Annotated[
+        str | None,
+        typer.Option("--credential-ref", help="OS-keyring vault reference for the API key."),
+    ] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
     output: Annotated[
         Path,
@@ -744,6 +753,7 @@ def configure(
         model=chosen_model,
         small_model=chosen_small,
         api_key_env=chosen_key_env,
+        credential_ref=credential_ref,
         base_url=chosen_base_url,
     )
     written = write_local_model_config(output, config)
@@ -771,6 +781,10 @@ def setup_provider(
         str | None,
         typer.Option("--api-key-env", help="Environment variable containing API key."),
     ] = None,
+    credential_ref: Annotated[
+        str | None,
+        typer.Option("--credential-ref", help="OS-keyring vault reference for the API key."),
+    ] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
     output: Annotated[
         Path,
@@ -783,6 +797,7 @@ def setup_provider(
         model=model,
         small_model=small_model,
         api_key_env=api_key_env,
+        credential_ref=credential_ref,
         base_url=base_url,
         output=output,
     )
@@ -2407,6 +2422,8 @@ def doctor() -> None:
         console.print(f"Small model: {config.model.small_model}")
     if config.model.api_key_env:
         console.print(f"API key env var: {config.model.api_key_env}")
+    if config.model.credential_ref:
+        console.print(f"Credential vault ref: {config.model.credential_ref}")
     if config.model.base_url:
         console.print(f"Base URL: {config.model.base_url}")
     console.print(f"Default permission: {config.permissions.default}")
@@ -3643,6 +3660,8 @@ def providers_check(
             "ok": check.ok,
             "api_key_env": check.api_key_env,
             "api_key_present": check.api_key_present,
+            "credential_ref": check.credential_ref,
+            "credential_present": check.credential_present,
             "base_url": check.base_url,
             "protocol": check.protocol,
             "messages": check.messages,

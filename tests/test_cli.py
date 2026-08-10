@@ -1,4 +1,5 @@
 import json
+import tomllib
 
 from typer.testing import CliRunner
 
@@ -26,6 +27,45 @@ def test_version() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "loro" in result.stdout
+
+
+def test_gateway_setup_writes_references_and_scope(tmp_path) -> None:
+    output = tmp_path / "config.local.toml"
+    result = CliRunner().invoke(
+        app,
+        [
+            "gateway",
+            "setup",
+            "--id",
+            "work-slack",
+            "--platform",
+            "slack",
+            "--user-id",
+            "U123",
+            "--subject",
+            "alex",
+            "--tenant",
+            "acme",
+            "--channel",
+            "C123",
+            "--workspace",
+            "T123",
+            "--credential",
+            "signing-secret=vault://gateway/work-slack/signing-secret",
+            "--credential",
+            "bot-token=vault://gateway/work-slack/bot-token",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    written = output.read_text(encoding="utf-8")
+    endpoint = tomllib.loads(written)["gateway"]["endpoints"]["work-slack"]
+    assert endpoint["allowed_channels"] == ["C123"]
+    assert endpoint["allowed_workspaces"] == ["T123"]
+    assert "vault://gateway/work-slack/signing-secret" in written
+    assert "secret value" not in written
 
 
 def test_policy_explain_reports_structured_match(monkeypatch) -> None:

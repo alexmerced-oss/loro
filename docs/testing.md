@@ -150,3 +150,14 @@ LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/tes
 ```
 
 The test expects a working Polaris CLI and at least one catalog available to list.
+
+## Credentials And Channel Gateways
+
+`tests/test_credentials.py` uses an in-memory Keyring-compatible backend and verifies strict vault
+references, mode-`0600` non-secret indexing, deletion, and environment-over-vault provider
+precedence. No real secret value is persisted.
+
+`tests/test_gateway.py` uses deterministic Slack HMAC, Discord Ed25519, Telegram secret-header,
+Teams HMAC, and generic bridge vectors. It verifies identity mapping, bounded asynchronous dispatch,
+and duplicate acknowledgement without contacting chat APIs. Production webhook and outage tests
+remain controlled integration evidence.

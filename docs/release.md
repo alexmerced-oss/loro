@@ -38,6 +38,13 @@ loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
 loro skills validate "$(loro graph skill-path)"
 ```
 
+When a secure OS keyring and test gateway configuration are available:
+
+```bash
+loro credentials doctor
+loro gateway doctor
+```
+
 Only run live provider smoke checks when credentials and spend controls are approved:
 
 ```bash
@@ -71,8 +78,10 @@ See [Loro 0.3.0](releases/0.3.0.md) for the complete release notes and external 
   commit, and run Agent Skills/session-message security tests.
 - Confirm the AGS conformance workflow is green on the release commit and the bundled Skill is
   present in the wheel.
-- Confirm [Channel Gateways](channel-gateways.md) still accurately describes unsupported bot
-  surfaces; do not advertise Slack, Discord, or Telegram without adapter and security evidence.
+- Confirm gateway signature/replay/identity tests pass and the supported adapters match
+  [Channel Gateways](channel-gateways.md).
+- Confirm the OS credential backend fails closed when unavailable and release artifacts contain no
+  vault values.
 
 ## Packaging
 

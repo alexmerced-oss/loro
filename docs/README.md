@@ -25,6 +25,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Agentic Graph Policy](agraph-policy.md)
 - [Cross-Session Messaging](session-messaging.md)
 - [Channel Gateways](channel-gateways.md)
+- [Credential Vault](credentials.md)
 - [AI Providers](providers.md)
 - [Safety](safety.md)
 - [Testing](testing.md)

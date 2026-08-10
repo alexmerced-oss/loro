@@ -19,6 +19,7 @@ class RoutingDecision:
     downgraded: bool
     context_tokens: int | None
     api_key_env: str | None
+    credential_ref: str | None
     base_url: str | None
 
     def model_config(self, base: ModelConfig) -> ModelConfig:
@@ -27,6 +28,7 @@ class RoutingDecision:
                 "provider": self.provider,
                 "model": self.model,
                 "api_key_env": self.api_key_env or base.api_key_env,
+                "credential_ref": self.credential_ref or base.credential_ref,
                 "base_url": self.base_url or base.base_url,
             }
         )
@@ -60,6 +62,7 @@ def route_model(
         downgraded,
         candidate.context_tokens,
         candidate.api_key_env,
+        candidate.credential_ref,
         candidate.base_url,
     )
 

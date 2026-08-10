@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from loro.config import ModelConfig
+from loro.credentials import CredentialError, CredentialVault
 from loro.model_tools import (
     ModelToolCall,
     ModelToolCallParseError,
@@ -54,9 +55,16 @@ class BaseModelClient:
         self.config = config
 
     def _api_key(self) -> str | None:
-        if not self.config.api_key_env:
-            return None
-        return os.environ.get(self.config.api_key_env)
+        if self.config.api_key_env:
+            value = os.environ.get(self.config.api_key_env)
+            if value:
+                return value
+        if self.config.credential_ref:
+            try:
+                return CredentialVault().get(self.config.credential_ref)
+            except CredentialError as error:
+                raise ModelProviderError(f"Credential vault lookup failed: {error}") from error
+        return None
 
     def _message_payload(self, messages: list[ModelMessage]) -> list[dict[str, str]]:
         return [message.__dict__ for message in messages]
