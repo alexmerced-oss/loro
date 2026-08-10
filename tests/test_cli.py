@@ -624,13 +624,41 @@ def test_shared_memory_lifecycle_accepts_release_hold_alias(tmp_path, monkeypatc
             "approved release",
             "--tenant-id",
             "acme",
+            "--operation-id",
+            "12345678-1234-5678-1234-567812345678",
         ],
     )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["action"] == "release_hold"
+    assert payload["operation_id"] == "12345678-1234-5678-1234-567812345678"
     assert "legal_hold = FALSE" in payload["sql"]
+
+
+def test_shared_memory_lifecycle_rejects_invalid_operation_id(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "lifecycle",
+            "memory-1",
+            "--action",
+            "hold",
+            "--reason",
+            "legal request",
+            "--operation-id",
+            "not-a-uuid",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "operation-id must be a UUID" in result.stderr
 
 
 def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:

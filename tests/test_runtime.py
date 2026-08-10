@@ -96,6 +96,58 @@ def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
     assert client.messages[1][-1].tool_results[0].call_id == "call-native-read"
 
 
+def test_runtime_redacts_native_tool_arguments_before_execution(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "native-protected.txt"
+
+    class NativeWriteClient:
+        def __init__(self) -> None:
+            self.messages: list[list[ModelMessage]] = []
+
+        def complete(self, messages: list[ModelMessage]) -> ModelResponse:
+            self.messages.append(messages)
+            if len(self.messages) == 1:
+                return ModelResponse(
+                    content="",
+                    tool_calls=[
+                        ModelToolCall(
+                            name="file.write",
+                            args={"path": str(target), "content": "token=abcdefghijk"},
+                            call_id="call-native-write",
+                            provider_payload={
+                                "functionCall": {
+                                    "name": "file_write",
+                                    "args": {
+                                        "path": str(target),
+                                        "content": "token=abcdefghijk",
+                                    },
+                                },
+                                "thoughtSignature": "provider-proof",
+                            },
+                        )
+                    ],
+                )
+            return ModelResponse(content="Done.")
+
+    client = NativeWriteClient()
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
+    config = _runtime_config(tmp_path, max_steps=2)
+    config.permissions.edit = "allow"
+
+    result = AgentRuntime(config).run("Create the protected note.", mode="run")
+
+    assert result.stop_reason == "completed"
+    assert target.read_text(encoding="utf-8") == "[redacted]"
+    protected_call = client.messages[1][-2].tool_calls[0]
+    assert protected_call.args["content"] == "[redacted]"
+    assert protected_call.provider_payload == {
+        "functionCall": {
+            "name": "file_write",
+            "args": {"path": str(target), "content": "[redacted]"},
+        },
+        "thoughtSignature": "provider-proof",
+    }
+
+
 def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:
     note = tmp_path / "note.txt"
     note.write_text("loop\n", encoding="utf-8")

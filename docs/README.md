@@ -41,6 +41,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Enterprise Evidence Register](enterprise-evidence.md)
 - [External Enterprise Requirements](external-enterprise-requirements.md)
 - [Security And Supply Chain](security-supply-chain.md)
+- [Loro 0.4.1 Release Notes](releases/0.4.1.md)
 - [Loro 0.4.0 Release Notes](releases/0.4.0.md)
 - [Loro 0.3.0 Release Notes](releases/0.3.0.md)
 - [Loro 0.2.0 Release Notes](releases/0.2.0.md)

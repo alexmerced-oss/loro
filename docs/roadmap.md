@@ -43,7 +43,7 @@
 
 ## Current Status
 
-The five MVP batches below are complete for the 0.4.0 alpha surface. Interactive approval prompts
+The five MVP batches below are complete for the 0.4.1 alpha surface. Interactive approval prompts
 and identity-bound, single-use approval records cover ask-gated write, shell, Git mutation,
 shared-memory, MCP, and governed-data actions. Remaining work is enterprise deployment evidence,
 external control integration, and defects found during controlled pilots rather than missing MVP
@@ -168,7 +168,7 @@ The near-term execution plan is tracked in
 [Enterprise Next Batches](enterprise-next-batches.md).
 
 Authenticated Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways are implemented
-for 0.4.0 with OS-vaulted credentials, identity/channel/workspace mapping, replay protection,
+for 0.4.1 with OS-vaulted credentials, identity/channel/workspace mapping, replay protection,
 bounded asynchronous work, untrusted-message labeling, and runtime policy enforcement. See
 [Channel Gateways](channel-gateways.md) and [Credential Vault](credentials.md).
 

@@ -33,7 +33,7 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.4.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.4.1. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text

@@ -177,6 +177,10 @@ class AgentRuntime:
                 self.usage.after_model(model_response)
                 output_decision = self.protection.enforce(model_response.content, "model_output")
                 model_response_content = output_decision.content
+                native_calls = _protect_native_tool_calls(
+                    self.protection,
+                    model_response.tool_calls,
+                )
             except BudgetExceeded as error:
                 model_response_content = str(error)
                 stop_reason = f"budget_{error.budget}"
@@ -205,13 +209,11 @@ class AgentRuntime:
                 latency_ms=round((monotonic() - model_started) * 1000, 3),
                 usage=self.usage.payload(),
             )
-            native_calls: list[ModelToolCall] = []
             try:
                 tool_calls = [
-                    *_tool_calls_from_model_response(model_response.tool_calls),
+                    *_tool_calls_from_model_response(native_calls),
                     *parse_tool_calls(model_response_content, origin="model"),
                 ]
-                native_calls = model_response.tool_calls
             except (ValueError, TypeError, json.JSONDecodeError) as error:
                 # Models emit malformed directives routinely; feed the parse error back
                 # instead of aborting the run.
@@ -579,6 +581,74 @@ def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall
         ToolCall(name=canonical_tool_name(call.name), args=call.args, origin="model")
         for call in calls
     ]
+
+
+def _protect_native_tool_calls(
+    protection: DataProtectionEngine,
+    calls: list[ModelToolCall],
+) -> list[ModelToolCall]:
+    """Apply the model-output policy to every native tool argument value.
+
+    Native calls arrive outside ``ModelResponse.content``. Provider wire metadata needed for
+    protocol round trips is recursively protected before it is retained.
+    """
+
+    protected: list[ModelToolCall] = []
+    for call in calls:
+        protected_args = {
+            key: _protect_native_tool_value(protection, value)
+            for key, value in call.args.items()
+        }
+        protected.append(
+            ModelToolCall(
+                name=call.name,
+                args=protected_args,
+                call_id=call.call_id,
+                provider_payload=_protect_provider_payload(
+                    protection,
+                    call.provider_payload,
+                    protected_args,
+                ),
+            )
+        )
+    return protected
+
+
+def _protect_native_tool_value(protection: DataProtectionEngine, value: Any) -> Any:
+    if isinstance(value, str):
+        return protection.enforce(value, "model_output").content
+    if isinstance(value, dict):
+        return {
+            key: _protect_native_tool_value(protection, nested)
+            for key, nested in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_protect_native_tool_value(protection, nested) for nested in value]
+    return value
+
+
+def _protect_provider_payload(
+    protection: DataProtectionEngine,
+    payload: dict[str, Any] | None,
+    protected_args: dict[str, Any],
+) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    protected = _protect_native_tool_value(protection, payload)
+    if not isinstance(protected, dict):
+        return None
+    function = protected.get("function")
+    if isinstance(function, dict):
+        function["arguments"] = json.dumps(protected_args)
+    function_call = protected.get("functionCall")
+    if isinstance(function_call, dict):
+        function_call["args"] = protected_args
+    tool_use = protected.get("toolUse")
+    if isinstance(tool_use, dict):
+        tool_use["input"] = protected_args
+    if protected.get("type") == "tool_use":
+        protected["input"] = protected_args
+    return protected
 
 
 def _tool_identity_payload(identity: IdentityContext) -> dict[str, object]:

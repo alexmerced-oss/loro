@@ -60,6 +60,9 @@ loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash -
 
 Recent patch releases:
 
+- `0.4.1`: protected native tool arguments before execution, made Iceberg state/event retries
+  audit-first and idempotent, normalized Iceberg timestamps to UTC, repaired gateway queue/replay
+  rollback, and added TrustedRouter and Prime Intellect provider profiles.
 - `0.1.1`: updated the Nous Portal endpoint to `https://inference-api.nousresearch.com/v1`.
 - `0.1.2`: omitted unsupported `temperature` for OpenAI `gpt-5*` and Anthropic
   `claude-sonnet-5*` requests.
@@ -69,6 +72,8 @@ Recent patch releases:
 Release `0.4.0` adds native provider tool calling, protocol-safe streaming, compliance queries,
 managed graph and MCP improvements, retention operations, and the August 2026 security hardening.
 See [Loro 0.4.0](releases/0.4.0.md) for the complete release notes and external deployment gates.
+Release `0.4.1` is the recommended patch and provider-profile update. See
+[Loro 0.4.1](releases/0.4.1.md).
 
 ## Documentation
 

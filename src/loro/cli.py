@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 import click
 import typer
@@ -2930,6 +2931,13 @@ def memory_lifecycle(
         str | None,
         typer.Option("--expires-at", help="ISO-8601 expiration time for expire."),
     ] = None,
+    operation_id: Annotated[
+        str | None,
+        typer.Option(
+            "--operation-id",
+            help="UUID to reuse when retrying a partial lifecycle operation.",
+        ),
+    ] = None,
     execute: Annotated[
         bool,
         typer.Option("--execute", help="Execute instead of rendering the backend operation."),
@@ -2957,6 +2965,15 @@ def memory_lifecycle(
             raise typer.BadParameter("expires-at must be ISO-8601.") from error
         if expiration.tzinfo is None:
             expiration = expiration.replace(tzinfo=UTC)
+    normalized_operation_id: str | None = None
+    if operation_id:
+        try:
+            normalized_operation_id = str(UUID(operation_id))
+        except ValueError as error:
+            raise typer.BadParameter("operation-id must be a UUID.") from error
+    request_values: dict[str, Any] = {}
+    if normalized_operation_id is not None:
+        request_values["event_id"] = normalized_operation_id
     request = SharedMemoryLifecycleRequest(
         memory_id=memory_id,
         tenant_id=resolved_tenant,
@@ -2966,6 +2983,7 @@ def memory_lifecycle(
         content=content,
         summary=prompt_preview(content, limit=120) if content else None,
         expires_at=expiration,
+        **request_values,
     )
     if execute:
         resource = memory_resource(
@@ -2994,7 +3012,12 @@ def memory_lifecycle(
     try:
         result = apply_shared_memory_lifecycle(config, request, execute=execute)
     except (PermissionError, RuntimeError, ValueError) as error:
-        raise typer.BadParameter(str(error)) from error
+        retry = (
+            f" Retry the same operation with --operation-id {request.event_id}."
+            if execute and config.memory.shared.backend == "iceberg"
+            else ""
+        )
+        raise typer.BadParameter(f"{error}{retry}") from error
     _audit().write(
         "memory.shared_lifecycle",
         action=action,
@@ -3003,6 +3026,7 @@ def memory_lifecycle(
         backend=result.backend,
         executed=result.executed,
         reason=reason,
+        operation_id=request.event_id,
     )
     if result.executed:
         console.print(f"Applied shared-memory lifecycle action: {action}")
@@ -3012,6 +3036,7 @@ def memory_lifecycle(
             "backend": result.backend,
             "execute": False,
             "action": action,
+            "operation_id": request.event_id,
             "sql": result.statement.sql,
             "params": jsonable_mapping(result.statement.params),
         }

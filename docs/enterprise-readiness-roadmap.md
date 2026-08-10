@@ -13,7 +13,7 @@ an incident and support process.
 
 ## Current Position
 
-Status as of August 2026: **Alpha; MVP and repository-side hardening complete for 0.4.0;
+Status as of August 2026: **Alpha; MVP and repository-side hardening complete for 0.4.1;
 enterprise deployment evidence in progress.**
 
 | Area | Current state | Readiness |

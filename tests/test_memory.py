@@ -1,8 +1,8 @@
 import builtins
 import sys
 import types
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -444,6 +444,93 @@ def test_iceberg_commit_draft_appends_memory_and_event(monkeypatch) -> None:
     assert event_rows[0]["payload"] == f'{{"draft_id": "{draft.draft_id}"}}'
 
 
+def test_iceberg_commit_draft_recovers_without_duplicate_state(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[])
+    memory_table = fake_catalog.tables["enterprise_memory.agent_facts"]
+    events_table = fake_catalog.tables["enterprise_memory.memory_events"]
+    memory_table.failures_remaining = 1
+    draft = SharedMemoryDraft(
+        content="Use the enterprise launch template",
+        summary="Launch template",
+        tenant_id="acme",
+        created_by="alex",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(
+            iceberg_namespace="enterprise_memory",
+            iceberg_table="agent_facts",
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="injected append failure"):
+        store.commit_draft(draft)
+    assert len(events_table.rows) == 1
+    assert memory_table.rows == []
+
+    store.commit_draft(draft)
+    store.commit_draft(draft)
+
+    assert len(events_table.rows) == 1
+    assert len(memory_table.rows) == 1
+
+
+def test_iceberg_lifecycle_retry_is_idempotent(monkeypatch) -> None:
+    created = datetime(2026, 7, 1, tzinfo=UTC)
+    row = {
+        "memory_id": "mem-1",
+        "tenant_id": "acme",
+        "created_at": created,
+        "updated_at": None,
+        "status": "active",
+        "legal_hold": False,
+    }
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[row])
+    memory_table = fake_catalog.tables["enterprise_memory.agent_facts"]
+    events_table = fake_catalog.tables["enterprise_memory.memory_events"]
+    memory_table.failures_remaining = 1
+    request = SharedMemoryLifecycleRequest(
+        memory_id="mem-1",
+        tenant_id="acme",
+        action="hold",
+        actor="reviewer",
+        reason="Litigation hold",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
+    )
+
+    with pytest.raises(RuntimeError, match="injected append failure"):
+        store.apply_lifecycle(request)
+    retry = replace(request, requested_at=request.requested_at + timedelta(hours=1))
+    store.apply_lifecycle(retry)
+    store.apply_lifecycle(retry)
+
+    assert len(events_table.rows) == 1
+    assert len(memory_table.rows) == 2
+    assert memory_table.rows[-1]["legal_hold"] is True
+    assert memory_table.rows[-1]["updated_at"] == request.requested_at.replace(tzinfo=None)
+
+
+def test_iceberg_values_convert_offset_datetimes_to_utc(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[])
+    draft = SharedMemoryDraft(
+        content="Timezone-aware retention",
+        summary="Timezone retention",
+        tenant_id="acme",
+        created_by="alex",
+        created_at=datetime(2026, 8, 10, 12, tzinfo=timezone(timedelta(hours=-4))),
+        expires_at=datetime(2026, 8, 11, 12, tzinfo=timezone(timedelta(hours=-4))),
+    )
+
+    IcebergSharedMemoryStore(
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
+    ).commit_draft(draft)
+
+    row = fake_catalog.tables["enterprise_memory.agent_facts"].rows[0]
+    assert row["created_at"] == datetime(2026, 8, 10, 16)
+    assert row["expires_at"] == datetime(2026, 8, 11, 16)
+
+
 def test_iceberg_rejects_invalid_identifier() -> None:
     with pytest.raises(ValueError, match="iceberg_namespace"):
         IcebergSharedMemoryStore(SharedMemoryConfig(iceberg_namespace="bad-name"))
@@ -511,12 +598,17 @@ class FakeIcebergTable:
         self.rows = rows
         self.appended = []
         self.scan_options = {}
+        self.failures_remaining = 0
 
     def schema(self):
         return FakeIcebergSchema()
 
     def append(self, table):
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("injected append failure")
         self.appended.append(table)
+        self.rows.extend(table.to_pylist())
 
     def scan(self, selected_fields=None, **options):
         self.scan_options = {"selected_fields": selected_fields, **options}

@@ -30,7 +30,9 @@ evaluation.
 
 - The complete composed model request is checked immediately before provider dispatch, including
   recalled memory, resumed sessions, cross-session messages, skills, and initial tool output.
-- Model and tool output is transformed before parsing, reuse, session persistence, or display.
+- Model text and every nested native tool-argument value are transformed before parsing,
+  execution, reuse, session persistence, or display. Provider wire metadata needed for protocol
+  round trips is recursively protected before it is retained.
 - Local memory writes, shared-memory proposal acceptance/commit, artifact prompts and provenance,
   session records, and cross-session message writes use persistence policies.
 - Audit details are recursively evaluated. Nested sensitive strings are redacted and the event

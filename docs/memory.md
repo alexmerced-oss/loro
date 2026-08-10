@@ -154,9 +154,26 @@ Iceberg `shared-search` pushes tenant filtering into the PyIceberg scan as a typ
 expression (`EqualTo("tenant_id", ...)`, never an interpolated filter string), then selects the
 newest version per `memory_id` in Python. Status and expiry are deliberately *not* pushed down:
 they are per-version attributes, so filtering them in the scan could resurrect a memory whose
-newest version is deleted or expired. Iceberg `commit-draft --execute`
-appends one memory row and one event
-row to existing governed tables. DDL still renders through `loro memory schema --backend
+newest version is deleted or expired. Iceberg `commit-draft --execute` appends one memory row
+and one event row to existing governed tables. Draft-derived memory and event IDs and lifecycle
+event IDs are stable, so retrying the same object is idempotent.
+
+Iceberg does not provide a transaction spanning both tables. Loro therefore writes the audit
+event first and the state version second. If either append fails, the command fails and the same
+draft or lifecycle request can be retried: Loro detects the completed append and writes only the
+missing row. This prevents an unaudited state mutation and avoids duplicate state or event rows.
+Production operators should still alert on failed writes and retry or reconcile them promptly.
+All offset-aware timestamps are converted to UTC before storage in Iceberg's timezone-naive
+`TIMESTAMP` fields.
+
+For a lifecycle failure, Loro reports the operation UUID. Reuse it on the retry:
+
+```bash
+loro memory lifecycle <memory-id> --action hold --reason "Legal request" --execute \
+  --operation-id <reported-operation-uuid>
+```
+
+DDL still renders through `loro memory schema --backend
 iceberg`; table creation should happen through the governed catalog or enterprise query
 engine.
 

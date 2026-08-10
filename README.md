@@ -66,8 +66,9 @@ loro providers check openai
 loro run "Inspect README.md and suggest the next three improvements."
 ```
 
-The wizard stores local settings in `.loro/config.local.toml`. API keys stay in environment
-variables; Loro does not write them into the config file.
+The wizard stores local settings in `.loro/config.local.toml`. API keys can remain in environment
+variables or be addressed through OS-vault credential references; Loro does not write plaintext
+keys into the config file.
 
 Additional setup wizards are available for the enterprise pieces:
 
