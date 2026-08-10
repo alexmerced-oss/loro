@@ -90,7 +90,7 @@ Verify an attested artifact with:
 
 ```bash
 gh attestation verify dist/loro_agent-*.whl --repo alexmerced-oss/loro
-sha256sum --check dist/SHA256SUMS
+(cd dist && sha256sum --check SHA256SUMS)
 ```
 
 The workflow intentionally does not upload to PyPI. Publication still requires release-owner

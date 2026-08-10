@@ -52,7 +52,8 @@ jobs:
           test -f "$skill_path/references/schema/agentic-graph-1.0.schema.json"
 
       - name: Generate checksums
-        run: sha256sum dist/* > dist/SHA256SUMS
+        working-directory: dist
+        run: sha256sum loro_agent-* > SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest@v4
