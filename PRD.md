@@ -254,6 +254,9 @@ MVP tools:
 - Dual-era MCP client support for the current stateless specification and classic
   handshake-based servers.
 - Agent Skills discovery, validation, progressive disclosure, and policy-governed execution.
+- Agentic Graph Specification 1.0 level-3 validation and execution, including managed policy,
+  model-tier routing, harness-evaluated success criteria, durable approval gates, bounded
+  parallel/iterative composition, resumable run records, and goal-to-graph generation.
 - Polaris CLI wrapper.
 - Iceberg REST catalog client.
 - Postgres memory backend client.

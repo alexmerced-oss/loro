@@ -33,6 +33,7 @@ class AgentResult:
     stop_reason: str
     steps: int
     usage: dict[str, int | float]
+    emitted_outputs: dict[str, object]
 
 
 class AgentRuntime:
@@ -67,6 +68,7 @@ class AgentRuntime:
 
     def run(self, prompt: str, mode: str, *, session_id: str | None = None) -> AgentResult:
         self.usage = UsageBudget(self.config.runtime, self.config.model)
+        self.tools.graph_outputs = {}
         task_started = monotonic()
         trace_id = str(uuid4())
         self.audit.bind_context(trace_id=trace_id)
@@ -285,6 +287,7 @@ class AgentRuntime:
             stop_reason=stop_reason,
             steps=steps,
             usage=self.usage.payload(),
+            emitted_outputs=dict(self.tools.graph_outputs),
         )
 
     def _recall_shared_memories(self, prompt: str) -> list[SharedMemorySearchRecord]:

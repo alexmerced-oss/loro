@@ -17,6 +17,10 @@ flowchart LR
   Runtime --> Memory["Memory subsystem"]
   Runtime --> Artifacts["Artifact generators"]
   Runtime --> Audit["Audit log"]
+  CLI --> AGraph["AGS validator, policy, scheduler"]
+  AGraph --> Runtime
+  AGraph --> Approvals["Identity-bound gates"]
+  AGraph --> Audit
   Tools --> Files["File tools"]
   Tools --> Shell["Shell tools"]
   Tools --> Git["Git tools"]
@@ -50,6 +54,8 @@ flowchart LR
 - `loro.sessions`: durable JSON session records.
 - `loro.session_messages`: durable queued, delivered, and acknowledged session messages.
 - `loro.skills`: Agent Skills validation, provenance, lifecycle, and progressive loading.
+- `loro.agraph`: AGS 1.0 loading, validation, expressions, managed policy, planning, scheduling,
+  criteria, tier routing, durable execution, run records, and graph generation.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,

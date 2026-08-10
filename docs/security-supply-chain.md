@@ -1,5 +1,14 @@
 # Security And Supply Chain
 
+## Agentic Graph Dependencies
+
+An AGS `subgraph.ref` is executable supply-chain input. Loro's CLI resolves workspace-local files
+only, requires configured integrity metadata, verifies the canonical SHA-256 digest and optional
+expected graph id, reapplies schema and managed policy on resume, and refuses remote retrieval.
+Mirror reviewed graphs into controlled source, retain their upstream license and provenance, and
+review every digest change like a code dependency update. Inline and named fragments remain part
+of the parent graph digest.
+
 Loro's repository security gates are implemented in `.github/workflows/security.yml` and use
 pinned versions of `pip-audit`, Bandit, detect-secrets, CycloneDX, and pip-licenses. Dependency
 audits cover installed third-party packages while excluding Loro's editable checkout, preventing

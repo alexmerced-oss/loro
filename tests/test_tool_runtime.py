@@ -550,6 +550,18 @@ def test_tool_registry_rejects_cross_tenant_memory_before_backend() -> None:
     assert "Cross-tenant" in result.output
 
 
+def test_tool_registry_collects_typed_graph_outputs() -> None:
+    registry = ToolRegistry(LoroConfig())
+    call = parse_tool_calls('@tool graph.emit_output {"name": "report", "value": {"ready": true}}')[
+        0
+    ]
+
+    result = registry.execute(call)
+
+    assert result.ok is True
+    assert registry.graph_outputs == {"report": {"ready": True}}
+
+
 def _init_repo(path) -> None:
     result = run(["git", "init"], cwd=path, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr

@@ -17,6 +17,7 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.cli_graph import graph_app
 from loro.config import (
     LoroConfig,
     MCPCredentialProfileConfig,
@@ -132,6 +133,7 @@ app.add_typer(audit_app, name="audit")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(skills_app, name="skills")
 app.add_typer(sandbox_app, name="sandbox")
+app.add_typer(graph_app, name="graph")
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -590,8 +592,24 @@ def plan(
         str | None,
         typer.Option("--resume-session", help="Resume a saved session and deliver its inbox."),
     ] = None,
+    format: Annotated[
+        str, typer.Option("--format", help="Output format: text or agraph.")
+    ] = "text",
+    out: Annotated[Path, typer.Option("--out", help="Path for --format agraph output.")] = Path(
+        "generated.agraph.yaml"
+    ),
 ) -> None:
     """Run a read-only planning task."""
+    if format == "agraph":
+        from loro.agraph.generate import write_generated_graph
+
+        try:
+            console.print(str(write_generated_graph(prompt, out, load_config())))
+        except ValueError as error:
+            raise typer.BadParameter(str(error)) from error
+        return
+    if format != "text":
+        raise typer.BadParameter("--format must be text or agraph")
     try:
         result = _runtime().run(prompt, mode="plan", session_id=resume_session)
     except FileNotFoundError as error:
@@ -2410,6 +2428,13 @@ def doctor() -> None:
     console.print(f"Audit schema: {config.audit.schema_version}")
     console.print(f"Audit sink: {config.audit.sink} ({config.audit.failure_mode})")
     console.print(f"Session path: {config.sessions.path}")
+    console.print(
+        f"Agentic Graphs: {'enabled' if config.agraph.enabled else 'disabled'} "
+        f"(AGS conformance level {config.agraph.conformance_level})"
+    )
+    from loro.agraph import SUPPORTED_FEATURES
+
+    console.print("AGS supported features: " + ", ".join(SUPPORTED_FEATURES))
     console.print(f"Safety scanner: {'enabled' if config.safety.enabled else 'disabled'}")
     console.print(
         f"Identity: {'ready' if identity_diagnostic.ok else 'missing required fields'} "

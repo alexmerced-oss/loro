@@ -19,6 +19,10 @@ loro setup mcp
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
+loro graph generate "Create a release checklist" --out release.agraph.yaml
+loro graph validate release.agraph.yaml --strict
+loro graph plan release.agraph.yaml --json
+loro graph run release.agraph.yaml --dry-run
 ```
 
 `loro configure` and `loro setup provider` run the AI provider wizard. The other setup
@@ -32,12 +36,13 @@ This map reflects Loro 0.2.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: audit, brief, config, configure, data, docs, doctor, file, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: audit, brief, config, configure, data, docs, doctor, file, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
 loro audit: doctor, flush, verify
 loro brief: executive, incident, meeting, project
 loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views
 loro docs: create
 loro file: read, search
+loro graph: generate, plan, policy, resume, run, skill-path, status, validate
 loro identity: doctor, show
 loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
 loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, proposals, propose, remember, schema, search, shared-search
@@ -52,6 +57,13 @@ loro shell: run
 loro skills: disable, enable, install, list, propose, quarantine, remove, review, show, validate
 loro slides: create
 ```
+
+## Agentic Graphs
+
+`loro graph validate` applies the AGS 1.0 validator and managed policy. `plan` previews order,
+fan-out, cost, concurrency, and model-tier demand. `run` creates a durable schema-conformant record;
+gates pause as `awaiting_human` and `resume` verifies the graph digest before continuing. See
+[Agentic Graphs](agentic-graphs.md).
 
 ## Identity
 

@@ -30,6 +30,19 @@ loro doctor
 loro plan "Create a release readiness checklist for this project."
 ```
 
+Create a portable, governed AGS 1.0 plan when work needs explicit scheduling and approval:
+
+```bash
+loro graph generate "Create a release readiness report" --out release.agraph.yaml
+loro graph validate release.agraph.yaml --strict
+loro graph plan release.agraph.yaml
+loro graph run release.agraph.yaml --dry-run
+```
+
+Loro supports AGS conformance level 3 with durable resume, model-tier routing, harness-evaluated
+criteria, gates, branches, bounded loops/maps, subgraphs, parallel ready nodes, fallbacks, and
+compensation. See the [Agentic Graph guide](docs/agentic-graphs.md).
+
 For a no-key first run, choose the `mock` provider in the wizard. That lets you verify the CLI,
 configuration loading, memory paths, artifact folders, and health checks before connecting a
 paid model provider.
@@ -89,6 +102,7 @@ loro setup quickstart
 - Dual-era MCP client support for tools, resources, and prompts through stdio or Streamable HTTP.
 - Deny-by-default MCP extensions, durable experimental Tasks, and bounded modern subscriptions.
 - Least-privilege MCP server mode with an explicit read-only export ceiling.
+- Read-only Agentic Graph validation and planning over explicitly exported MCP tools.
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 
 ## Configure A Provider

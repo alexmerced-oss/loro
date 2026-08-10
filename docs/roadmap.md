@@ -188,3 +188,12 @@ tools, and is delivered when a saved session resumes. See
 
 Status: implementation batches are complete. The scheduled official conformance workflow must
 produce green release artifacts before a protocol combination is called conformance-qualified.
+
+## Agentic Graph Specification
+
+AGS 1.0 conformance level 3 is implemented: vendored schemas/reference validation, strict AGX,
+managed graph policy, deterministic plans, tier routing, durable schema-conformant records,
+parallel scheduling, all node and criterion kinds, approval gates, retries/fallbacks,
+compensation, digest-guarded resume, generation, a bundled authoring Skill, read-only MCP exports,
+examples, tests, and CI. See [Agentic Graphs](agentic-graphs.md) and the completed
+[implementation roadmap](../ROADMAP-agentic-graphs.md).

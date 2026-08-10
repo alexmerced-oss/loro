@@ -76,6 +76,7 @@ Evidence states:
 | E4-06 | Release has SBOM, provenance, signature, and verification | Release (TBD) | Partial | Security CI emits CycloneDX; tag/manual release CI builds, checksums, and creates GitHub/Sigstore provenance attestations. Protected tags, a green release run, trusted publishing, and release-owner verification remain external. |
 | E4-07 | Upgrade, rollback, migration, support, and disclosure policies work | Release/operations (TBD) | Partial | Release checklist exists; tested upgrade/rollback and disclosure policy TBD. |
 | E4-08 | Advertised MCP revisions and Agent Skills pass conformance/interoperability | Release/runtime (TBD) | Partial | Dual-era SDK fixtures, server/client conformance workflow, Agent Skills validation tests, and [support matrix](mcp-support-matrix.md) exist. Local runner `0.1.16` scenarios and `skills-ref==0.1.1` validation passed on August 9, 2026; a green protected workflow artifact remains required for each release commit. |
+| E4-09 | AGS 1.0 graphs and run records pass pinned conformance | Release/runtime (TBD) | Partial | Vendored schemas/reference validator, upstream examples and negative fixtures, Loro execution tests, strict examples, and the pinned `AGS Conformance` workflow exist. A green protected workflow artifact, production graph-policy approval, sandbox proof, and controlled live-provider run remain release evidence. See [Agentic Graphs](agentic-graphs.md). |
 
 ## Phase 5: Pilot And General Availability
 

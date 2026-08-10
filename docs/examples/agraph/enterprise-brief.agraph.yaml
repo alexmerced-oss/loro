@@ -1,0 +1,49 @@
+ags_version: "1.0"
+kind: AgenticGraph
+id: loro.examples.enterprise-brief
+title: Enterprise brief
+objective: Produce a reviewed project brief as a durable document artifact.
+requires_conformance: 1
+entrypoints: [draft]
+constraints:
+  max_parallel_nodes: 1
+  max_node_executions: 3
+nodes:
+  draft:
+    type: task
+    title: Draft the brief
+    description: Create artifacts/project-brief.md from governed project context.
+    intelligence: {tier: standard, allow_downgrade: true}
+    requirements:
+      tools: [artifact_create, file_write]
+      permissions: ["fs:write:artifacts/project-brief.md"]
+    outputs:
+      brief:
+        type: file
+        description: The generated project brief.
+        path_hint: artifacts/project-brief.md
+    success:
+      criteria:
+        - id: brief_exists
+          kind: file_exists
+          description: The brief exists and is substantive.
+          path: artifacts/project-brief.md
+          min_bytes: 300
+    estimate: {effort: s, cost_usd: 0.25}
+  review:
+    type: gate
+    title: Review the brief
+    description: A project owner approves the generated brief.
+    depends_on: [draft]
+    gate:
+      mode: approve
+      roles: [project-owner]
+      prompt: Approve the project brief for distribution?
+      present: [nodes.draft.outputs.brief]
+      on_timeout: hold
+      on_reject: fail
+outputs:
+  brief:
+    type: file
+    description: The approved project brief.
+    from: nodes.draft.outputs.brief

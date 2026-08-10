@@ -1,0 +1,34 @@
+ags_version: "1.0"
+kind: AgenticGraph
+id: loro.examples.governed-data-summary
+title: Governed data summary
+objective: Discover a governed Polaris table and summarize its schema without reading rows.
+requires_conformance: 2
+entrypoints: [discover]
+constraints: {max_parallel_nodes: 1, max_node_executions: 2}
+nodes:
+  discover:
+    type: task
+    title: Discover governed metadata
+    description: Use Polaris metadata APIs to identify and describe the requested table.
+    intelligence: {tier: standard, allow_downgrade: true}
+    requirements:
+      tools: [polaris_read]
+      permissions: ["custom:polaris_read:catalog/**"]
+    outputs:
+      summary:
+        type: text
+        description: A schema-only governed-data summary.
+    success:
+      criteria:
+        - id: summary_present
+          kind: regex
+          description: The summary contains non-whitespace text.
+          output: summary
+          pattern: "\\S+"
+    estimate: {effort: s, cost_usd: 0.2}
+outputs:
+  summary:
+    type: text
+    description: Governed table metadata summary.
+    from: nodes.discover.outputs.summary

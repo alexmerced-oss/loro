@@ -196,6 +196,17 @@ pattern = "CASE-[0-9]{5}"
 classification = "confidential"
 ```
 
+## Agentic Graphs And Model Tiers
+
+`[agraph]` controls AGS conformance, durable state, document/record/node/execution/cost/tier and
+parallelism ceilings, criterion policy, permission/gate rules, reference integrity, and generation.
+`[model.tiers.minimal|standard|advanced|frontier]` maps logical intelligence demand to a provider,
+model, optional context window, API-key environment variable, and base URL. Existing single-model
+configuration remains valid; minimal falls back to `small_model` and other tiers to `model`.
+
+See [Agentic Graph Policy](agraph-policy.md) for a complete managed example. The highest-precedence
+managed overlay should own enterprise graph ceilings and checker/reference policy.
+
 ## Runtime Overrides
 
 ```bash

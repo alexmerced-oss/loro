@@ -65,6 +65,24 @@ Current high-value gaps that need external services or workflow infrastructure:
 - Corporate secret-baseline adjudication and risk acceptance.
 - Production audit collector load/outage evidence and externally retained hash anchors.
 
+## Agentic Graph Tests
+
+`tests/test_agraph.py` runs the AGS repository's valid examples and all invalid conformance
+fixtures, asserting their normative diagnostic codes. It also covers duplicate-key rejection,
+canonical digests, strict AGX typing, managed policy, routing refusal, fan-out planning, durable
+schema-conformant execution, gate pause/resume, generation, and CLI help paths.
+
+```bash
+python -m pytest tests/test_agraph.py -q
+for graph in docs/examples/agraph/*.agraph.yaml; do
+  loro graph validate "$graph" --strict
+done
+```
+
+The `AGS Conformance` workflow pins the upstream specification commit and runs these tests on
+Python 3.11 and 3.14. Live model execution is intentionally outside this hermetic suite; use a
+protected provider smoke environment and a low cost ceiling for that evidence.
+
 ## MCP Tests
 
 The `dev` extra includes the official MCP SDK. Standard CI runs hermetic adapter tests and an

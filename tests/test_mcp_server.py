@@ -2,7 +2,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
+from loro.agraph.generate import generate_graph
 from loro.config import (
     AuditConfig,
     LoroConfig,
@@ -58,6 +60,16 @@ def test_mcp_server_catalog_bounds_exported_output(tmp_path) -> None:
 
     with pytest.raises(MCPServerModeError, match="managed limit"):
         LoroMCPServerCatalog(config).execute("file.read", {"path": str(note), "limit": 3000})
+
+
+def test_mcp_server_exports_read_only_graph_validation_and_planning(tmp_path) -> None:
+    config = server_config(tmp_path, ["agraph.validate", "agraph.plan"])
+    path = tmp_path / "plan.agraph.yaml"
+    path.write_text(yaml.safe_dump(generate_graph("Review evidence", config)), encoding="utf-8")
+    catalog = LoroMCPServerCatalog(config)
+
+    assert '"ok": true' in catalog.execute("agraph.validate", {"path": str(path)})
+    assert '"worst_case_executions": 2' in catalog.execute("agraph.plan", {"path": str(path)})
 
 
 def test_build_mcp_server_registers_tools_resources_and_prompts(tmp_path, monkeypatch) -> None:

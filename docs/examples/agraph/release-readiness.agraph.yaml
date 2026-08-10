@@ -1,0 +1,57 @@
+ags_version: "1.0"
+kind: AgenticGraph
+id: loro.examples.release-readiness
+title: Release readiness review
+objective: Inspect a release, choose a disposition, and require approval before publishing.
+requires_conformance: 2
+entrypoints: [inspect]
+constraints: {max_parallel_nodes: 1, max_node_executions: 4}
+nodes:
+  inspect:
+    type: task
+    title: Inspect release evidence
+    description: Review tests, packaging metadata, documentation, and security evidence.
+    intelligence: {tier: advanced, allow_downgrade: true}
+    outputs:
+      ready:
+        type: boolean
+        description: Whether deterministic release checks passed.
+    success:
+      criteria:
+        - id: ready_is_boolean
+          kind: json_schema
+          description: Readiness is represented as a boolean.
+          output: ready
+          schema: {type: boolean}
+    estimate: {effort: m, cost_usd: 0.75}
+  disposition:
+    type: decision
+    title: Select release disposition
+    description: Route the release according to inspection evidence.
+    depends_on: [inspect]
+    decision:
+      evaluator: expression
+      branches:
+        - label: publish
+          description: All checks passed.
+          when: nodes.inspect.outputs.ready == true
+        - label: hold
+          description: One or more checks failed.
+          when: nodes.inspect.outputs.ready == false
+  approval:
+    type: gate
+    title: Approve publication
+    description: A release manager authorizes publication.
+    depends_on: [disposition]
+    when: nodes.disposition.outputs.decision == "publish"
+    gate:
+      mode: approve
+      roles: [release-manager]
+      prompt: Publish this release?
+      on_timeout: hold
+      on_reject: fail
+outputs:
+  disposition:
+    type: text
+    description: Final release disposition.
+    from: nodes.disposition.outputs.decision

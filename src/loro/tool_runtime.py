@@ -98,6 +98,7 @@ class ToolRegistry:
         self.skills = SkillRegistry(config.skills)
         self.mailbox = SessionMailbox(config.sessions, config.safety)
         self.active_session_id = active_session_id
+        self.graph_outputs: dict[str, Any] = {}
 
     def execute(self, call: ToolCall) -> ToolExecution:
         execution = self._execute(call)
@@ -145,9 +146,22 @@ class ToolRegistry:
                 return self._run_skill(call)
             if call.name.startswith("session."):
                 return self._run_session_message(call)
+            if call.name == "graph.emit_output":
+                return self._emit_graph_output(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
+
+    def _emit_graph_output(self, call: ToolCall) -> ToolExecution:
+        name = str(call.args.get("name", ""))
+        if not name or not name.replace("_", "a").replace("-", "a").isalnum():
+            raise ValueError("graph output name must contain letters, numbers, '_' or '-'")
+        value = call.args.get("value")
+        encoded = json.dumps(value, ensure_ascii=True)
+        if len(encoded.encode("utf-8")) > self.config.agraph.max_record_bytes:
+            raise ValueError("graph output exceeds the managed record limit")
+        self.graph_outputs[name] = value
+        return ToolExecution(call=call, ok=True, output=f"emitted graph output: {name}")
 
     def _read_file(self, call: ToolCall) -> ToolExecution:
         resource = filesystem_resource(

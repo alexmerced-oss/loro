@@ -33,6 +33,14 @@ class ManagedConfigIntegrityError(ValueError):
     """Raised when a required or digest-pinned managed policy cannot be verified."""
 
 
+class ModelTierConfig(BaseModel):
+    provider: str
+    model: str
+    context_tokens: int | None = Field(default=None, ge=1)
+    api_key_env: str | None = None
+    base_url: str | None = None
+
+
 class ModelConfig(BaseModel):
     provider: str = "mock"
     model: str = "mock-agent"
@@ -49,6 +57,9 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = None
     input_cost_per_million: float = Field(default=0, ge=0)
     output_cost_per_million: float = Field(default=0, ge=0)
+    tiers: dict[Literal["minimal", "standard", "advanced", "frontier"], ModelTierConfig] = Field(
+        default_factory=dict
+    )
 
 
 class RuntimeConfig(BaseModel):
@@ -576,6 +587,28 @@ class SessionConfig(BaseModel):
     max_record_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
 
 
+class AGraphConfig(BaseModel):
+    enabled: bool = True
+    conformance_level: int = Field(default=3, ge=0, le=3)
+    state_path: str = ".loro/graph-runs"
+    max_document_bytes: int = Field(default=5_000_000, ge=1024, le=100_000_000)
+    max_record_bytes: int = Field(default=20_000_000, ge=1024, le=100_000_000)
+    max_nodes: int = Field(default=100, ge=1, le=10_000)
+    max_node_executions: int = Field(default=1000, ge=1, le=1_000_000)
+    max_cost_usd: float | None = Field(default=None, gt=0)
+    max_tier: Literal["minimal", "standard", "advanced", "frontier"] = "frontier"
+    allow_command_criteria: bool = False
+    allow_external_criteria: bool = False
+    external_criteria: list[str] = Field(default_factory=list)
+    allow_external_subgraph_refs: bool = False
+    require_integrity_for_refs: bool = True
+    require_gate_before: list[str] = Field(default_factory=list)
+    forbidden_permissions: list[str] = Field(default_factory=list)
+    required_criteria_kinds: list[str] = Field(default_factory=list)
+    max_parallel_nodes: int = Field(default=8, ge=1, le=128)
+    allow_generation: bool = True
+
+
 class SkillsConfig(BaseModel):
     enabled: bool = True
     managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/skills"])
@@ -691,6 +724,7 @@ class LoroConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
+    agraph: AGraphConfig = Field(default_factory=AGraphConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 

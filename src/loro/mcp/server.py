@@ -3,8 +3,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from loro.agraph.document import load_graph
+from loro.agraph.plan import build_plan
+from loro.agraph.policy import evaluate_policy
+from loro.agraph.validate import validate_graph
 from loro.audit import AuditLogger
 from loro.config import LoroConfig
 from loro.identity import resolve_identity
@@ -25,7 +30,17 @@ class ExportedTool:
 class LoroMCPServerCatalog:
     """Least-privilege exports used by the SDK-backed MCP server."""
 
-    ALLOWED_TOOLS = frozenset({"file.read", "file.search", "git.status", "git.diff", "git.show"})
+    ALLOWED_TOOLS = frozenset(
+        {
+            "file.read",
+            "file.search",
+            "git.status",
+            "git.diff",
+            "git.show",
+            "agraph.validate",
+            "agraph.plan",
+        }
+    )
     FORBIDDEN_PREFIXES = ("memory.", "polaris.", "mcp.", "shell.", "artifact.")
 
     def __init__(self, config: LoroConfig) -> None:
@@ -67,22 +82,50 @@ class LoroMCPServerCatalog:
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
         if name not in self.exported:
             raise MCPServerModeError(f"MCP tool is not exported: {name}")
-        execution = self.registry.execute(ToolCall(name=name, args=arguments, origin="model"))
+        if name.startswith("agraph."):
+            output = self._execute_agraph(name, arguments)
+            ok = True
+        else:
+            execution = self.registry.execute(ToolCall(name=name, args=arguments, origin="model"))
+            output = execution.output
+            ok = execution.ok
         self.audit.write(
             "mcp.server_tool_completed",
             exported_tool=name,
-            ok=execution.ok,
+            ok=ok,
             argument_names=sorted(arguments),
             remote_authority=False,
         )
-        if not execution.ok:
-            raise MCPServerModeError(execution.output)
-        if len(execution.output.encode("utf-8")) > self.config.mcp.max_output_bytes:
+        if not ok:
+            raise MCPServerModeError(output)
+        if len(output.encode("utf-8")) > self.config.mcp.max_output_bytes:
             raise MCPServerModeError(
                 "MCP server output exceeded managed limit of "
                 f"{self.config.mcp.max_output_bytes} bytes."
             )
-        return execution.output
+        return output
+
+    def _execute_agraph(self, name: str, arguments: dict[str, Any]) -> str:
+        path = arguments.get("path")
+        if not isinstance(path, str):
+            raise MCPServerModeError("agraph tool requires a path")
+        source = Path(path).expanduser().resolve()
+        roots = [
+            Path(root).expanduser().resolve() for root in self.config.permissions.workspace_roots
+        ]
+        if roots and not any(source == root or root in source.parents for root in roots):
+            raise MCPServerModeError("agraph path is outside managed workspace roots")
+        document = load_graph(source, max_bytes=self.config.agraph.max_document_bytes)
+        report = validate_graph(document)
+        policy = evaluate_policy(document.data, self.config.agraph)
+        if name == "agraph.validate":
+            payload = report.to_payload()
+            payload["policy_findings"] = [item.__dict__ for item in policy]
+            payload["ok"] = report.ok and not policy
+            return json.dumps(payload, sort_keys=True)
+        if not report.ok or policy:
+            raise MCPServerModeError("agraph plan rejected by schema or managed policy")
+        return json.dumps(build_plan(document.data).to_payload(), sort_keys=True)
 
 
 def build_mcp_server(config: LoroConfig) -> Any:
@@ -136,6 +179,20 @@ def build_mcp_server(config: LoroConfig) -> Any:
         async def git_show(revision: str = "HEAD", cwd: str = ".") -> str:
             """Show summary metadata for one Git revision."""
             return catalog.execute("git.show", {"revision": revision, "cwd": cwd})
+
+    if "agraph.validate" in catalog.exported:
+
+        @server.tool(name="agraph_validate")
+        async def agraph_validate(path: str) -> str:
+            """Validate a bounded local Agentic Graph without executing it."""
+            return catalog.execute("agraph.validate", {"path": path})
+
+    if "agraph.plan" in catalog.exported:
+
+        @server.tool(name="agraph_plan")
+        async def agraph_plan(path: str) -> str:
+            """Plan a bounded local Agentic Graph without executing it."""
+            return catalog.execute("agraph.plan", {"path": path})
 
     if config.mcp.server.export_resources:
 

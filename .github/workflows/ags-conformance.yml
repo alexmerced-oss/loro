@@ -1,0 +1,52 @@
+name: AGS Conformance
+
+on:
+  pull_request:
+    paths:
+      - "src/loro/agraph/**"
+      - "src/loro/cli_graph.py"
+      - "tests/test_agraph.py"
+      - "tests/fixtures/agraph/**"
+      - ".github/workflows/ags-conformance.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: AlexMercedCoder/agentic-graph-spec
+          ref: 6bf105f2f7b51176bc1a4b49db0a722a2aa2e774 # pragma: allowlist secret
+          path: upstream-ags
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Verify pinned schemas
+        run: |
+          cmp upstream-ags/schema/agentic-graph-1.0.schema.json src/loro/agraph/schema/agentic-graph-1.0.schema.json
+          cmp upstream-ags/schema/agentic-graph-run-1.0.schema.json src/loro/agraph/schema/agentic-graph-run-1.0.schema.json
+      - run: python -m pytest tests/test_agraph.py -q
+      - name: Validate Loro examples strictly
+        run: |
+          for graph in docs/examples/agraph/*.agraph.yaml skills/agentic-graph/references/templates/*.agraph.yaml; do
+            loro graph validate "$graph" --strict
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ags-conformance-py${{ matrix.python-version }}
+          path: .loro/graph-runs
+          if-no-files-found: ignore

@@ -1,0 +1,29 @@
+ags_version: "1.0"
+kind: AgenticGraph
+id: organization.example.task
+title: Example task
+objective: Replace this with one measurable goal.
+requires_conformance: 1
+entrypoints: [execute]
+constraints: {max_parallel_nodes: 1, max_node_executions: 2}
+nodes:
+  execute:
+    type: task
+    title: Execute the task
+    description: Replace this with a precise instruction.
+    intelligence: {tier: standard, allow_downgrade: true}
+    outputs:
+      result: {type: text, description: The completed result.}
+    success:
+      criteria:
+        - id: result_present
+          kind: regex
+          description: The result is non-empty.
+          output: result
+          pattern: ".+"
+    estimate: {effort: m, cost_usd: 1.0}
+outputs:
+  result:
+    type: text
+    description: The completed result.
+    from: nodes.execute.outputs.result
