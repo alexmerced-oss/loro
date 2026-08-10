@@ -33,6 +33,8 @@ loro data polaris catalogs list
 loro mcp doctor
 loro mcp server-inspect
 loro skills list
+loro skills import-claude --help
+loro skills import-pi --help
 loro graph validate docs/examples/agraph/release-readiness.agraph.yaml --strict
 loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
 loro skills validate "$(loro graph skill-path)"

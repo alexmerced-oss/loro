@@ -47,6 +47,8 @@ jobs:
           /tmp/loro-release-smoke/bin/loro --version
           /tmp/loro-release-smoke/bin/loro credentials --help
           /tmp/loro-release-smoke/bin/loro gateway --help
+          /tmp/loro-release-smoke/bin/loro skills import-claude --help
+          /tmp/loro-release-smoke/bin/loro skills import-pi --help
           /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream
           /tmp/loro-release-smoke/bin/loro graph validate \
             docs/examples/agraph/release-readiness.agraph.yaml --strict

@@ -58,6 +58,8 @@ flowchart LR
 - `loro.sessions`: durable JSON session records.
 - `loro.session_messages`: durable queued, delivered, and acknowledged session messages.
 - `loro.skills`: Agent Skills validation, provenance, lifecycle, and progressive loading.
+- `loro.skill_compat`: digest-pinned Claude/Pi inspection, skill normalization, unsupported-host
+  reporting, and explicit environment-only MCP translation.
 - `loro.agraph`: AGS 1.0 loading, validation, expressions, managed policy, planning, scheduling,
   criteria, tier routing, durable execution, run records, and graph generation.
 - `loro.credentials`: strict vault references, OS-keyring access, and non-secret metadata indexing.

@@ -184,6 +184,8 @@ automation are implemented. The
   enterprise authorization, Tasks, subscriptions, and least-privilege MCP server mode.
 - Open Agent Skills `SKILL.md` discovery, validation, progressive disclosure, provenance,
   sandboxed execution, and explicit install/publish review.
+- Digest-pinned Claude skill/plugin and Pi skill/package inspection, normalization, skill-only
+  import, optional environment-backed Claude MCP import, and explicit unsupported-host reporting.
 - Official conformance and dual-era interoperability evidence before support is advertised.
 
 Cross-session messaging is also implemented as a durable local mailbox inspired by Claude

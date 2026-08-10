@@ -161,3 +161,14 @@ precedence. No real secret value is persisted.
 Teams HMAC, and generic bridge vectors. It verifies identity mapping, bounded asynchronous dispatch,
 and duplicate acknowledgement without contacting chat APIs. Production webhook and outage tests
 remain controlled integration evidence.
+
+## Claude And Pi Skill Compatibility
+
+`tests/test_skill_compat.py` exercises representative Claude plugin and Pi package fixtures. It
+verifies preview reports, digest-pinned installation, frontmatter normalization, runtime path
+substitution, top-level supporting files, unsupported host-component reporting, environment-only
+MCP translation, literal-secret rejection, and the public CLI workflow. Arbitrary Claude hooks,
+agents, and Pi TypeScript extensions are fixtures only and are never imported or executed.
+Manual compatibility verification also accepted the locally installed Claude `embedded-captions`,
+`hyperframes`, and `pr-to-video` skills plus eight standalone skills from the official
+`badlogic/pi-skills` repository. Network-fetched repositories are not required by hermetic CI.

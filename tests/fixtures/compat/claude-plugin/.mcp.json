@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "review-tools": {
+      "command": "review-mcp-server",
+      "args": ["--stdio"],
+      "env": {
+        "REVIEW_TOKEN": "${REVIEW_TOKEN}"
+      }
+    },
+    "review-api": {
+      "type": "http",
+      "url": "https://mcp.example.test/v1",
+      "headers": {
+        "Authorization": "Bearer ${REVIEW_API_TOKEN}"
+      }
+    }
+  }
+}

@@ -57,7 +57,7 @@ loro sessions: ack, inbox, list, send, show, wake
 loro setup: approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
 loro sheets: analyze, create
 loro shell: run
-loro skills: disable, enable, install, list, propose, quarantine, remove, review, show, validate
+loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate
 loro slides: create
 ```
 
@@ -195,6 +195,11 @@ loro skills review PROPOSAL_ID --accept
 ```
 
 See [Agent Skills](skills.md) for trust, activation, package limits, and script controls.
+
+Claude and Pi compatibility imports are preview-first. Review the source digest and unsupported
+component inventory before repeating the command with `--expected-digest DIGEST --execute`.
+Claude MCP definitions require the separate `--include-mcp` flag and only environment-backed
+credentials are accepted.
 
 ## Providers
 

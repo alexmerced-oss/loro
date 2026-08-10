@@ -2,7 +2,8 @@
 
 Loro supports the open Agent Skills filesystem format. A package is a directory whose name
 matches the `name` in `SKILL.md`; YAML frontmatter must include `name` and `description`.
-Optional `scripts/`, `references/`, and `assets/` content is loaded only when requested.
+Optional supporting content is loaded only when requested. Scripts must remain directly under
+`scripts/` to be executable.
 
 ## Discovery And Trust
 
@@ -60,6 +61,46 @@ loro skills review PROPOSAL_ID --reject
 
 Each proposal is immutable at a content digest and can be reviewed once.
 
+## Claude And Pi Compatibility
+
+Loro can inspect and import the skill portions of Claude skills/plugins and Pi skills/packages.
+The default operation is a non-mutating compatibility report:
+
+```bash
+loro skills import-claude ./my-claude-plugin
+loro skills import-pi ./my-pi-package
+```
+
+The report includes a digest, normalized skill names, compatible MCP servers, warnings, and host
+components that Loro will not execute. Install only after reviewing that exact source:
+
+```bash
+loro skills import-claude ./my-claude-plugin \
+  --expected-digest sha256:REVIEWED_DIGEST --execute
+loro skills import-pi ./my-pi-package \
+  --expected-digest sha256:REVIEWED_DIGEST --execute
+```
+
+For Claude plugins, compatible `.mcp.json` or manifest MCP definitions may be imported through a
+separate explicit gate:
+
+```bash
+loro skills import-claude ./my-claude-plugin \
+  --expected-digest sha256:REVIEWED_DIGEST --execute --include-mcp
+```
+
+MCP environment values must be same-name `${VARIABLE}` references. Bearer headers must use
+`Bearer ${VARIABLE}`; literal values, legacy SSE endpoints, arbitrary headers, and name collisions
+fail closed. Plugin-local MCP executables are not imported because their mutable source directory
+would no longer be bound to the reviewed digest. Claude agents, commands, hooks, LSP servers,
+monitors, binaries, and settings are reported but not hosted. Pi TypeScript extensions, prompts,
+and themes are likewise reported but not executed.
+
+Compatibility normalization supplies missing Pi/Claude skill names and descriptions, converts
+list-form `allowed-tools`, and resolves `${CLAUDE_PLUGIN_ROOT}`, `${LORO_SKILL_ROOT}`, and
+`{baseDir}` to the installed skill directory at activation. Existing Loro policy remains
+authoritative, and imported scripts remain disabled by default.
+
 ## Runtime Activation
 
 Loro activates up to `[skills].max_active` matching skills from metadata. Force explicit
@@ -78,3 +119,6 @@ profile work and should not be enabled for an enterprise pilot before that gate 
 
 The format constraints follow the
 [Agent Skills specification](https://github.com/agentskills/agentskills/blob/main/docs/specification.mdx).
+Compatibility behavior is based on the
+[Claude plugin reference](https://code.claude.com/docs/en/plugins-reference) and
+[Pi package documentation](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/packages.md).

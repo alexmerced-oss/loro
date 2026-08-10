@@ -113,7 +113,24 @@ Sources:
 
 ### Pi
 
-The requested "pi" reference is ambiguous in public search results. This PRD does not make claims about a specific Pi codebase. The likely useful inspiration category is lightweight, conversational, user-personalized assistants: low-friction dialogue, memory-aware help, and continuity across sessions. If a specific repository is provided later, this section should be updated.
+Pi (`badlogic/pi-mono`) is a compact TypeScript coding-agent harness with model/provider routing,
+sessions, Agent Skills, prompt templates, themes, RPC operation, and a rich extension API. Pi
+packages can bundle conventional `skills/`, `extensions/`, `prompts/`, and `themes/` resources or
+declare them under the `pi` key in `package.json`. Extensions can register tools, commands,
+providers, event handlers, UI components, and session behavior and therefore execute with broad
+host authority.
+
+Loro interoperates with Pi at the Agent Skills boundary rather than embedding Pi's TypeScript
+extension host. Compatibility imports inspect package manifests, normalize compatible `SKILL.md`
+packages, resolve `{baseDir}`, and explicitly report extensions/prompts/themes as unsupported.
+This preserves portable workflows while keeping Loro permissions, sandboxing, approvals, and
+enterprise provenance authoritative.
+
+Sources:
+
+- https://github.com/badlogic/pi-mono
+- https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/packages.md
+- https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md
 
 ### Apache Iceberg
 

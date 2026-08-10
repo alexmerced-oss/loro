@@ -116,8 +116,13 @@ only extensions for which Loro has a typed adapter and security tests.
 ## Agent Skills Support
 
 Loro implements the open Agent Skills directory format. A valid skill has a `SKILL.md` file
-with YAML frontmatter containing at least `name` and `description`; it may include `scripts/`,
-`references/`, and `assets/` directories.
+with YAML frontmatter containing at least `name` and `description`; it may include bounded
+supporting files, while executable files must remain directly under `scripts/`.
+
+Claude and Pi compatibility is implemented as a digest-pinned import boundary. Loro inspects host
+manifests, normalizes compatible skills and path placeholders, optionally translates reviewed
+environment-backed Claude MCP definitions, and reports host-only executable components without
+loading them. Loro does not emulate Claude hooks/agents or Pi's TypeScript extension API.
 
 ### Discovery And Loading
 

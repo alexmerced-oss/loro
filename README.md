@@ -273,7 +273,13 @@ loro setup mcp-server
 loro mcp server-inspect
 loro setup skills
 loro skills list
+loro skills import-claude ./plugin
+loro skills import-pi ./package
 ```
+
+Compatibility imports preview skill, MCP, and unsupported host components before any mutation;
+execution requires the reviewed source digest. Loro does not execute Claude hooks/agents or Pi
+TypeScript extensions as plugins. See [Agent Skills](docs/skills.md).
 
 Saved sessions exchange durable, non-authoritative coordination messages:
 

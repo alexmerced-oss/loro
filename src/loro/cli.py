@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -85,6 +86,12 @@ from loro.sandbox import SandboxRunner
 from loro.serialization import jsonable_mapping
 from loro.session_messages import SessionMailbox, message_digest
 from loro.sessions import SessionStore
+from loro.skill_compat import (
+    SkillCompatibilityError,
+    apply_mcp_import,
+    import_compatible_skills,
+    inspect_compatibility,
+)
 from loro.skills import SkillError, SkillRegistry
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
@@ -3909,6 +3916,121 @@ def skills_validate(
     except (SkillError, StopIteration) as error:
         raise typer.BadParameter(str(error) or f"Skill package not found: {source}") from error
     console.print_json(data=skill.to_payload())
+
+
+def _skills_import_compatibility(
+    source: Path,
+    *,
+    kind: str,
+    expected_digest: str | None,
+    scope: str,
+    include_mcp: bool,
+    execute: bool,
+    output: Path,
+) -> None:
+    if scope not in {"user", "project"}:
+        raise typer.BadParameter("Skill scope must be user or project.")
+    config = load_config()
+    try:
+        report = inspect_compatibility(source, kind, config.skills)  # type: ignore[arg-type]
+    except SkillCompatibilityError as error:
+        raise typer.BadParameter(str(error)) from error
+    if not execute:
+        console.print_json(data=report.to_payload())
+        return
+    if not expected_digest:
+        raise typer.BadParameter("Compatibility import requires --expected-digest with --execute.")
+    resolved_config = config.model_copy(deep=True)
+    installed = []
+    try:
+        mcp_servers = apply_mcp_import(resolved_config, report) if include_mcp else []
+        installed = import_compatible_skills(
+            report,
+            SkillRegistry(config.skills),
+            expected_digest=expected_digest,
+            scope=scope,  # type: ignore[arg-type]
+        )
+        if mcp_servers:
+            write_config_sections(output, resolved_config, ["mcp"])
+    except (OSError, SkillError) as error:
+        for skill in installed:
+            shutil.rmtree(skill.path, ignore_errors=True)
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "skill.compatibility_imported",
+        kind=kind,
+        source=str(source),
+        source_digest=report.digest,
+        skills=[skill.name for skill in installed],
+        mcp_servers=mcp_servers,
+    )
+    console.print_json(
+        data={
+            "kind": kind,
+            "source_digest": report.digest,
+            "installed_skills": [skill.to_payload() for skill in installed],
+            "imported_mcp_servers": mcp_servers,
+            "unsupported_components": list(report.unsupported_components),
+        }
+    )
+
+
+@skills_app.command("import-claude")
+def skills_import_claude(
+    source: Annotated[Path, typer.Argument(help="Claude skill or plugin directory.")],
+    expected_digest: Annotated[
+        str | None,
+        typer.Option("--expected-digest", help="Digest from the preview report."),
+    ] = None,
+    scope: Annotated[str, typer.Option(help="Install scope: user or project.")] = "project",
+    include_mcp: Annotated[
+        bool,
+        typer.Option("--include-mcp", help="Import compatible reviewed MCP definitions."),
+    ] = False,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Install after digest review; preview is the default."),
+    ] = False,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file updated when MCP import is enabled."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Preview or import compatible skills from a Claude skill or plugin."""
+    _skills_import_compatibility(
+        source,
+        kind="claude",
+        expected_digest=expected_digest,
+        scope=scope,
+        include_mcp=include_mcp,
+        execute=execute,
+        output=output,
+    )
+
+
+@skills_app.command("import-pi")
+def skills_import_pi(
+    source: Annotated[Path, typer.Argument(help="Pi skill or package directory.")],
+    expected_digest: Annotated[
+        str | None,
+        typer.Option("--expected-digest", help="Digest from the preview report."),
+    ] = None,
+    scope: Annotated[str, typer.Option(help="Install scope: user or project.")] = "project",
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Install after digest review; preview is the default."),
+    ] = False,
+) -> None:
+    """Preview or import compatible skills from a Pi skill or package."""
+    _skills_import_compatibility(
+        source,
+        kind="pi",
+        expected_digest=expected_digest,
+        scope=scope,
+        include_mcp=False,
+        execute=execute,
+        output=Path(".loro/config.local.toml"),
+    )
 
 
 def _set_skill_state(name: str, state: str) -> None:

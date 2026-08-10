@@ -1,0 +1,6 @@
+{
+  "name": "review-suite",
+  "skills": ["./skills"],
+  "agents": ["./agents/researcher.md"],
+  "hooks": "./hooks/hooks.json"
+}

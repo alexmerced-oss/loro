@@ -16,7 +16,6 @@ from loro.config import SkillsConfig
 SkillScope = Literal["managed", "user", "project"]
 SkillState = Literal["enabled", "disabled", "quarantined"]
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-ALLOWED_PACKAGE_DIRS = {"scripts", "references", "assets"}
 
 
 class SkillError(ValueError):
@@ -90,7 +89,11 @@ class SkillRegistry:
         _, body = _parse_skill_file(skill_file)
         if len(body.encode("utf-8")) > self.config.max_instruction_bytes:
             raise SkillError(f"Skill instructions exceed managed limit: {name}")
-        return LoadedSkill(metadata=metadata, instructions=body.strip())
+        instructions = body.strip()
+        skill_root = str(metadata.path)
+        for placeholder in ("${LORO_SKILL_ROOT}", "${CLAUDE_PLUGIN_ROOT}", "{baseDir}"):
+            instructions = instructions.replace(placeholder, skill_root)
+        return LoadedSkill(metadata=metadata, instructions=instructions)
 
     def select(self, prompt: str) -> list[LoadedSkill]:
         explicit = re.findall(r"(?im)^\s*@skill\s+([a-z0-9][a-z0-9-]*)\s*$", prompt)
@@ -132,10 +135,8 @@ class SkillRegistry:
         relative = Path(relative_path)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise SkillError("Skill supporting path must stay inside the package.")
-        if relative.parts[0] not in ALLOWED_PACKAGE_DIRS:
-            raise SkillError(
-                "Skill supporting files must be under scripts/, references/, or assets/."
-            )
+        if relative.as_posix() == "SKILL.md":
+            raise SkillError("Use skill loading rather than reading SKILL.md as a supporting file.")
         target = skill.path / relative
         _reject_symlink_path(skill.path, target)
         if not target.is_file():

@@ -15,6 +15,7 @@ THRESHOLDS = {
     "src/loro/gateway/": 55.0,
     "src/loro/resources.py": 85.0,
     "src/loro/sandbox.py": 70.0,
+    "src/loro/skill_compat.py": 75.0,
 }
 
 
