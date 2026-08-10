@@ -12,6 +12,7 @@ from loro.memory.base import (
     SharedMemoryLifecycleRequest,
     SharedMemorySearchRecord,
     SharedMemoryStatement,
+    like_term,
 )
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -210,13 +211,14 @@ FROM latest
 WHERE version_rank = 1
   AND status = 'active'
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-  AND (LOWER(content) LIKE LOWER(:query) OR LOWER(summary) LIKE LOWER(:query))
+  AND (LOWER(content) LIKE LOWER(:query) ESCAPE '\\'
+       OR LOWER(summary) LIKE LOWER(:query) ESCAPE '\\')
 ORDER BY created_at DESC
 LIMIT :limit;
 """.strip()
         return SharedMemoryStatement(
             sql=sql,
-            params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
+            params={"tenant_id": tenant_id, "query": like_term(query), "limit": limit},
         )
 
     def render_lifecycle(
@@ -295,9 +297,17 @@ VALUES (
         except ModuleNotFoundError:
             messages.append("pyiceberg is not installed. Install the data extra.")
             pyiceberg_available = False
+        # A readiness check must require a catalog target, mirroring the Postgres sibling's
+        # DSN requirement — an importable pyiceberg alone cannot reach any table.
+        catalog_configured = bool(catalog_props) or bool(self.config.iceberg_warehouse)
+        if not catalog_configured:
+            messages.append(
+                "No Iceberg catalog target is configured. Set "
+                f"{self.config.iceberg_catalog_uri_env} or shared.iceberg_warehouse."
+            )
         return SharedMemoryBackendCheck(
             backend="iceberg",
-            ok=pyiceberg_available,
+            ok=pyiceberg_available and catalog_configured,
             messages=messages,
         )
 
@@ -359,13 +369,16 @@ VALUES (
         catalog = self._load_catalog()
         memory_table = catalog.load_table(self.memory_table)
         events_table = catalog.load_table(self.events_table)
-        escaped_tenant = request.tenant_id.replace("'", "''")
-        escaped_memory = request.memory_id.replace("'", "''")
-        rows = memory_table.scan(
-            row_filter=(
-                f"tenant_id = '{escaped_tenant}' AND memory_id = '{escaped_memory}'"
+        rows = (
+            memory_table.scan(
+                row_filter=_memory_filter(
+                    tenant_id=request.tenant_id,
+                    memory_id=request.memory_id,
+                )
             )
-        ).to_arrow().to_pylist()
+            .to_arrow()
+            .to_pylist()
+        )
         candidates = [row for row in rows if isinstance(row, dict)]
         if not candidates:
             raise RuntimeError("Memory lifecycle target was not found.")
@@ -416,9 +429,8 @@ VALUES (
             raise RuntimeError("pyarrow is required for Iceberg shared memory search.") from error
         catalog = self._load_catalog()
         table = catalog.load_table(self.memory_table)
-        escaped_tenant = tenant_id.replace("'", "''")
         arrow_table = table.scan(
-            row_filter=f"tenant_id = '{escaped_tenant}'",
+            row_filter=_memory_filter(tenant_id=tenant_id),
             selected_fields=(
                 "memory_id",
                 "tenant_id",
@@ -483,6 +495,46 @@ VALUES (
             )
         return records
 
+    def list_expired(self, *, tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Active memories whose expiry has passed, newest version per memory_id."""
+
+        self._authorize_tenant(tenant_id)
+        catalog = self._load_catalog()
+        table = catalog.load_table(self.memory_table)
+        arrow_table = table.scan(row_filter=_memory_filter(tenant_id=tenant_id)).to_arrow()
+        latest: dict[str, dict[str, Any]] = {}
+        for row in arrow_table.to_pylist():
+            if not isinstance(row, dict) or row.get("tenant_id") != tenant_id:
+                continue
+            memory_id = str(row.get("memory_id") or "")
+            if memory_id not in latest or _memory_version_time(row) > _memory_version_time(
+                latest[memory_id]
+            ):
+                latest[memory_id] = row
+        now = datetime.now(UTC)
+        expired: list[dict[str, Any]] = []
+        for row in latest.values():
+            if row.get("status") != "active":
+                continue
+            expires_at = row.get("expires_at")
+            if not isinstance(expires_at, datetime):
+                continue
+            comparable = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
+            if comparable > now:
+                continue
+            expired.append(
+                {
+                    "memory_id": str(row.get("memory_id") or ""),
+                    "tenant_id": str(row.get("tenant_id") or ""),
+                    "summary": str(row.get("summary") or ""),
+                    "expires_at": comparable.isoformat(),
+                    "legal_hold": bool(row.get("legal_hold")),
+                }
+            )
+            if len(expired) >= limit:
+                break
+        return expired
+
     def _authorize_tenant(self, tenant_id: str) -> None:
         if self.config.tenant_isolation != "identity":
             return
@@ -517,6 +569,23 @@ VALUES (
         if token:
             properties["token"] = token
         return properties
+
+
+def _memory_filter(*, tenant_id: str, memory_id: str | None = None) -> Any:
+    """Build a typed PyIceberg row filter for the tenant-isolation boundary.
+
+    Tenant isolation must never depend on hand-rolled quoting inside the filter DSL, so
+    the values are bound as typed literals instead of interpolated into a string.
+    """
+
+    try:
+        from pyiceberg.expressions import And, EqualTo
+    except ModuleNotFoundError as error:
+        raise RuntimeError("pyiceberg is required for Iceberg shared memory access.") from error
+    tenant_predicate = EqualTo("tenant_id", tenant_id)
+    if memory_id is None:
+        return tenant_predicate
+    return And(tenant_predicate, EqualTo("memory_id", memory_id))
 
 
 def _iceberg_value(value: Any) -> Any:

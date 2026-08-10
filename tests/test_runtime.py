@@ -45,7 +45,7 @@ def test_runtime_executes_model_requested_tool(tmp_path, monkeypatch) -> None:
             "Final answer after reading the file.",
         ]
     )
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=3))
 
     result = runtime.run("Read the note and summarize it.", mode="run")
@@ -81,7 +81,7 @@ def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
             return ModelResponse(content="Final answer from native path.")
 
     client = NativeToolModelClient()
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=3))
 
     result = runtime.run("Read the native note.", mode="run")
@@ -99,7 +99,7 @@ def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(
         [f'@tool {{"name": "file.read", "args": {{"path": "{note}", "limit": 10}}}}']
     )
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=2))
 
     result = runtime.run("Keep asking for the note.", mode="run")
@@ -111,7 +111,7 @@ def test_runtime_stops_at_max_steps(tmp_path, monkeypatch) -> None:
 
 def test_runtime_stops_on_output_token_budget_and_persists_usage(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["This response exceeds the tiny token budget."])
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     config = _runtime_config(tmp_path, max_steps=2)
     config.runtime.max_output_tokens = 1
 
@@ -130,7 +130,7 @@ def test_runtime_stops_on_output_token_budget_and_persists_usage(tmp_path, monke
 
 def test_runtime_blocks_initial_tool_directives_over_budget(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["This response must not be reached."])
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     config = _runtime_config(tmp_path, max_steps=2)
     config.runtime.max_tool_calls = 0
 
@@ -146,7 +146,7 @@ def test_runtime_blocks_initial_tool_directives_over_budget(tmp_path, monkeypatc
 
 def test_runtime_blocks_input_token_budget_before_provider(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["This response must not be reached."])
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     config = _runtime_config(tmp_path, max_steps=2)
     config.runtime.max_input_tokens = 1
 
@@ -182,7 +182,7 @@ def test_runtime_recalls_shared_memory_with_citation(tmp_path, monkeypatch) -> N
             records=[shared_record],
         )
 
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
     config = _runtime_config(tmp_path, max_steps=3)
     config.memory.shared.enabled = True
@@ -196,7 +196,10 @@ def test_runtime_recalls_shared_memory_with_citation(tmp_path, monkeypatch) -> N
 
 
 def test_runtime_returns_provider_error_stop_reason(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: FailingModelClient())
+    monkeypatch.setattr(
+        "loro.runtime.create_model_client",
+        lambda config, tools=None: FailingModelClient(),
+    )
     runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=3))
     result = runtime.run("hello", mode="run")
     assert result.stop_reason == "provider_error"
@@ -216,7 +219,7 @@ def test_runtime_uses_identity_for_shared_memory_audit_and_session(tmp_path, mon
             executed=True,
         )
 
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
     config = _runtime_config(tmp_path, max_steps=2)
     config.identity = IdentityConfig(
@@ -252,7 +255,7 @@ def test_runtime_rejects_model_self_approval_and_audits_denial(tmp_path, monkeyp
             "The write was denied.",
         ]
     )
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
 
     result = AgentRuntime(_runtime_config(tmp_path, max_steps=2)).run("Write the file.", mode="run")
 
@@ -277,7 +280,7 @@ def test_enterprise_identity_approval_tool_session_and_audit_path(tmp_path, monk
             "The approved document is ready.",
         ]
     )
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     config = _runtime_config(tmp_path, max_steps=3)
     config.identity = IdentityConfig(
         subject="enterprise-user-7",
@@ -317,7 +320,7 @@ def test_runtime_fails_closed_after_buffering_required_audit_event(tmp_path, mon
     def fail_delivery(self, payload) -> None:
         raise AuditSinkError("collector down")
 
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     monkeypatch.setattr("loro.audit.HttpAuditSink.deliver", fail_delivery)
     config = _runtime_config(tmp_path, max_steps=2)
     config.audit.sink = "http"
@@ -336,7 +339,7 @@ def test_runtime_fails_closed_after_buffering_required_audit_event(tmp_path, mon
 
 def test_runtime_redacts_model_output_before_session_persistence(tmp_path, monkeypatch) -> None:
     client = SequencedModelClient(["token=abcdefghijk"])
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     config = _runtime_config(tmp_path, max_steps=1)
 
     result = AgentRuntime(config).run("Give me a status.", mode="run")
@@ -373,7 +376,7 @@ def test_runtime_blocks_restricted_recalled_memory_before_provider(tmp_path, mon
             records=[shared_record],
         )
 
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda config, tools=None: client)
     monkeypatch.setattr("loro.runtime.search_shared_memories", fake_search)
     config = _runtime_config(tmp_path, max_steps=1)
     config.memory.shared.enabled = True

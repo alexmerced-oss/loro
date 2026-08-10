@@ -17,8 +17,11 @@ Each surface chooses `allow`, `redact`, or `block` when a finding is present or 
 its ceiling. Persistence and model input block by default. Model output, tool output, and audit
 details redact by default. Unknown surfaces fail closed.
 
-The built-in scanner recognizes private-key headers, credential assignments, GitHub tokens, and
-AWS access-key IDs. Managed configuration may add regular-expression patterns and allow a named
+The built-in scanner recognizes complete private-key blocks (header through footer, so
+redaction removes the key material), credential assignments including `PREFIX_API_KEY=` and
+`AWS_SECRET_ACCESS_KEY=` forms, GitHub tokens, AWS access-key IDs, and bare 40-character AWS
+secret access keys that pass a shape and entropy check. Finding previews never echo any
+characters of the matched value: they report the redaction text and the match length. Managed configuration may add regular-expression patterns and allow a named
 finding kind on a specific surface. Allowlisting does not disable other findings. Code
 integrations can inject implementations of the `ContentScanner` protocol without changing policy
 evaluation.

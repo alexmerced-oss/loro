@@ -33,12 +33,13 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.3.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.4.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
-loro audit: doctor, flush, verify
+loro: approvals, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro approvals: list
+loro audit: doctor, flush, query, report, verify
 loro brief: executive, incident, meeting, project
 loro credentials: delete, doctor, list, set
 loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views
@@ -48,7 +49,8 @@ loro gateway: doctor, serve, setup
 loro graph: generate, plan, policy, resume, run, skill-path, status, validate
 loro identity: doctor, show
 loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
-loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, proposals, propose, remember, schema, search, shared-search
+loro config: check, show, summary
+loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, proposals, propose, remember, schema, search, shared-search, sweep
 loro policy: explain
 loro providers: check, list, request, show, smoke
 loro safety: doctor, scan

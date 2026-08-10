@@ -70,6 +70,7 @@ def test_discord_signature_and_deferred_response() -> None:
         {"X-Signature-Timestamp": timestamp, "X-Signature-Ed25519": signature},
         body,
         lambda _name: public.hex(),
+        now=1000,
     )
     assert result.response["type"] == 5
     assert result.message is not None
@@ -155,6 +156,7 @@ def test_teams_and_generic_bridge_signatures() -> None:
         {
             "id": "message-1",
             "text": "status",
+            "timestamp": 1000,
             "from": {"id": "user-1"},
             "conversation": {"id": "channel-1"},
         }
@@ -169,6 +171,7 @@ def test_teams_and_generic_bridge_signatures() -> None:
         {"Authorization": f"HMAC {teams_signature}"},
         body,
         lambda _name: teams_secret,
+        now=1000,
     )
     assert teams.message is not None
     assert teams.response == {
@@ -182,6 +185,7 @@ def test_teams_and_generic_bridge_signatures() -> None:
         {"X-Loro-Signature": f"sha256={generic_signature}"},
         body,
         lambda _name: "bridge-secret",
+        now=1000,
     )
     assert generic.message is not None
     assert generic.message.platform == "signal"

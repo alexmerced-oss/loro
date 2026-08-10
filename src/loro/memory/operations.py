@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from loro.audit import prompt_preview
 from loro.config import LoroConfig, SharedMemoryConfig
@@ -241,3 +242,133 @@ def _authorized_tenant(config: LoroConfig, requested_tenant: str) -> str | None:
     if requested_tenant != identity_tenant:
         raise PermissionError(f"Cross-tenant shared-memory access denied: {requested_tenant}")
     return identity_tenant
+
+
+@dataclass(frozen=True)
+class SharedMemorySweepEntry:
+    memory_id: str
+    tenant_id: str
+    summary: str
+    expires_at: str
+    legal_hold: bool
+    action: str
+    executed: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class SharedMemorySweepResult:
+    backend: str
+    tenant_id: str
+    scanned: int
+    swept: int
+    held: int
+    entries: list[SharedMemorySweepEntry]
+    messages: list[str] = field(default_factory=list)
+
+
+def sweep_shared_memories(
+    config: LoroConfig,
+    *,
+    tenant_id: str = "default",
+    actor: str = "loro.sweeper",
+    reason: str = "retention: expires_at elapsed",
+    limit: int = 100,
+    execute: bool = False,
+) -> SharedMemorySweepResult:
+    """Retire shared memories whose `expires_at` has passed.
+
+    Closes the loop on the retention the schema already models: `retention_days` sets an
+    expiry when a draft is staged, but nothing ever acted on it. Memories under legal
+    hold are reported and never swept.
+    """
+
+    backend = config.memory.shared.backend
+    authorized_tenant = _authorized_tenant(config, tenant_id)
+    if backend == "postgres":
+        store: Any = PostgresSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
+    elif backend == "iceberg":
+        store = IcebergSharedMemoryStore(
+            config.memory.shared, authorized_tenant_id=authorized_tenant
+        )
+    else:
+        raise ValueError(f"Unsupported shared memory backend: {backend}")
+
+    try:
+        expired = store.list_expired(tenant_id=tenant_id, limit=limit)
+    except RuntimeError as error:
+        return SharedMemorySweepResult(
+            backend=backend,
+            tenant_id=tenant_id,
+            scanned=0,
+            swept=0,
+            held=0,
+            entries=[],
+            messages=[str(error)],
+        )
+
+    entries: list[SharedMemorySweepEntry] = []
+    swept = 0
+    held = 0
+    for row in expired:
+        memory_id = str(row.get("memory_id") or "")
+        expires_at = str(row.get("expires_at") or "")
+        if bool(row.get("legal_hold")):
+            held += 1
+            entries.append(
+                SharedMemorySweepEntry(
+                    memory_id=memory_id,
+                    tenant_id=tenant_id,
+                    summary=str(row.get("summary") or ""),
+                    expires_at=expires_at,
+                    legal_hold=True,
+                    action="skipped_legal_hold",
+                    executed=False,
+                )
+            )
+            continue
+        request = SharedMemoryLifecycleRequest(
+            memory_id=memory_id,
+            tenant_id=tenant_id,
+            action="delete",
+            actor=actor,
+            reason=reason,
+        )
+        error_text: str | None = None
+        executed = False
+        if execute:
+            try:
+                apply_shared_memory_lifecycle(config, request, execute=True)
+                executed = True
+                swept += 1
+            except (RuntimeError, PermissionError, ValueError) as error:
+                error_text = str(error)
+        entries.append(
+            SharedMemorySweepEntry(
+                memory_id=memory_id,
+                tenant_id=tenant_id,
+                summary=str(row.get("summary") or ""),
+                expires_at=expires_at,
+                legal_hold=False,
+                action="deleted" if executed else "would_delete",
+                executed=executed,
+                error=error_text,
+            )
+        )
+    messages = [
+        f"Scanned {len(expired)} expired shared memories.",
+        f"{'Swept' if execute else 'Would sweep'} {swept if execute else len(expired) - held}.",
+    ]
+    if held:
+        messages.append(f"{held} retained under legal hold.")
+    return SharedMemorySweepResult(
+        backend=backend,
+        tenant_id=tenant_id,
+        scanned=len(expired),
+        swept=swept,
+        held=held,
+        entries=entries,
+        messages=messages,
+    )

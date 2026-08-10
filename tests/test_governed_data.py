@@ -23,11 +23,12 @@ def test_inspect_table_schema_payload(monkeypatch) -> None:
         "polaris",
         "tables",
         "get",
-        "events",
         "--namespace",
         "analytics",
         "--catalog",
         "prod",
+        "--",
+        "events",
     ]
 
 

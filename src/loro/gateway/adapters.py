@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -49,9 +49,11 @@ def parse_inbound(
     max_age_seconds: int = 300,
 ) -> InboundResult:
     normalized = {key.casefold(): value for key, value in headers.items()}
-    payload = _payload(body)
+    # Every branch verifies the signature before parsing: JSON decoding is attacker-driven
+    # work (unbounded nesting -> RecursionError) that must not run pre-auth.
     if config.platform == "slack":
         _verify_slack(normalized, body, secret("signing-secret"), now, max_age_seconds)
+        payload = _payload(body)
         if payload.get("type") == "url_verification":
             return InboundResult(200, {"challenge": payload.get("challenge", "")})
         event = payload.get("event") or {}
@@ -72,7 +74,8 @@ def parse_inbound(
             ),
         )
     if config.platform == "discord":
-        _verify_discord(normalized, body, secret("public-key"))
+        _verify_discord(normalized, body, secret("public-key"), now, max_age_seconds)
+        payload = _payload(body)
         if payload.get("type") == 1:
             return InboundResult(200, {"type": 1})
         user = (payload.get("member") or {}).get("user") or payload.get("user") or {}
@@ -99,8 +102,9 @@ def parse_inbound(
     if config.platform == "telegram":
         expected = secret("webhook-secret")
         supplied = normalized.get("x-telegram-bot-api-secret-token", "")
-        if not supplied or not hmac.compare_digest(expected, supplied):
+        if not supplied or not _digest_equal(expected, supplied):
             raise GatewayAdapterError("invalid Telegram webhook secret")
+        payload = _payload(body)
         message = payload.get("message") or payload.get("edited_message") or {}
         sender = message.get("from") or {}
         chat = message.get("chat") or {}
@@ -120,6 +124,9 @@ def parse_inbound(
         )
     if config.platform in {"teams", "signal", "generic"}:
         _verify_bridge(config.platform, normalized, body, secret("signing-secret"))
+        payload = _payload(body)
+        if config.require_signed_timestamp:
+            _verify_bridge_freshness(config.platform, payload, now, max_age_seconds)
         sender = payload.get("from") or {}
         conversation = payload.get("conversation") or {}
         response = (
@@ -147,11 +154,52 @@ def parse_inbound(
 def _payload(body: bytes) -> dict[str, Any]:
     try:
         payload = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        # Deeply nested JSON stays well inside the body cap but exhausts the C recursion
+        # limit; it must surface as an adapter error, not escape the request handler.
         raise GatewayAdapterError("gateway body must be valid JSON") from error
     if not isinstance(payload, dict):
         raise GatewayAdapterError("gateway body must be a JSON object")
     return payload
+
+
+def _digest_equal(expected: str, supplied: str) -> bool:
+    """Constant-time compare that tolerates non-ASCII header bytes.
+
+    HTTP headers decode as latin-1, so hmac.compare_digest on the raw strings raises
+    TypeError for any byte >= 0x80 — an unauthenticated crash. Comparing bytes cannot.
+    """
+
+    return hmac.compare_digest(expected.encode("utf-8"), supplied.encode("latin-1", "replace"))
+
+
+def _fresh_timestamp(value: str, now: int | None, max_age_seconds: int, label: str) -> int:
+    try:
+        timestamp = int(value)
+    except (TypeError, ValueError) as error:
+        raise GatewayAdapterError(f"invalid {label} request timestamp") from error
+    if abs((now or int(time.time())) - timestamp) > max_age_seconds:
+        raise GatewayAdapterError(f"stale {label} request")
+    return timestamp
+
+
+def _verify_bridge_freshness(
+    platform: str,
+    payload: Mapping[str, Any],
+    now: int | None,
+    max_age_seconds: int,
+) -> None:
+    """Enforce freshness on a bridge envelope's signed timestamp.
+
+    The bridge HMAC covers the body only, so a captured request replays forever once the
+    dispatcher's bounded seen-ledger evicts its id. The timestamp lives inside the signed
+    body, so it cannot be altered without invalidating the signature.
+    """
+
+    raw = payload.get("timestamp")
+    if raw is None:
+        raise GatewayAdapterError(f"{platform} envelope requires a signed timestamp")
+    _fresh_timestamp(str(raw), now, max_age_seconds, platform)
 
 
 def _verify_slack(
@@ -163,19 +211,24 @@ def _verify_slack(
 ) -> None:
     timestamp = headers.get("x-slack-request-timestamp", "")
     signature = headers.get("x-slack-signature", "")
-    try:
-        timestamp_value = int(timestamp)
-    except ValueError as error:
-        raise GatewayAdapterError("invalid Slack request timestamp") from error
-    if abs((now or int(time.time())) - timestamp_value) > max_age_seconds:
-        raise GatewayAdapterError("stale Slack request")
-    base = b"v0:" + timestamp.encode() + b":" + body
+    _fresh_timestamp(timestamp, now, max_age_seconds, "Slack")
+    base = b"v0:" + timestamp.encode("latin-1", "replace") + b":" + body
     expected = "v0=" + hmac.new(signing_secret.encode(), base, hashlib.sha256).hexdigest()
-    if not signature or not hmac.compare_digest(expected, signature):
+    if not signature or not _digest_equal(expected, signature):
         raise GatewayAdapterError("invalid Slack request signature")
 
 
-def _verify_discord(headers: Mapping[str, str], body: bytes, public_key: str) -> None:
+def _verify_discord(
+    headers: Mapping[str, str],
+    body: bytes,
+    public_key: str,
+    now: int | None,
+    max_age_seconds: int,
+) -> None:
+    timestamp = headers.get("x-signature-timestamp", "")
+    # Discord signs over its timestamp but nothing enforced its recency, so a captured
+    # request stayed replayable once the dispatcher's seen-ledger evicted its id.
+    _fresh_timestamp(timestamp, now, max_age_seconds, "Discord")
     try:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -183,11 +236,11 @@ def _verify_discord(headers: Mapping[str, str], body: bytes, public_key: str) ->
         key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key))
         key.verify(
             bytes.fromhex(headers.get("x-signature-ed25519", "")),
-            headers.get("x-signature-timestamp", "").encode() + body,
+            timestamp.encode("latin-1", "replace") + body,
         )
     except ImportError as error:
         raise GatewayAdapterError("Discord gateway requires the gateway package extra") from error
-    except (ValueError, InvalidSignature) as error:
+    except (ValueError, TypeError, InvalidSignature) as error:
         raise GatewayAdapterError("invalid Discord request signature") from error
 
 
@@ -205,21 +258,34 @@ def _verify_bridge(
             ).decode()
         except ValueError as error:
             raise GatewayAdapterError("invalid Teams signing secret encoding") from error
-    if not supplied or not hmac.compare_digest(expected, supplied):
+    if not supplied or not _digest_equal(expected, supplied):
         raise GatewayAdapterError(f"invalid {platform} request signature")
+
+
+MAX_DISCORD_OPTION_DEPTH = 8
+MAX_DISCORD_OPTION_VALUES = 64
 
 
 def _discord_text(data: Mapping[str, Any]) -> str:
     name = str(data.get("name") or "loro")
     values: list[str] = []
-
-    def collect(options: Any) -> None:
-        for option in options if isinstance(options, list) else []:
-            if not isinstance(option, dict):
-                continue
-            if "value" in option:
-                values.append(str(option["value"]))
-            collect(option.get("options"))
-
-    collect(data.get("options"))
+    # An explicit depth-capped stack of iterators keeps the original pre-order traversal
+    # while bounding it: recursive descent over attacker-supplied option nesting is
+    # unbounded even for a correctly signed payload.
+    root = data.get("options")
+    stack: list[tuple[Iterator[Any], int]] = [(iter(root if isinstance(root, list) else []), 0)]
+    exhausted = object()
+    while stack:
+        iterator, depth = stack[-1]
+        option = next(iterator, exhausted)
+        if option is exhausted:
+            stack.pop()
+            continue
+        if not isinstance(option, dict):
+            continue
+        if "value" in option and len(values) < MAX_DISCORD_OPTION_VALUES:
+            values.append(str(option["value"]))
+        nested = option.get("options")
+        if depth + 1 < MAX_DISCORD_OPTION_DEPTH and isinstance(nested, list):
+            stack.append((iter(nested), depth + 1))
     return " ".join(values) or name

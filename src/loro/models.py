@@ -1,6 +1,7 @@
+import json
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -15,6 +16,7 @@ from loro.model_tools import (
     parse_provider_tool_calls,
 )
 from loro.providers import get_provider_profile
+from loro.tool_schemas import ToolSchema, provider_tool_payload
 
 
 @dataclass(frozen=True)
@@ -51,8 +53,19 @@ class ModelClient(Protocol):
 
 
 class BaseModelClient:
-    def __init__(self, config: ModelConfig) -> None:
+    def __init__(
+        self,
+        config: ModelConfig,
+        tools: Sequence[ToolSchema] | None = None,
+    ) -> None:
         self.config = config
+        self.tools: list[ToolSchema] = list(tools or [])
+
+    def _tool_payload(self) -> dict[str, Any]:
+        """Provider-shaped tool declarations, or {} when none are published."""
+
+        protocol = get_provider_profile(self.config.provider).protocol
+        return provider_tool_payload(protocol, self.tools)
 
     def _api_key(self) -> str | None:
         if self.config.api_key_env:
@@ -141,6 +154,55 @@ class BaseModelClient:
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
         yield self.complete(messages).content
 
+    def _stream_sse(
+        self,
+        messages: list[ModelMessage],
+        extract: Callable[[dict[str, Any]], str],
+    ) -> Iterator[str]:
+        """Yield incremental text from a server-sent-event completion stream.
+
+        If the endpoint refuses the streaming request, fall back to one non-streaming
+        completion so `--stream` never turns a working run into a failure.
+        """
+
+        request = self.build_request(messages)
+        client_options: dict[str, Any] = {"timeout": self.config.timeout_seconds}
+        if not self.config.verify_tls:
+            client_options["verify"] = False
+        streamed = False
+        try:
+            with httpx.Client(**client_options) as client:
+                with client.stream(
+                    request.method,
+                    request.url,
+                    headers=request.headers,
+                    json={**request.json, "stream": True},
+                ) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == "[DONE]":
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except ValueError:
+                            continue
+                        if not isinstance(event, dict):
+                            continue
+                        chunk = extract(event)
+                        if chunk:
+                            streamed = True
+                            yield chunk
+                    return
+        except (httpx.HTTPError, OSError):
+            if streamed:
+                raise ModelProviderError(
+                    f"{self.config.provider} stream ended unexpectedly."
+                ) from None
+        yield self.complete(messages).content
+
 
 class MockModelClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
@@ -176,6 +238,7 @@ class OpenAICompatibleClient(BaseModelClient):
             payload["temperature"] = self.config.temperature
         if self.config.max_tokens:
             payload["max_tokens"] = self.config.max_tokens
+        payload.update(self._tool_payload())
         return ModelRequest(
             method="POST",
             url=f"{base_url}/chat/completions",
@@ -201,6 +264,18 @@ class OpenAICompatibleClient(BaseModelClient):
             tool_calls=_provider_tool_calls(self.config.provider, payload),
         )
 
+    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
+        def extract(event: dict[str, Any]) -> str:
+            choices = event.get("choices")
+            if not isinstance(choices, list) or not choices:
+                return ""
+            delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
+            if not isinstance(delta, dict):
+                return ""
+            return str(delta.get("content") or "")
+
+        return self._stream_sse(messages, extract)
+
 
 class AnthropicClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
@@ -219,6 +294,7 @@ class AnthropicClient(BaseModelClient):
         }
         if _supports_anthropic_temperature(self.config.model):
             payload["temperature"] = self.config.temperature
+        payload.update(self._tool_payload())
         return ModelRequest(
             method="POST",
             url=f"{base_url}/v1/messages",
@@ -243,6 +319,17 @@ class AnthropicClient(BaseModelClient):
             tool_calls=_provider_tool_calls(self.config.provider, payload),
         )
 
+    def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
+        def extract(event: dict[str, Any]) -> str:
+            if event.get("type") != "content_block_delta":
+                return ""
+            delta = event.get("delta")
+            if not isinstance(delta, dict):
+                return ""
+            return str(delta.get("text") or "")
+
+        return self._stream_sse(messages, extract)
+
 
 class GeminiClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
@@ -266,6 +353,7 @@ class GeminiClient(BaseModelClient):
                 contents=contents,
                 model=self.config.model,
                 temperature=self.config.temperature,
+                tools=self._tool_payload(),
             ),
         )
 
@@ -329,6 +417,7 @@ class BedrockClient(BaseModelClient):
                 "modelId": self.config.model,
                 "messages": self._message_payload(messages),
                 "temperature": self.config.temperature,
+                **self._tool_payload(),
             },
         )
 
@@ -352,6 +441,7 @@ class BedrockClient(BaseModelClient):
                     for message in messages
                 ],
                 inferenceConfig={"temperature": self.config.temperature},
+                **self._tool_payload(),
             )
         except (BotoCoreError, ClientError) as error:
             raise ModelProviderError(f"bedrock request failed: {error}") from error
@@ -372,19 +462,22 @@ class BedrockClient(BaseModelClient):
         )
 
 
-def create_model_client(config: ModelConfig) -> ModelClient:
+def create_model_client(
+    config: ModelConfig,
+    tools: Sequence[ToolSchema] | None = None,
+) -> ModelClient:
     profile = get_provider_profile(config.provider)
     if profile.protocol == "local" or profile.name == "mock":
-        return MockModelClient(config)
+        return MockModelClient(config, tools)
     if profile.protocol == "anthropic":
-        return AnthropicClient(config)
+        return AnthropicClient(config, tools)
     if profile.protocol == "gemini":
-        return GeminiClient(config)
+        return GeminiClient(config, tools)
     if profile.protocol == "ollama":
-        return OllamaClient(config)
+        return OllamaClient(config, tools)
     if profile.protocol == "bedrock":
-        return BedrockClient(config)
-    return OpenAICompatibleClient(config)
+        return BedrockClient(config, tools)
+    return OpenAICompatibleClient(config, tools)
 
 
 def smoke_model_client(
@@ -469,11 +562,16 @@ def _supports_anthropic_temperature(model: str) -> bool:
 
 
 def _gemini_payload(
-    *, contents: list[dict[str, Any]], model: str, temperature: float
+    *,
+    contents: list[dict[str, Any]],
+    model: str,
+    temperature: float,
+    tools: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"contents": contents}
     if _supports_gemini_temperature(model):
         payload["generationConfig"] = {"temperature": temperature}
+    payload.update(tools or {})
     return payload
 
 

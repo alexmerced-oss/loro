@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from importlib.resources import files
 from typing import Any
 
 import jsonschema
 
 
-def validate_run_record(record: dict[str, Any]) -> None:
+@lru_cache(maxsize=1)
+def _run_record_validator() -> jsonschema.Draft202012Validator:
+    """Compile the run-record schema once.
+
+    The record is validated on every save, and re-reading plus re-parsing the schema file
+    each time dominated the cost of persisting a run.
+    """
+
     schema = json.loads(
         files("loro.agraph.schema")
         .joinpath("agentic-graph-run-1.0.schema.json")
         .read_text(encoding="utf-8")
     )
-    jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker()).validate(
-        record
-    )
+    return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+
+
+def validate_run_record(record: dict[str, Any]) -> None:
+    _run_record_validator().validate(record)
 
 
 def aggregate_usage(record: dict[str, Any]) -> dict[str, int | float]:

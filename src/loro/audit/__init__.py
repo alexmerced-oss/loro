@@ -85,11 +85,18 @@ class AuditLogger:
             if self.config.sink != "http":
                 raise AuditDeliveryError(str(error)) from error
             try:
-                self.buffer.append(payload)
+                evicted = self.buffer.append(payload)
                 event.delivery_status = "buffered"
             except AuditBufferFullError as buffer_error:
                 event.delivery_status = "failed"
                 raise AuditDeliveryError(str(buffer_error)) from buffer_error
+            if evicted:
+                warnings.warn(
+                    f"Audit buffer at {self.buffer.path} evicted {evicted} oldest event(s) "
+                    f"to accept a new one (max_buffer_events={self.config.max_buffer_events}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             message = f"Audit delivery failed; event buffered at {self.buffer.path}: {error}"
             if self.config.failure_mode == "fail":
                 raise AuditDeliveryError(message) from error
@@ -99,25 +106,18 @@ class AuditLogger:
     def flush(self) -> AuditFlushResult:
         if self.config.sink != "http":
             return AuditFlushResult(attempted=0, delivered=0, remaining=0)
-        events = self.buffer.load()
-        delivered = 0
-        for index, payload in enumerate(events):
-            try:
-                self.sink.deliver(payload)
-            except AuditSinkError:
-                remaining = events[index:]
-                self.buffer.replace(remaining)
-                return AuditFlushResult(
-                    attempted=index + 1,
-                    delivered=delivered,
-                    remaining=len(remaining),
-                )
-            delivered += 1
-        self.buffer.replace([])
+        # drain() holds the buffer lock across load-deliver-rewrite so a concurrent
+        # append cannot land in the gap and be discarded by the rewrite.
+        batch_deliver = getattr(self.sink, "deliver_batch", None)
+        if batch_deliver is not None:
+            result = self.buffer.drain(batch_deliver, batch_size=self.config.http_batch_size)
+        else:
+            # A sink without batch support keeps exact per-event delivery accounting.
+            result = self.buffer.drain(lambda batch: self.sink.deliver(batch[0]), batch_size=1)
         return AuditFlushResult(
-            attempted=len(events),
-            delivered=delivered,
-            remaining=0,
+            attempted=result.attempted,
+            delivered=result.delivered,
+            remaining=result.remaining,
         )
 
     def doctor(self) -> dict[str, Any]:
@@ -136,10 +136,18 @@ class AuditLogger:
                     f"{self.config.http_token_env}"
                 )
         try:
-            buffered_events = self.buffer.count() if self.config.sink == "http" else 0
+            # load() parses every event, so a corrupt buffer surfaces here as a
+            # diagnostic; count() is the fast path used on the write hot path.
+            buffered_events = len(self.buffer.load()) if self.config.sink == "http" else 0
         except AuditSinkError as error:
             issues.append(str(error))
             buffered_events = -1
+        evicted_events = self.buffer.evicted_events()
+        if evicted_events:
+            issues.append(
+                f"Audit buffer evicted {evicted_events} oldest event(s) after reaching "
+                f"max_buffer_events={self.config.max_buffer_events}."
+            )
         return {
             "ok": not issues,
             "enabled": self.config.enabled,
@@ -149,6 +157,7 @@ class AuditLogger:
             "path": str(self.path),
             "buffer_path": str(self.buffer.path),
             "buffered_events": buffered_events,
+            "evicted_events": evicted_events,
             "max_buffer_events": self.config.max_buffer_events,
             "issues": issues,
         }

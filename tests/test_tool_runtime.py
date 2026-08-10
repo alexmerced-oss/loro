@@ -20,6 +20,12 @@ from loro.sandbox import SandboxResult
 from loro.tool_runtime import ToolRegistry, parse_tool_calls
 
 
+def _artifact_config(**overrides) -> LoroConfig:
+    """Config that permits artifact writes so tests exercise generation, not approval."""
+
+    return LoroConfig(permissions=PermissionsConfig(artifact="allow"), **overrides)
+
+
 class FakeRuntimeMCPService:
     def __init__(self) -> None:
         self.requests: list[str] = []
@@ -466,7 +472,7 @@ def test_tool_registry_artifact_create_document(tmp_path) -> None:
         f'{{"kind": "document", "prompt": "Draft onboarding guide", '
         f'"output_dir": "{tmp_path}"}}'
     )[0]
-    result = ToolRegistry(LoroConfig()).execute(call)
+    result = ToolRegistry(_artifact_config()).execute(call)
     assert result.ok is True
     assert "Created document artifacts" in result.output
     assert "provenance:" in result.output
@@ -480,7 +486,7 @@ def test_tool_registry_artifact_create_brief(tmp_path) -> None:
         f'{{"kind": "brief", "brief_type": "executive", '
         f'"prompt": "Summarize launch readiness", "output_dir": "{tmp_path}"}}'
     )[0]
-    result = ToolRegistry(LoroConfig()).execute(call)
+    result = ToolRegistry(_artifact_config()).execute(call)
     assert result.ok is True
     assert "Created executive brief artifact" in result.output
     assert any(path.suffix == ".md" for path in tmp_path.iterdir())
@@ -491,7 +497,7 @@ def test_tool_registry_artifact_create_rejects_unknown_kind(tmp_path) -> None:
         "@tool artifact.create "
         f'{{"kind": "video", "prompt": "Make a clip", "output_dir": "{tmp_path}"}}'
     )[0]
-    result = ToolRegistry(LoroConfig()).execute(call)
+    result = ToolRegistry(_artifact_config()).execute(call)
     assert result.ok is False
     assert "kind must be one of" in result.output
 
@@ -502,7 +508,7 @@ def test_tool_registry_artifact_create_blocks_sensitive_prompt(tmp_path) -> None
         f'{{"kind": "document", "prompt": "api_key = abcdefghijklmnop", '
         f'"output_dir": "{tmp_path}"}}'
     )[0]
-    result = ToolRegistry(LoroConfig()).execute(call)
+    result = ToolRegistry(_artifact_config()).execute(call)
     assert result.ok is False
     assert "Sensitive content detected" in result.output
     assert not any(tmp_path.iterdir())
@@ -514,7 +520,7 @@ def test_managed_policy_prevents_tool_sensitive_override(tmp_path) -> None:
         f'{{"kind": "document", "prompt": "api_key = abcdefghijklmnop", '
         f'"output_dir": "{tmp_path}", "allow_sensitive": true}}'
     )[0]
-    config = LoroConfig(safety=SafetyConfig(allow_sensitive_override=False))
+    config = _artifact_config(safety=SafetyConfig(allow_sensitive_override=False))
 
     result = ToolRegistry(config).execute(call)
 

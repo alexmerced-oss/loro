@@ -6,6 +6,7 @@ from typing import Any
 
 from loro.agraph.document import GraphDocument, GraphDocumentError, load_graph
 from loro.agraph.reference_validator import Finding, Report, Validator
+from loro.agraph.support import unsupported_feature_findings
 
 
 @dataclass(frozen=True)
@@ -41,4 +42,7 @@ def validate_graph(document: GraphDocument | str | Path) -> GraphReport:
             return GraphReport(Path(document), (Finding("AG001", "error", str(error), ""),))
     report = Report(document.path)
     Validator(document.data, report).run()
+    # Surface fields the schema accepts but the executor does not enforce, so a graph
+    # never appears governed by a guarantee the run will not honor.
+    report.findings.extend(unsupported_feature_findings(document.data))
     return GraphReport(document.path, tuple(report.findings))

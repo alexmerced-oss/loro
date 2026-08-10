@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from loro.fileio import atomic_write_text, file_lock
+
 
 @dataclass(frozen=True)
 class MemoryProposal:
@@ -24,11 +26,15 @@ class MemoryProposalStore:
         self.path = self.root / "memory-proposals.jsonl"
 
     def propose(self, proposal: MemoryProposal) -> MemoryProposal:
-        with self.path.open("a", encoding="utf-8") as file:
+        with file_lock(self.path), self.path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(_proposal_payload(proposal)) + "\n")
         return proposal
 
     def list(self) -> list[MemoryProposal]:
+        with file_lock(self.path):
+            return self._list_unlocked()
+
+    def _list_unlocked(self) -> list[MemoryProposal]:
         if not self.path.exists():
             return []
         proposals: list[MemoryProposal] = []
@@ -45,9 +51,12 @@ class MemoryProposalStore:
         return None
 
     def update_status(self, proposal_id: str, status: str) -> MemoryProposal | None:
-        proposals = self.list()
         updated: MemoryProposal | None = None
-        with self.path.open("w", encoding="utf-8") as file:
+        # Truncating in place lost every proposal if the process died mid-rewrite, and
+        # the read-modify-write raced any concurrent propose().
+        with file_lock(self.path):
+            proposals = self._list_unlocked()
+            lines: list[str] = []
             for proposal in proposals:
                 if proposal.proposal_id == proposal_id:
                     proposal = MemoryProposal(
@@ -59,7 +68,8 @@ class MemoryProposalStore:
                         created_at=proposal.created_at,
                     )
                     updated = proposal
-                file.write(json.dumps(_proposal_payload(proposal)) + "\n")
+                lines.append(json.dumps(_proposal_payload(proposal)))
+            atomic_write_text(self.path, "".join(line + "\n" for line in lines))
         return updated
 
 

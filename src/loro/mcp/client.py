@@ -21,8 +21,9 @@ from loro.mcp.security import (
     credential_environment,
     dynamic_registration_guard,
     enforce_server_policy,
+    request_policy_hook,
 )
-from loro.mcp.tasks import MCPTaskStore
+from loro.mcp.tasks import MCPTaskError, MCPTaskStore
 from loro.sandbox import SandboxLaunch, SandboxRunner
 
 
@@ -382,6 +383,10 @@ class MCPService:
     @asynccontextmanager
     async def connect(self, server_id: str) -> AsyncIterator[ConnectedMCP]:
         server = self.registry.get(server_id)
+        # Exceptions raised by the caller's `async with` body are thrown back in at the
+        # yield. Only connection setup should be rewritten as MCPClientError; a task error
+        # from the body must reach the caller as itself.
+        entered = False
         try:
             enforce_server_policy(self.config, server)
             async with self.client_factory(server) as client:
@@ -408,15 +413,18 @@ class MCPService:
                         else None
                     ),
                 )
+                entered = True
                 yield ConnectedMCP(
                     client=client,
                     info=info,
                     max_pagination_pages=self.config.max_pagination_pages,
                     max_output_bytes=self.config.max_output_bytes,
                 )
-        except (MCPClientError, MCPExtensionError, MCPTransportPolicyError):
+        except (MCPClientError, MCPExtensionError, MCPTransportPolicyError, MCPTaskError):
             raise
         except Exception as error:
+            if entered:
+                raise
             raise MCPClientError(f"MCP server {server_id} failed: {error}") from error
 
     def _sdk_client(self, server: MCPServerConfig) -> Any:
@@ -529,6 +537,8 @@ class MCPService:
             else:
                 auth = self._oauth_provider(server.url, profile, values)
                 hooks.append(dynamic_registration_guard(profile.allow_dynamic_client_registration))
+        # Applies to the initial request and to every redirect hop.
+        hooks.append(request_policy_hook(self.config))
         timeout = httpx2.Timeout(server.timeout_seconds, read=server.timeout_seconds)
         http_client = httpx2.AsyncClient(
             headers=headers,
@@ -687,14 +697,23 @@ async def _collect_pages(
     method: Callable[..., Any], field: str, max_pages: int, max_output_bytes: int
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    # Track a running byte count instead of re-serializing everything collected so far on
+    # every page, which made a long pagination run quadratic in the accumulated payload.
+    total_bytes = 2  # the enclosing "[]"
     cursor: str | None = None
     for _ in range(max_pages):
         result = await method(cursor=cursor)
         raw_items = getattr(result, field, None)
         if raw_items is None and isinstance(result, Mapping):
             raw_items = result.get(field, [])
-        items.extend(_payload(item) for item in (raw_items or []))
-        _bounded(items, max_output_bytes)
+        for item in raw_items or []:
+            payload = _payload(item)
+            items.append(payload)
+            total_bytes += _encoded_size(payload) + 1  # + the separating comma
+            if total_bytes > max_output_bytes:
+                raise MCPProtocolError(
+                    f"MCP output exceeded managed limit of {max_output_bytes} bytes."
+                )
         cursor = getattr(result, "next_cursor", None)
         if cursor is None and isinstance(result, Mapping):
             cursor = result.get("nextCursor") or result.get("next_cursor")
@@ -721,10 +740,14 @@ class _MemoryTokenStorage:
         self.client_info = client_info
 
 
-def _bounded(value: Any, max_output_bytes: int) -> Any:
-    size = len(
+def _encoded_size(value: Any) -> int:
+    return len(
         json.dumps(value, ensure_ascii=True, separators=(",", ":"), default=str).encode("utf-8")
     )
+
+
+def _bounded(value: Any, max_output_bytes: int) -> Any:
+    size = _encoded_size(value)
     if size > max_output_bytes:
         raise MCPProtocolError(f"MCP output exceeded managed limit of {max_output_bytes} bytes.")
     return value

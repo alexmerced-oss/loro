@@ -144,7 +144,13 @@ class CredentialVault:
             return {}
         try:
             raw = json.loads(self.index_path.read_text(encoding="utf-8"))
-            return {key: CredentialMetadata(**value) for key, value in raw.items()}
+            # A non-mapping index made `.items()` raise AttributeError, which is outside
+            # the CredentialError contract every CLI entry point catches.
+            if not isinstance(raw, dict):
+                raise CredentialError("credential index must be a JSON object")
+            if not all(isinstance(value, dict) for value in raw.values()):
+                raise CredentialError("credential index entries must be JSON objects")
+            return {str(key): CredentialMetadata(**value) for key, value in raw.items()}
         except (OSError, ValueError, TypeError) as error:
             raise CredentialError(f"credential index is invalid: {error}") from error
 

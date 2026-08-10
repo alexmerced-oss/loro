@@ -355,11 +355,12 @@ def test_data_schema_command(monkeypatch, tmp_path) -> None:
             "polaris",
             "tables",
             "get",
-            "events",
             "--namespace",
             "analytics",
             "--catalog",
             "prod",
+            "--",
+            "events",
         ]
     ]
 
@@ -395,11 +396,12 @@ def test_data_explain_access_command(monkeypatch, tmp_path) -> None:
             "polaris",
             "tables",
             "get",
-            "events",
             "--namespace",
             "analytics",
             "--catalog",
             "prod",
+            "--",
+            "events",
         ],
         [
             "polaris",

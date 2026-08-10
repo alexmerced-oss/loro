@@ -3,7 +3,12 @@ from pathlib import Path
 
 from docx import Document
 
-from loro.artifacts.common import ArtifactResult, ensure_output_dir, slugify, title_from_prompt
+from loro.artifacts.common import (
+    ArtifactResult,
+    ensure_output_dir,
+    title_from_prompt,
+    unique_slug,
+)
 
 
 @dataclass(frozen=True)
@@ -18,7 +23,7 @@ def create_markdown_document(title: str, body: str) -> DocumentDraft:
 
 def create_document_artifact(prompt: str, output_dir: Path) -> ArtifactResult:
     title = title_from_prompt(prompt, "Loro Document")
-    slug = slugify(title, "document")
+    slug = unique_slug(title, "document")
     output_dir = ensure_output_dir(output_dir)
     markdown_path = output_dir / f"{slug}.md"
     docx_path = output_dir / f"{slug}.docx"

@@ -1,6 +1,9 @@
 import json
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
@@ -10,10 +13,28 @@ from loro.memory.base import (
     SharedMemoryLifecycleRequest,
     SharedMemorySearchRecord,
     SharedMemoryStatement,
+    like_term,
 )
 from loro.memory.schemas import POSTGRES_SHARED_MEMORY_SCHEMA
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@contextmanager
+def _driver_errors(operation: str) -> Iterator[None]:
+    """Present driver failures as RuntimeError so callers can fall back to rendering SQL.
+
+    Only missing-DSN/missing-psycopg cases used to raise RuntimeError; a bad DSN,
+    unreachable host, auth failure or missing table raises psycopg.Error, which escaped
+    every caller's fallback as a raw traceback.
+    """
+
+    try:
+        yield
+    except (PermissionError, RuntimeError):
+        raise
+    except Exception as error:
+        raise RuntimeError(f"Postgres {operation} failed: {error}") from error
 
 
 class PostgresSharedMemoryStore:
@@ -206,14 +227,49 @@ FROM {self._table("shared_memories")}
 WHERE tenant_id = %(tenant_id)s
   AND status = 'active'
   AND (expires_at IS NULL OR expires_at > now())
-  AND (content ILIKE %(query)s OR summary ILIKE %(query)s)
+  AND (content ILIKE %(query)s ESCAPE '\\' OR summary ILIKE %(query)s ESCAPE '\\')
 ORDER BY created_at DESC
 LIMIT %(limit)s;
 """.strip()
         return SharedMemoryStatement(
             sql=sql,
-            params={"tenant_id": tenant_id, "query": f"%{query}%", "limit": limit},
+            params={"tenant_id": tenant_id, "query": like_term(query), "limit": limit},
         )
+
+    def render_expired(self, *, tenant_id: str, limit: int = 100) -> SharedMemoryStatement:
+        self._authorize_tenant(tenant_id)
+        sql = f"""
+SELECT memory_id, tenant_id, summary, expires_at, legal_hold
+FROM {self._table("shared_memories")}
+WHERE tenant_id = %(tenant_id)s
+  AND status = 'active'
+  AND expires_at IS NOT NULL
+  AND expires_at <= now()
+ORDER BY expires_at ASC
+LIMIT %(limit)s;
+""".strip()
+        return SharedMemoryStatement(
+            sql=sql,
+            params={"tenant_id": tenant_id, "limit": limit},
+        )
+
+    def list_expired(self, *, tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for the shared memory sweep.") from error
+        statement = self.render_expired(tenant_id=tenant_id, limit=limit)
+        with _driver_errors("shared memory sweep"):
+            with psycopg.connect(dsn, row_factory=dict_row) as connection:
+                with connection.cursor() as cursor:
+                    self._set_tenant_context(cursor)
+                    cursor.execute(statement.sql, statement.params)
+                    rows = cursor.fetchall()
+        return [dict(row) for row in rows]
 
     def render_lifecycle(
         self, request: SharedMemoryLifecycleRequest
@@ -280,15 +336,16 @@ FROM updated_memory;
         except ModuleNotFoundError as error:
             raise RuntimeError("psycopg is required for Postgres memory lifecycle.") from error
         statement = self.render_lifecycle(request)
-        with psycopg.connect(dsn) as connection:
-            with connection.cursor() as cursor:
-                self._set_tenant_context(cursor)
-                cursor.execute(statement.sql, statement.params)
-                if cursor.rowcount != 1:
-                    raise RuntimeError(
-                        "Memory lifecycle target was not found or is protected by legal hold."
-                    )
-            connection.commit()
+        with _driver_errors("memory lifecycle"):
+            with psycopg.connect(dsn) as connection:
+                with connection.cursor() as cursor:
+                    self._set_tenant_context(cursor)
+                    cursor.execute(statement.sql, statement.params)
+                    if cursor.rowcount != 1:
+                        raise RuntimeError(
+                            "Memory lifecycle target was not found or is protected by legal hold."
+                        )
+                connection.commit()
 
     def commit_draft(self, draft: SharedMemoryDraft) -> None:
         dsn = os.environ.get(self.config.postgres_dsn_env)
@@ -299,11 +356,12 @@ FROM updated_memory;
         except ModuleNotFoundError as error:
             raise RuntimeError("psycopg is required for Postgres shared memory writes.") from error
         statement = self.render_insert(draft)
-        with psycopg.connect(dsn) as connection:
-            with connection.cursor() as cursor:
-                self._set_tenant_context(cursor)
-                cursor.execute(statement.sql, statement.params)
-            connection.commit()
+        with _driver_errors("shared memory write"):
+            with psycopg.connect(dsn) as connection:
+                with connection.cursor() as cursor:
+                    self._set_tenant_context(cursor)
+                    cursor.execute(statement.sql, statement.params)
+                connection.commit()
 
     def search(
         self,
@@ -321,11 +379,12 @@ FROM updated_memory;
         except ModuleNotFoundError as error:
             raise RuntimeError("psycopg is required for Postgres shared memory search.") from error
         statement = self.render_search(tenant_id=tenant_id, query=query, limit=limit)
-        with psycopg.connect(dsn, row_factory=dict_row) as connection:
-            with connection.cursor() as cursor:
-                self._set_tenant_context(cursor)
-                cursor.execute(statement.sql, statement.params)
-                rows = cursor.fetchall()
+        with _driver_errors("shared memory search"):
+            with psycopg.connect(dsn, row_factory=dict_row) as connection:
+                with connection.cursor() as cursor:
+                    self._set_tenant_context(cursor)
+                    cursor.execute(statement.sql, statement.params)
+                    rows = cursor.fetchall()
         return [
             SharedMemorySearchRecord(
                 memory_id=str(row["memory_id"]),
@@ -352,10 +411,11 @@ FROM updated_memory;
             import psycopg
         except ModuleNotFoundError as error:
             raise RuntimeError("psycopg is required for Postgres schema application.") from error
-        with psycopg.connect(dsn) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(self.render_schema())
-            connection.commit()
+        with _driver_errors("schema application"):
+            with psycopg.connect(dsn) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(self.render_schema())
+                connection.commit()
 
     def _authorize_tenant(self, tenant_id: str) -> None:
         if self.config.tenant_isolation != "identity":

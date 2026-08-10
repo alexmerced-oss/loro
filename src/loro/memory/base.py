@@ -95,3 +95,15 @@ class MemoryStore(Protocol):
     def remember(self, content: str, scope: str = "local") -> MemoryRecord: ...
 
     def list(self) -> list[MemoryRecord]: ...
+
+
+def like_term(query: str) -> str:
+    """Wrap a search term as a LIKE pattern with metacharacters escaped.
+
+    Parameter binding stops SQL injection but not pattern injection: an unescaped `%`
+    matches every row and `_` matches any character. Callers must pair this with
+    ``ESCAPE '\\'`` in the statement.
+    """
+
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

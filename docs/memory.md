@@ -101,8 +101,10 @@ postgres_schema = "public"
 present and that `psycopg` is importable. The adapter only commits explicit user-dictated
 shared memory drafts.
 
-`retention_days` assigns an expiry when a shared draft is staged. Search excludes deleted and
-expired records. Lifecycle changes require an explicit actor, reason, normalized permission,
+`retention_days` assigns an expiry when a shared draft is staged; the expiry round-trips through
+the staged draft record and is written with the committed memory. Search excludes deleted and
+expired records, and `loro memory sweep` retires memories whose expiry has passed (reporting by
+default, retiring with `--apply`, always skipping records under legal hold). Lifecycle changes require an explicit actor, reason, normalized permission,
 approval, and audit event. Legal hold blocks delete and expire until a separate release action.
 Postgres updates current state and appends an immutable memory event; Iceberg appends a new
 memory version plus an event so governed snapshot history remains available.
@@ -148,8 +150,11 @@ Install optional data dependencies for execution:
 python -m pip install "loro-agent[data]"
 ```
 
-Iceberg `shared-search` pushes tenant and active-status filtering into the PyIceberg scan, then
-applies a defensive record check before returning results. Iceberg `commit-draft --execute`
+Iceberg `shared-search` pushes tenant filtering into the PyIceberg scan as a typed
+expression (`EqualTo("tenant_id", ...)`, never an interpolated filter string), then selects the
+newest version per `memory_id` in Python. Status and expiry are deliberately *not* pushed down:
+they are per-version attributes, so filtering them in the scan could resurrect a memory whose
+newest version is deleted or expired. Iceberg `commit-draft --execute`
 appends one memory row and one event
 row to existing governed tables. DDL still renders through `loro memory schema --backend
 iceberg`; table creation should happen through the governed catalog or enterprise query

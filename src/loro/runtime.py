@@ -1,6 +1,8 @@
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic
+from typing import Any
 from uuid import uuid4
 
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
@@ -13,13 +15,14 @@ from loro.memory.base import SharedMemorySearchRecord
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.model_tools import ModelToolCall
-from loro.models import ModelMessage, ModelProviderError, create_model_client
+from loro.models import ModelMessage, ModelProviderError, ModelResponse, create_model_client
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.resources import memory_resource, provider_resource
 from loro.session_messages import SessionMailbox, SessionMessage
 from loro.sessions import SessionRecord, SessionStore
 from loro.skills import LoadedSkill, SkillRegistry
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
+from loro.tool_schemas import canonical_tool_name, tool_catalog
 
 
 @dataclass(frozen=True)
@@ -66,7 +69,14 @@ class AgentRuntime:
         )
         self.usage = UsageBudget(config.runtime, config.model)
 
-    def run(self, prompt: str, mode: str, *, session_id: str | None = None) -> AgentResult:
+    def run(
+        self,
+        prompt: str,
+        mode: str,
+        *,
+        session_id: str | None = None,
+        on_token: Callable[[str], None] | None = None,
+    ) -> AgentResult:
         self.usage = UsageBudget(self.config.runtime, self.config.model)
         self.tools.graph_outputs = {}
         task_started = monotonic()
@@ -145,7 +155,10 @@ class AgentRuntime:
             policy_version=provider_policy.policy_version,
             policy_source=provider_policy.policy_source,
         )
-        client = create_model_client(self.config.model)
+        client = create_model_client(
+            self.config.model,
+            tool_catalog(self.config) if self.config.runtime.native_tool_calling else None,
+        )
         model_response_content = ""
         stop_reason = initial_budget_stop or "completed"
         steps = 0
@@ -156,7 +169,11 @@ class AgentRuntime:
             try:
                 model_started = monotonic()
                 self.usage.before_model(messages)
-                model_response = client.complete(messages)
+                model_response = (
+                    _stream_completion(client, messages, on_token)
+                    if on_token is not None
+                    else client.complete(messages)
+                )
                 self.usage.after_model(model_response)
                 output_decision = self.protection.enforce(model_response.content, "model_output")
                 model_response_content = output_decision.content
@@ -188,10 +205,34 @@ class AgentRuntime:
                 latency_ms=round((monotonic() - model_started) * 1000, 3),
                 usage=self.usage.payload(),
             )
-            tool_calls = [
-                *_tool_calls_from_model_response(model_response.tool_calls),
-                *parse_tool_calls(model_response_content, origin="model"),
-            ]
+            try:
+                tool_calls = [
+                    *_tool_calls_from_model_response(model_response.tool_calls),
+                    *parse_tool_calls(model_response_content, origin="model"),
+                ]
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                # Models emit malformed directives routinely; feed the parse error back
+                # instead of aborting the run.
+                self.audit.write(
+                    "runtime.tool_directive_invalid",
+                    mode=mode,
+                    step=step,
+                    error=str(error),
+                )
+                messages.append(ModelMessage(role="assistant", content=model_response_content))
+                messages.append(
+                    ModelMessage(
+                        role="user",
+                        content=(
+                            "Tool directive parse error:\n"
+                            f"{error}\n\n"
+                            "Re-issue the tool directive as a single line of the form "
+                            '`@tool {"name": "<tool>", "args": {...}}` with strictly valid '
+                            "JSON, or respond without tool directives if you are done."
+                        ),
+                    )
+                )
+                continue
             if not tool_calls:
                 stop_reason = "completed"
                 break
@@ -486,8 +527,32 @@ def _shared_memory_payload(memory: SharedMemorySearchRecord) -> dict[str, str]:
     }
 
 
+def _stream_completion(
+    client: Any,
+    messages: list[ModelMessage],
+    on_token: Callable[[str], None],
+) -> ModelResponse:
+    """Stream a completion to `on_token` and return the assembled response.
+
+    Native tool calls are not delivered incrementally, so a streamed step falls back to a
+    normal completion when the model asks for tools; the textual `@tool` directives are
+    recovered from the streamed text either way.
+    """
+
+    chunks: list[str] = []
+    for chunk in client.stream(messages):
+        if not chunk:
+            continue
+        chunks.append(chunk)
+        on_token(chunk)
+    return ModelResponse(content="".join(chunks))
+
+
 def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall]:
-    return [ToolCall(name=call.name, args=call.args, origin="model") for call in calls]
+    return [
+        ToolCall(name=canonical_tool_name(call.name), args=call.args, origin="model")
+        for call in calls
+    ]
 
 
 def _tool_identity_payload(identity: IdentityContext) -> dict[str, object]:

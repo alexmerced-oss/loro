@@ -3,7 +3,12 @@ from pathlib import Path
 
 from pptx import Presentation
 
-from loro.artifacts.common import ArtifactResult, ensure_output_dir, slugify, title_from_prompt
+from loro.artifacts.common import (
+    ArtifactResult,
+    ensure_output_dir,
+    title_from_prompt,
+    unique_slug,
+)
 
 
 @dataclass(frozen=True)
@@ -20,7 +25,7 @@ class PresentationOutline:
 
 def create_presentation_artifact(prompt: str, output_dir: Path) -> ArtifactResult:
     title = title_from_prompt(prompt, "Loro Presentation")
-    slug = slugify(title, "presentation")
+    slug = unique_slug(title, "presentation")
     output_dir = ensure_output_dir(output_dir)
     outline_path = output_dir / f"{slug}-outline.md"
     pptx_path = output_dir / f"{slug}.pptx"

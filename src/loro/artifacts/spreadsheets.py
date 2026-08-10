@@ -1,10 +1,17 @@
+from csv import writer as csv_writer
 from dataclasses import dataclass
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, Reference
 
-from loro.artifacts.common import ArtifactResult, ensure_output_dir, slugify, title_from_prompt
+from loro.artifacts.common import (
+    ArtifactResult,
+    ensure_output_dir,
+    formula_safe,
+    title_from_prompt,
+    unique_slug,
+)
 
 
 @dataclass(frozen=True)
@@ -16,25 +23,33 @@ class WorkbookPlan:
 
 def create_spreadsheet_artifact(prompt: str, output_dir: Path) -> ArtifactResult:
     title = title_from_prompt(prompt, "Loro Workbook")
-    slug = slugify(title, "workbook")
+    slug = unique_slug(title, "workbook")
     output_dir = ensure_output_dir(output_dir)
     xlsx_path = output_dir / f"{slug}.xlsx"
     csv_path = output_dir / f"{slug}-summary.csv"
 
-    rows = [
-        ("Category", "Planned", "Actual", "Variance"),
-        ("Scope", 10, 8, "=C2-B2"),
-        ("Schedule", 10, 9, "=C3-B3"),
-        ("Risk", 10, 6, "=C4-B4"),
+    start_row = 4
+    data_rows = [
+        ("Scope", 10, 8),
+        ("Schedule", 10, 9),
+        ("Risk", 10, 6),
     ]
+    # Variance formulas must reference the row each value actually lands on, which
+    # depends on start_row — hard-coded C2/C3/C4 pointed at the header and empty cells.
+    rows: list[tuple[object, ...]] = [("Category", "Planned", "Actual", "Variance")]
+    rows.extend(
+        (category, planned, actual, f"=C{start_row + 1 + offset}-B{start_row + 1 + offset}")
+        for offset, (category, planned, actual) in enumerate(data_rows)
+    )
 
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Summary"
     sheet["A1"] = title
     sheet["A2"] = "Prompt"
-    sheet["B2"] = prompt.strip()
-    start_row = 4
+    # Prompt text is user/model controlled: a leading =, +, - or @ would otherwise be
+    # stored as a live formula that executes when the workbook is opened.
+    sheet["B2"] = formula_safe(prompt.strip())
     for row_index, row in enumerate(rows, start=start_row):
         for column_index, value in enumerate(row, start=1):
             sheet.cell(row=row_index, column=column_index, value=value)
@@ -50,10 +65,14 @@ def create_spreadsheet_artifact(prompt: str, output_dir: Path) -> ArtifactResult
     sheet.add_chart(chart, "F4")
     workbook.save(xlsx_path)
 
-    csv_path.write_text(
-        "\n".join(",".join(str(item) for item in row) for row in rows) + "\n",
-        encoding="utf-8",
+    # The CSV carries computed variances rather than formula text: a leading "=" in a CSV
+    # cell is executed by spreadsheet apps on open.
+    csv_rows: list[tuple[object, ...]] = [("Category", "Planned", "Actual", "Variance")]
+    csv_rows.extend(
+        (category, planned, actual, actual - planned) for category, planned, actual in data_rows
     )
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        csv_writer(handle).writerows(csv_rows)
 
     # Validate the workbook can be opened after writing.
     load_workbook(xlsx_path, data_only=False).close()

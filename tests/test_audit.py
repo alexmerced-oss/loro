@@ -10,7 +10,7 @@ from loro.audit import (
     AuditLogger,
     verify_jsonl_audit,
 )
-from loro.audit.sinks import AuditSinkError, HttpAuditSink
+from loro.audit.sinks import AuditBuffer, AuditBufferFullError, AuditSinkError, HttpAuditSink
 from loro.config import AuditConfig
 from loro.identity import IdentityContext
 
@@ -152,7 +152,7 @@ def test_fail_closed_mode_buffers_then_raises(tmp_path: Path) -> None:
     assert logger.buffer.count() == 1
 
 
-def test_full_buffer_always_raises_in_warn_mode(tmp_path: Path) -> None:
+def test_full_buffer_evicts_oldest_instead_of_dropping_newest(tmp_path: Path) -> None:
     logger = AuditLogger(
         AuditConfig(
             sink="http",
@@ -166,10 +166,24 @@ def test_full_buffer_always_raises_in_warn_mode(tmp_path: Path) -> None:
     with pytest.warns(RuntimeWarning):
         logger.write("first.event")
 
-    with pytest.raises(AuditDeliveryError, match="buffer is full"):
-        logger.write("second.event")
+    with pytest.warns(RuntimeWarning, match="evicted 1 oldest event"):
+        event = logger.write("second.event")
 
-    assert logger.buffer.count() == 1
+    assert event.delivery_status == "buffered"
+    buffered = logger.buffer.load()
+    assert [item["event_type"] for item in buffered] == ["second.event"]
+    assert logger.buffer.evicted_events() == 1
+
+    diagnostic = logger.doctor()
+    assert diagnostic["evicted_events"] == 1
+    assert any("evicted 1 oldest event" in issue for issue in diagnostic["issues"])
+
+
+def test_zero_capacity_buffer_refuses_to_buffer(tmp_path: Path) -> None:
+    buffer = AuditBuffer(tmp_path / "buffer.jsonl", max_events=0)
+
+    with pytest.raises(AuditBufferFullError, match="capacity is zero"):
+        buffer.append({"event_type": "first.event"})
 
 
 def test_flush_delivers_buffered_events(tmp_path: Path) -> None:

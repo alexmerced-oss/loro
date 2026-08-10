@@ -82,8 +82,14 @@ the bounded local buffer:
   status `buffered`, and allows the caller to continue.
 - `failure_mode = "fail"` buffers the event and raises `AuditDeliveryError`. Runtime task-start
   failure therefore stops before contacting the model.
-- A full or invalid buffer always raises, even in warning mode, because the event cannot be
-  retained safely.
+- A full buffer evicts the oldest events to make room for the new one. Eviction is counted and
+  reported by `loro audit doctor` as `evicted_events`, and each eviction emits a
+  `RuntimeWarning`; the newest evidence is never the event that gets dropped.
+- An invalid buffer still raises, because its contents cannot be parsed safely.
+
+`loro audit flush` drains the buffer under a single lock across load, delivery, and rewrite, so a
+concurrent writer cannot lose an event in the gap. When the sink supports it, buffered events are
+delivered in batches of `http_batch_size` (default 50) rather than one request per event.
 
 Delivery is at least once. A collector should deduplicate by `event_id`, because a timeout after
 server acceptance can cause a buffered retry.

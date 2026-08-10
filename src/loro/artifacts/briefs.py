@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from loro.artifacts.common import ArtifactResult, ensure_output_dir, slugify, title_from_prompt
+from loro.artifacts.common import (
+    ArtifactResult,
+    ensure_output_dir,
+    title_from_prompt,
+    unique_slug,
+)
 
 
 @dataclass(frozen=True)
@@ -18,7 +23,7 @@ def create_brief_artifact(
     brief_type: str = "meeting",
 ) -> ArtifactResult:
     title = title_from_prompt(prompt, f"Loro {brief_type.title()} Brief")
-    slug = slugify(f"{brief_type}-{title}", "brief")
+    slug = unique_slug(f"{brief_type}-{title}", "brief")
     output_dir = ensure_output_dir(output_dir)
     path = output_dir / f"{slug}.md"
     brief = Brief(

@@ -6,7 +6,6 @@ import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from time import monotonic
@@ -24,8 +23,12 @@ from loro.agraph.mapping import missing_tools, permission_resource
 from loro.agraph.plan import topological_order
 from loro.agraph.policy import evaluate_policy
 from loro.agraph.record import aggregate_usage, validate_run_record
-from loro.agraph.routing import route_model
+from loro.agraph.routing import RoutingError, route_model
 from loro.agraph.schedule import ready_nodes
+from loro.agraph.state import bind_self as _bind_self
+from loro.agraph.state import empty_usage as _empty_usage
+from loro.agraph.state import matches_type as _matches_type
+from loro.agraph.state import now as _now
 from loro.agraph.store import GraphRunStore
 from loro.agraph.validate import validate_graph
 from loro.approvals import ApprovalManager
@@ -86,6 +89,10 @@ class GraphExecutor:
             human=gate_provider,
             external=external_checkers,
         )
+        # Built once per executor rather than per node execution: both read immutable
+        # config and were rebuilt for every node in the graph.
+        self.skills = SkillRegistry(config.skills)
+        self.permissions = PermissionEngine(config.permissions)
         self.executions = 0
         self._execution_lock = Lock()
         self._run_started = monotonic()
@@ -93,6 +100,10 @@ class GraphExecutor:
         self._graph_token_limit: int | None = None
         self._subgraph_depth = 0
         self._budget_failed = False
+        # Completed loop iterations per composite node, restored from the run record on
+        # resume so max_iterations is a whole-run budget, not a per-attempt one.
+        self._loop_state: dict[str, int] = {}
+        self._active_record: dict[str, Any] | None = None
 
     def run(
         self,
@@ -186,6 +197,12 @@ class GraphExecutor:
         params: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         record = self.store.get(run_id)
+        if bool(record.get("metadata", {}).get("dry_run", False)):
+            # A dry-run record is a plan, not a paused execution: resuming it would run
+            # real tools under the guise of the plan the operator asked not to execute.
+            raise GraphExecutionError(
+                "run was created with --dry-run; start a real run instead of resuming a plan"
+            )
         if isinstance(record.get("nodes"), list):
             record["nodes"] = {node["node_id"]: node for node in record["nodes"]}
         for node in record["nodes"].values():
@@ -249,6 +266,12 @@ class GraphExecutor:
         )
         self._run_started = monotonic()
         self._budget_failed = False
+        self._active_record = record
+        self._loop_state = {
+            node_id: int(node_record["iterations"])
+            for node_id, node_record in record["nodes"].items()
+            if isinstance(node_record.get("iterations"), int)
+        }
         scope: dict[str, Any] = {
             "graph": {"id": graph["id"]},
             "params": dict(params),
@@ -327,9 +350,12 @@ class GraphExecutor:
                 node_record = record["nodes"][node_id]
                 node_record.update(details)
                 self._finish(record, scope, states, node_id, outcome, outputs)
+                # `node` above leaks from the candidate loop and holds the *last*
+                # candidate, so with max_parallel_nodes > 1 outputs were filtered and
+                # redacted against another node's output contract.
                 node_record["outputs"] = {
                     name: "[redacted]" if spec.get("redact", False) else outputs[name]
-                    for name, spec in node.get("outputs", {}).items()
+                    for name, spec in graph["nodes"][node_id].get("outputs", {}).items()
                     if name in outputs
                 }
                 self.audit.write(
@@ -454,17 +480,38 @@ class GraphExecutor:
         configured_mcp = set(self.config.mcp.servers) if self.config.mcp.enabled else set()
         if set(requirements.get("mcp_servers", ())) - configured_mcp:
             return "blocked", {}, {}
-        skills = SkillRegistry(self.config.skills)
         try:
             for name in requirements.get("skills", ()):
-                skills.get(str(name), require_enabled=True)
+                self.skills.get(str(name), require_enabled=True)
         except SkillError:
             return "blocked", {}, {}
         for permission in requirements.get("permissions", ()):
             tool, action, target = permission_resource(str(permission))
-            PermissionEngine(self.config.permissions).require_allowed(
-                PermissionRequest(tool=tool, action=action, target=target), approved=False
-            )
+            try:
+                self.permissions.require_allowed(
+                    PermissionRequest(tool=tool, action=action, target=target), approved=False
+                )
+            except PermissionError as error:
+                # A node whose declared permissions are denied or need approval blocks that
+                # node; it must not raise out of the scheduler and abandon the whole run
+                # with no record of which node was responsible.
+                self.audit.write(
+                    "agraph.node_blocked",
+                    graph_node_id=node_id,
+                    reason=str(error),
+                    permission=str(permission),
+                )
+                record = self._active_record
+                if record is not None and isinstance(record.get("diagnostics"), list):
+                    record["diagnostics"].append(
+                        {
+                            "code": "RT021",
+                            "severity": "error",
+                            "message": f"permission {permission!r} is not granted: {error}",
+                            "node_id": node_id,
+                        }
+                    )
+                return "blocked", {}, {}
         node_scope = deepcopy(scope)
         node_scope["env"] = {
             name: os.environ[name]
@@ -472,6 +519,7 @@ class GraphExecutor:
             if name in os.environ
         }
         inputs = self._resolve_inputs(node.get("inputs", {}), node_scope)
+        _bind_self(node_scope, node_id=node_id, attempt=1, inputs=inputs, status="running")
         checkpoints = node.get("human", [])
         if not self._checkpoints(checkpoints, "before_start", scope):
             return "awaiting_human", {}, {}
@@ -489,7 +537,13 @@ class GraphExecutor:
         for attempt_number in range(1, maximum + 1):
             if attempt_number > 1 and not self._checkpoints(checkpoints, "on_escalation", scope):
                 return "awaiting_human", outputs, {"attempts": attempts}
-            decision = route_model(self.config, node.get("intelligence"), attempt_number)
+            try:
+                decision = route_model(self.config, node.get("intelligence"), attempt_number)
+            except RoutingError as error:
+                # An unroutable intelligence block must block this node, not abort the
+                # whole run with an unhandled error out of the scheduler.
+                self._record_diagnostic(node_id, error)
+                return "blocked", {}, {"attempts": attempts}
             routed = self._node_config(
                 decision.model_config(self.config.model), node.get("constraints", {})
             )
@@ -500,7 +554,14 @@ class GraphExecutor:
                 outputs = dict(result.emitted_outputs)
                 self._discover_outputs(outputs, node.get("outputs", {}))
                 missing_output = self._validate_outputs(outputs, node.get("outputs", {}))
-                criteria = self._evaluate_criteria(node, outputs, scope, node_id)
+                criteria = self._evaluate_criteria(
+                    node,
+                    outputs,
+                    scope,
+                    node_id,
+                    attempt=attempt_number,
+                    inputs=inputs,
+                )
                 required = [item for item in criteria if item["severity"] == "required"]
                 mode = (node.get("success") or {}).get("mode", "all")
                 count = int((node.get("success") or {}).get("count", len(required)))
@@ -633,7 +694,11 @@ class GraphExecutor:
                     break
         else:
             labels = [str(branch["label"]) for branch in decision["branches"]]
-            routed = route_model(self.config, node.get("intelligence"))
+            try:
+                routed = route_model(self.config, node.get("intelligence"))
+            except RoutingError as error:
+                self._record_diagnostic(node.get("id", ""), error)
+                return "blocked", {}, {}
             result = self.runtime_factory(
                 self.config.model_copy(update={"model": routed.model_config(self.config.model)})
             ).run(
@@ -724,31 +789,46 @@ class GraphExecutor:
                 for name, expr in block.get("collect", {}).items()
             }
             return "succeeded", outputs, {"items": len(scopes)}
-        iterations = []
+        iterations: list[dict[str, Any]] = []
         condition_reached = block["mode"] == "repeat"
-        for index in range(int(block["max_iterations"])):
+        # Iterations already consumed by an earlier run of this node. Without it a resumed
+        # bounded loop restarts at 0 and can exceed max_iterations across the boundary.
+        consumed = self._consumed_iterations(node_id)
+        maximum = int(block["max_iterations"])
+        previous_outputs: dict[str, Any] = {}
+        child_scope: dict[str, Any] = deepcopy(scope)
+        for index in range(consumed, maximum):
+            loop_binding = {
+                "index": index,
+                "iteration": index + 1,
+                "previous": dict(previous_outputs),
+            }
+            scope["loop"] = loop_binding
             if block["mode"] == "while" and not bool(evaluate(str(block["condition"]), scope)):
                 condition_reached = True
                 break
             child_scope = deepcopy(scope)
             child_scope["iteration"] = index
+            child_scope["loop"] = loop_binding
             status = self._run_fragment(fragment, child_scope)
             iterations.append({"iteration": index, "status": status})
+            self._record_iterations(node_id, index + 1)
             scope.update({key: value for key, value in child_scope.items() if key not in {"nodes"}})
             fragment_outputs = {
                 name: evaluate(str(spec["from"]), child_scope)
                 for name, spec in fragment.get("outputs", {}).items()
             }
+            previous_outputs = fragment_outputs
             for output_name, input_name in block.get("carry", {}).items():
                 if output_name in fragment_outputs:
                     scope.setdefault("params", {})[input_name] = fragment_outputs[output_name]
             if status != "succeeded":
-                return "failed", {}, {"iterations": len(iterations)}
+                return "failed", {}, {"iterations": consumed + len(iterations)}
             if block["mode"] == "until" and bool(evaluate(str(block["condition"]), child_scope)):
                 condition_reached = True
                 break
         if not condition_reached and block.get("on_max_iterations", "fail") == "fail":
-            return "failed", {}, {"iterations": len(iterations)}
+            return "failed", {}, {"iterations": consumed + len(iterations)}
         outputs = (
             {
                 name: evaluate(str(expr), child_scope)
@@ -757,7 +837,19 @@ class GraphExecutor:
             if iterations
             else {}
         )
-        return "succeeded", outputs, {"iterations": len(iterations)}
+        return "succeeded", outputs, {"iterations": consumed + len(iterations)}
+
+    def _consumed_iterations(self, node_id: str) -> int:
+        return int(self._loop_state.get(node_id, 0))
+
+    def _record_iterations(self, node_id: str, completed: int) -> None:
+        with self._execution_lock:
+            self._loop_state[node_id] = max(self._loop_state.get(node_id, 0), completed)
+            record = self._active_record
+            if record is not None:
+                node_record = record.get("nodes", {}).get(node_id)
+                if isinstance(node_record, dict):
+                    node_record["iterations"] = self._loop_state[node_id]
 
     def _run_fragment(self, fragment: dict[str, Any], scope: dict[str, Any]) -> str:
         fragment_record = {
@@ -796,10 +888,27 @@ class GraphExecutor:
         return document.data
 
     def _evaluate_criteria(
-        self, node: dict[str, Any], outputs: dict[str, Any], scope: dict[str, Any], node_id: str
+        self,
+        node: dict[str, Any],
+        outputs: dict[str, Any],
+        scope: dict[str, Any],
+        node_id: str,
+        *,
+        attempt: int = 1,
+        inputs: Mapping[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         local_scope = deepcopy(scope)
         local_scope["nodes"][node_id] = {"status": "running", "outputs": outputs}
+        # The validator accepts `self.outputs.*` and `nodes.self.*`, but nothing bound
+        # them, so every documented criterion using them failed as "unknown binding".
+        _bind_self(
+            local_scope,
+            node_id=node_id,
+            attempt=attempt,
+            inputs=inputs or {},
+            outputs=outputs,
+            status="running",
+        )
         results = [
             self.criteria.evaluate(item, outputs, local_scope).payload()
             for item in (node.get("success") or {}).get("criteria", [])
@@ -961,6 +1070,19 @@ class GraphExecutor:
             )
         return exceeded
 
+    def _record_diagnostic(self, node_id: str, error: RoutingError) -> None:
+        """Record a node-level routing failure on the run record and the audit chain."""
+
+        message = str(error)
+        code = message.split(":", 1)[0].strip() if ":" in message else "RT011"
+        self.audit.write("agraph.node_blocked", graph_node_id=node_id, reason=message)
+        record = self._active_record
+        if record is not None and isinstance(record.get("diagnostics"), list):
+            entry = {"code": code, "severity": "error", "message": message}
+            if node_id:
+                entry["node_id"] = node_id
+            record["diagnostics"].append(entry)
+
     @staticmethod
     def _retry_allowed(retry: Mapping[str, Any], failure_class: str) -> bool:
         allowed = set(retry.get("retry_on", ["transient", "tool_error", "criteria_failed"]))
@@ -1043,37 +1165,3 @@ class GraphExecutor:
         states[node_id] = status
         record["nodes"][node_id].update({"status": status, "outputs": outputs})
         scope["nodes"][node_id] = {"status": status, "outputs": outputs}
-
-
-def _empty_usage() -> dict[str, int | float]:
-    return {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "cost_usd": 0.0,
-        "tool_calls": 0,
-        "wall_clock_seconds": 0.0,
-        "node_executions": 0,
-    }
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _matches_type(value: Any, expected: str) -> bool:
-    if expected == "any":
-        return True
-    if expected in {"string", "text", "markdown", "file", "directory", "artifact", "reference"}:
-        return isinstance(value, str)
-    if expected == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if expected == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if expected == "boolean":
-        return isinstance(value, bool)
-    if expected in {"object", "json"}:
-        return isinstance(value, dict)
-    if expected in {"array", "file_set"}:
-        return isinstance(value, list)
-    return False

@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from loro.fileio import file_lock
 from loro.memory.base import SharedMemoryDraft
 
 
@@ -28,8 +29,11 @@ class SharedMemoryDraftStore:
             "created_by": draft.created_by,
             "status": draft.status,
             "created_at": draft.created_at.isoformat(),
+            # Retention depends on this round-tripping: dropping it here made every
+            # committed shared memory non-expiring.
+            "expires_at": draft.expires_at.isoformat() if draft.expires_at else None,
         }
-        with self.path.open("a", encoding="utf-8") as file:
+        with file_lock(self.path), self.path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload) + "\n")
         return draft
 
@@ -59,6 +63,11 @@ class SharedMemoryDraftStore:
                     created_by=data["created_by"],
                     status=data["status"],
                     created_at=datetime.fromisoformat(data["created_at"]),
+                    expires_at=(
+                        datetime.fromisoformat(data["expires_at"])
+                        if data.get("expires_at")
+                        else None
+                    ),
                 )
             )
         return drafts

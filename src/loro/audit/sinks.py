@@ -78,6 +78,23 @@ class HttpAuditSink:
         self.sleep_fn = sleep_fn
 
     def deliver(self, payload: dict[str, Any]) -> None:
+        self._post(payload)
+
+    def deliver_batch(self, payloads: list[dict[str, Any]]) -> None:
+        """Deliver several buffered events in one request.
+
+        Flushing a large buffer one HTTP round-trip per event is the dominant cost of
+        recovering from a collector outage.
+        """
+
+        if not payloads:
+            return
+        if len(payloads) == 1:
+            self.deliver(payloads[0])
+            return
+        self._post({"events": payloads})
+
+    def _post(self, payload: dict[str, Any]) -> None:
         if not self.url.strip():
             raise AuditSinkError("HTTP audit sink requires a non-empty URL.")
         headers = {"Content-Type": "application/json"}
@@ -106,21 +123,80 @@ class HttpAuditSink:
         raise AuditSinkError(f"HTTP audit delivery failed: {last_error}") from last_error
 
 
+@dataclass(frozen=True)
+class AuditDrainResult:
+    attempted: int
+    delivered: int
+    remaining: int
+
+
 class AuditBuffer:
     def __init__(self, path: str | Path, max_events: int) -> None:
         self.path = Path(path).expanduser()
         self.max_events = max_events
+        self.stats_path = self.path.with_suffix(self.path.suffix + ".stats.json")
 
-    def append(self, payload: dict[str, Any]) -> None:
+    def append(self, payload: dict[str, Any]) -> int:
+        """Append one event, evicting the oldest events when the buffer is full.
+
+        Returns the number of evicted events. Refusing the *newest* event while retaining
+        stale ones loses the most relevant evidence, so the buffer rotates instead.
+        """
+
+        if self.max_events <= 0:
+            raise AuditBufferFullError(f"Audit buffer capacity is zero: {self.path}")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with _file_lock(self.path):
+            line = _canonical_json(payload) + "\n"
+            count = self._count_unlocked()
+            if count < self.max_events:
+                with self.path.open("a", encoding="utf-8") as file:
+                    file.write(line)
+                self._write_stats_unlocked(events=count + 1)
+                return 0
+            # Rotate: keep the newest max_events entries including the incoming one.
+            retained = self._raw_lines_unlocked()
+            evicted = len(retained) + 1 - self.max_events
+            retained = retained[evicted:]
+            retained.append(line.encode("utf-8"))
+            self._write_raw_unlocked(retained)
+            self._write_stats_unlocked(events=len(retained), evicted_delta=evicted)
+            return evicted
+
+    def drain(
+        self,
+        deliver: Callable[[list[dict[str, Any]]], None],
+        *,
+        batch_size: int = 1,
+    ) -> AuditDrainResult:
+        """Deliver buffered events and rewrite the remainder without releasing the lock.
+
+        Loading and truncating under separate locks let a concurrent append land between
+        the two windows and be deleted by the truncation.
+        """
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(self.path):
             events = self._load_unlocked()
-            if len(events) >= self.max_events:
-                raise AuditBufferFullError(
-                    f"Audit buffer is full ({self.max_events} events): {self.path}"
-                )
-            with self.path.open("a", encoding="utf-8") as file:
-                file.write(_canonical_json(payload) + "\n")
+            delivered = 0
+            for index in range(0, len(events), max(1, batch_size)):
+                batch = events[index : index + max(1, batch_size)]
+                try:
+                    deliver(batch)
+                except AuditSinkError:
+                    remaining = events[index:]
+                    self._replace_unlocked(remaining)
+                    return AuditDrainResult(
+                        attempted=index + len(batch),
+                        delivered=delivered,
+                        remaining=len(remaining),
+                    )
+                delivered += len(batch)
+            self._replace_unlocked([])
+            return AuditDrainResult(attempted=len(events), delivered=delivered, remaining=0)
+
+    def evicted_events(self) -> int:
+        return int(self._read_stats().get("evicted_events", 0))
 
     def load(self) -> list[dict[str, Any]]:
         with _file_lock(self.path):
@@ -151,15 +227,71 @@ class AuditBuffer:
     def replace(self, events: list[dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(self.path):
-            temporary = self.path.with_suffix(self.path.suffix + f".{os.getpid()}.tmp")
-            temporary.write_text(
-                "".join(_canonical_json(event) + "\n" for event in events),
-                encoding="utf-8",
-            )
-            temporary.replace(self.path)
+            self._replace_unlocked(events)
 
     def count(self) -> int:
-        return len(self.load())
+        with _file_lock(self.path):
+            return self._count_unlocked()
+
+    def _replace_unlocked(self, events: list[dict[str, Any]]) -> None:
+        self._write_raw_unlocked(
+            [(_canonical_json(event) + "\n").encode("utf-8") for event in events]
+        )
+        self._write_stats_unlocked(events=len(events))
+
+    def _write_raw_unlocked(self, lines: list[bytes]) -> None:
+        temporary = self.path.with_suffix(self.path.suffix + f".{os.getpid()}.tmp")
+        with temporary.open("wb") as file:
+            file.write(b"".join(lines))
+            file.flush()
+            os.fsync(file.fileno())
+        temporary.replace(self.path)
+
+    def _raw_lines_unlocked(self) -> list[bytes]:
+        if not self.path.exists():
+            return []
+        return [
+            line for line in self.path.read_bytes().splitlines(keepends=True) if line.strip()
+        ]
+
+    def _count_unlocked(self) -> int:
+        """Event count without re-parsing every buffered event.
+
+        Appending used to load and JSON-decode the whole buffer on every write, making a
+        full buffer quadratic. The sidecar caches the count and is only rebuilt when the
+        buffer file size no longer matches what produced it.
+        """
+
+        try:
+            size = self.path.stat().st_size
+        except OSError:
+            return 0
+        stats = self._read_stats()
+        if stats.get("size") == size and isinstance(stats.get("events"), int):
+            return int(stats["events"])
+        return len(self._raw_lines_unlocked())
+
+    def _read_stats(self) -> dict[str, Any]:
+        try:
+            payload = json.loads(self.stats_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _write_stats_unlocked(self, *, events: int, evicted_delta: int = 0) -> None:
+        stats = self._read_stats()
+        stats["events"] = events
+        stats["evicted_events"] = int(stats.get("evicted_events", 0)) + evicted_delta
+        try:
+            stats["size"] = self.path.stat().st_size
+        except OSError:
+            stats["size"] = None
+        try:
+            self.stats_path.write_text(_canonical_json(stats) + "\n", encoding="utf-8")
+        except OSError:
+            # The sidecar is an optimization and a diagnostic; losing it must never lose
+            # an audit event.
+            pass
 
 
 def verify_jsonl_audit(
@@ -313,8 +445,15 @@ def _chain_state(path: Path) -> tuple[str | None, str | None]:
     except json.JSONDecodeError as error:
         raise AuditSinkError(f"Invalid existing audit JSON: {path}") from error
     if not isinstance(event_hash, str):
-        return None, _bytes_hash(path.read_bytes())
+        # Must hash exactly the byte stream verify_jsonl_audit rebuilds — non-blank raw
+        # lines only. Hashing whole-file bytes made any blank line (including a trailing
+        # "\n\n") report tampering on an untouched file.
+        return None, _bytes_hash(_legacy_prefix_bytes(path.read_bytes().splitlines(keepends=True)))
     return event_hash, None
+
+
+def _legacy_prefix_bytes(raw_lines: list[bytes]) -> bytes:
+    return b"".join(line for line in raw_lines if line.strip())
 
 
 def _bytes_hash(content: bytes) -> str:

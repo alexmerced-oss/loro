@@ -5,6 +5,82 @@ from subprocess import CompletedProcess, run
 from loro.config import PolarisConfig, SandboxConfig
 from loro.tools.shell import ShellTools
 
+READONLY_ACTIONS = frozenset({"list", "get", "show", "describe"})
+
+# Per-subcommand allowlist of options that may reach the Polaris CLI. Anything else
+# (`--profile`, output-file options, short flags) is rejected before execution so a model
+# cannot smuggle behaviour past the read-only resource/action check.
+READONLY_OPTIONS: dict[str, frozenset[str]] = {
+    "catalogs": frozenset(),
+    "namespaces": frozenset({"catalog"}),
+    "tables": frozenset({"catalog", "namespace"}),
+    "views": frozenset({"catalog", "namespace"}),
+    "principal-roles": frozenset(),
+    "catalog-roles": frozenset({"catalog"}),
+    "privileges": frozenset({"catalog", "catalog-role"}),
+    "policies": frozenset({"catalog"}),
+    "applicable-policies": frozenset({"catalog", "namespace", "resource"}),
+}
+
+_MAX_POSITIONALS = 1
+
+
+def normalize_readonly_args(args: list[str]) -> list[str]:
+    """Validate a Polaris argv as read-only and return a canonical, injection-safe form.
+
+    The result is ``[resource, action, *options, "--", *positionals]``. The ``--``
+    separator guarantees a positional value can never be re-interpreted as an option by
+    the Polaris CLI.
+    """
+
+    if len(args) < 2:
+        raise ValueError("Polaris read-only operations require a resource and action.")
+    if not all(isinstance(item, str) and item for item in args):
+        raise ValueError("Polaris arguments must be non-empty strings.")
+    resource, action = args[0], args[1]
+    if resource not in READONLY_OPTIONS or action not in READONLY_ACTIONS:
+        raise PermissionError(f"Polaris operation is not read-only: {' '.join(args)}")
+    allowed = READONLY_OPTIONS[resource]
+
+    options: list[str] = []
+    positionals: list[str] = []
+    index = 2
+    while index < len(args):
+        item = args[index]
+        if item == "--":
+            raise PermissionError("Polaris arguments cannot contain an option separator.")
+        if item.startswith("-"):
+            if not item.startswith("--"):
+                raise PermissionError(f"Polaris short options are not permitted: {item}")
+            name, separator, inline = item.removeprefix("--").partition("=")
+            if name not in allowed:
+                raise PermissionError(
+                    f"Polaris option is not permitted for {resource} {action}: --{name}"
+                )
+            if separator:
+                value = inline
+                index += 1
+            else:
+                if index + 1 >= len(args):
+                    raise PermissionError(f"Polaris option requires a value: --{name}")
+                value = args[index + 1]
+                index += 2
+            if not value or value.startswith("-"):
+                raise PermissionError(f"Polaris option has an option-like value: --{name}={value}")
+            options.extend([f"--{name}", value])
+            continue
+        positionals.append(item)
+        index += 1
+
+    if len(positionals) > _MAX_POSITIONALS:
+        raise PermissionError(
+            f"Polaris read-only operations accept at most {_MAX_POSITIONALS} positional value."
+        )
+    normalized = [resource, action, *options]
+    if positionals:
+        normalized.extend(["--", *positionals])
+    return normalized
+
 
 @dataclass(frozen=True)
 class PolarisResult:
@@ -34,8 +110,7 @@ class PolarisClient:
         )
 
     def run_readonly(self, args: list[str]) -> PolarisResult:
-        self._validate_readonly(args)
-        command = [self.config.cli_path, *args]
+        command = [self.config.cli_path, *normalize_readonly_args(args)]
         if self.shell is not None and self.sandbox is not None:
             result = self.shell.run(
                 command,
@@ -188,21 +263,5 @@ class PolarisClient:
             args.extend(["--namespace", namespace])
         return self.run_readonly(args)
 
-    def _validate_readonly(self, args: list[str]) -> None:
-        if len(args) < 2:
-            raise ValueError("Polaris read-only operations require a resource and action.")
-        resource, action = args[0], args[1]
-        allowed_resources = {
-            "catalogs",
-            "namespaces",
-            "tables",
-            "views",
-            "principal-roles",
-            "catalog-roles",
-            "privileges",
-            "policies",
-            "applicable-policies",
-        }
-        allowed_actions = {"list", "get", "show", "describe"}
-        if resource not in allowed_resources or action not in allowed_actions:
-            raise PermissionError(f"Polaris operation is not read-only: {' '.join(args)}")
+    def _validate_readonly(self, args: list[str]) -> list[str]:
+        return normalize_readonly_args(args)

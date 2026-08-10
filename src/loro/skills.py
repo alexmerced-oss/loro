@@ -12,6 +12,7 @@ from uuid import uuid4
 import yaml
 
 from loro.config import SkillsConfig
+from loro.fileio import atomic_write_text, file_lock
 
 SkillScope = Literal["managed", "user", "project"]
 SkillState = Literal["enabled", "disabled", "quarantined"]
@@ -357,7 +358,5 @@ def _read_json(path: Path, *, default: Any) -> Any:
 
 
 def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    with file_lock(path):
+        atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")

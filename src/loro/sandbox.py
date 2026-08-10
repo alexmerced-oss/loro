@@ -168,13 +168,40 @@ class SandboxRunner:
         return Path(resolved).resolve()
 
     def _require_allowed_executable(self, executable: Path, profile: SandboxProfileConfig) -> None:
-        candidates = {executable.name, str(executable)}
-        if not any(
-            fnmatch.fnmatchcase(candidate, pattern)
+        absolute = str(executable)
+        path_patterns = [
+            pattern for pattern in profile.allowed_executables if "/" in pattern or pattern == "*"
+        ]
+        name_patterns = [
+            pattern
             for pattern in profile.allowed_executables
-            for candidate in candidates
-        ):
-            raise SandboxError(f"Executable is not allowed by sandbox profile: {executable}")
+            if "/" not in pattern and pattern != "*"
+        ]
+        if any(fnmatch.fnmatchcase(absolute, pattern) for pattern in path_patterns):
+            return
+        # A basename-only pattern such as "git" matched any file called git, anywhere —
+        # including one the agent just wrote into the workspace and put on PATH.
+        if any(fnmatch.fnmatchcase(executable.name, pattern) for pattern in name_patterns):
+            agent_writable = [
+                *self.workspace_roots,
+                *(Path(root).expanduser().resolve(strict=False) for root in profile.writable_roots),
+            ]
+            if any(_is_within(executable, root) for root in agent_writable):
+                raise SandboxError(
+                    "Executable matches a name-only allowlist entry but resolves inside an "
+                    f"agent-writable root: {executable}"
+                )
+            prefixes = [
+                Path(prefix).expanduser().resolve(strict=False)
+                for prefix in profile.trusted_executable_prefixes
+            ]
+            if prefixes and not any(_is_within(executable, prefix) for prefix in prefixes):
+                raise SandboxError(
+                    "Executable matches a name-only allowlist entry but is outside the profile's "
+                    f"trusted executable prefixes: {executable}"
+                )
+            return
+        raise SandboxError(f"Executable is not allowed by sandbox profile: {executable}")
 
     def _command(
         self,
@@ -193,20 +220,11 @@ class SandboxRunner:
         bwrap = shutil.which("bwrap")
         if bwrap is None:
             raise SandboxError("Sandbox profile requires Bubblewrap, but bwrap is unavailable.")
-        command = [
-            bwrap,
-            "--die-with-parent",
-            "--new-session",
-            "--ro-bind",
-            "/",
-            "/",
-            "--dev",
-            "/dev",
-            "--proc",
-            "/proc",
-        ]
+        command = [bwrap, *_bubblewrap_isolation(profile)]
         if profile.network == "deny":
             command.append("--unshare-net")
+        for masked in _masked_paths(profile):
+            command.extend(["--tmpfs", str(masked)])
         for root_value in profile.writable_roots:
             root = Path(root_value).expanduser().resolve()
             if self.workspace_roots and not any(
@@ -218,6 +236,45 @@ class SandboxRunner:
             command.extend(["--bind", str(root), str(root)])
         command.extend(["--chdir", str(cwd), "--", *normalized])
         return command, True
+
+
+def _bubblewrap_isolation(profile: SandboxProfileConfig) -> list[str]:
+    """Bubblewrap flags shared by the real launch and the capability probe.
+
+    `--ro-bind / /` exposed ~/.ssh, ~/.aws and the Loro credential store to every
+    sandboxed process, and `--proc` without `--unshare-pid` exposed other processes'
+    /proc/<pid>/environ. The default profile now binds only the system roots it needs and
+    unshares the PID, IPC and UTS namespaces.
+    """
+
+    flags = [
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+    ]
+    if profile.filesystem == "host_readonly":
+        flags.extend(["--ro-bind", "/", "/"])
+    else:
+        for root_value in profile.readonly_roots:
+            root = Path(root_value).expanduser()
+            if root.exists():
+                flags.extend(["--ro-bind", str(root), str(root)])
+    flags.extend(["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"])  # nosec B108
+    return flags
+
+
+def _masked_paths(profile: SandboxProfileConfig) -> list[Path]:
+    if profile.filesystem != "host_readonly":
+        # Nothing outside readonly_roots is bound, so there is nothing to mask.
+        return []
+    masked: list[Path] = []
+    for value in profile.masked_paths:
+        path = Path(value).expanduser()
+        if path.exists():
+            masked.append(path)
+    return masked
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -232,18 +289,7 @@ def _bubblewrap_usable(profile: SandboxProfileConfig) -> bool:
     bwrap = shutil.which("bwrap")
     if bwrap is None:
         return False
-    command = [
-        bwrap,
-        "--die-with-parent",
-        "--new-session",
-        "--ro-bind",
-        "/",
-        "/",
-        "--dev",
-        "/dev",
-        "--proc",
-        "/proc",
-    ]
+    command = [bwrap, *_bubblewrap_isolation(profile)]
     if profile.network == "deny":
         command.append("--unshare-net")
     command.extend(["--", "/bin/true"])

@@ -9,6 +9,8 @@ from typing import Annotated, Any
 import click
 import typer
 from rich.console import Console
+from rich.live import Live
+from rich.text import Text
 
 from loro import __version__
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
@@ -21,6 +23,24 @@ from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
+from loro.cli_ops import (
+    approvals_app,
+)
+from loro.cli_ops import (
+    audit_query as ops_audit_query,
+)
+from loro.cli_ops import (
+    audit_report_command as ops_audit_report,
+)
+from loro.cli_ops import (
+    config_check as ops_config_check,
+)
+from loro.cli_ops import (
+    doctor as ops_doctor,
+)
+from loro.cli_ops import (
+    memory_sweep as ops_memory_sweep,
+)
 from loro.config import (
     LoroConfig,
     MCPCredentialProfileConfig,
@@ -123,6 +143,7 @@ audit_app = typer.Typer(help="Inspect and flush audit delivery.")
 mcp_app = typer.Typer(help="Configure and use Model Context Protocol servers.")
 skills_app = typer.Typer(help="Discover and govern portable Agent Skills packages.")
 sandbox_app = typer.Typer(help="Inspect subprocess isolation profiles.")
+config_app = typer.Typer(help="Show and lint resolved configuration.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -146,6 +167,13 @@ app.add_typer(credentials_app, name="credentials")
 app.add_typer(gateway_app, name="gateway")
 setup_app.command("gateway")(gateway_setup)
 app.add_typer(graph_app, name="graph")
+app.add_typer(config_app, name="config")
+app.add_typer(approvals_app, name="approvals")
+app.command("doctor")(ops_doctor)
+config_app.command("check")(ops_config_check)
+audit_app.command("query")(ops_audit_query)
+audit_app.command("report")(ops_audit_report)
+memory_app.command("sweep")(ops_memory_sweep)
 
 console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
@@ -588,13 +616,33 @@ def run(
         str | None,
         typer.Option("--resume-session", help="Resume a saved session and deliver its inbox."),
     ] = None,
+    stream: Annotated[
+        bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
+    ] = False,
 ) -> None:
     """Run an agent task, optionally resuming a durable session."""
     try:
-        result = _runtime().run(prompt, mode="run", session_id=resume_session)
+        result = _run_task(prompt, mode="run", session_id=resume_session, stream=stream)
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
+
+
+def _run_task(prompt: str, *, mode: str, session_id: str | None, stream: bool):
+    """Run one agent task, live-rendering tokens when streaming is requested."""
+
+    runtime = _runtime()
+    if not stream:
+        return runtime.run(prompt, mode=mode, session_id=session_id)
+    with Live(Text(""), console=console, refresh_per_second=12, transient=True) as live:
+        buffer: list[str] = []
+
+        def on_token(chunk: str) -> None:
+            buffer.append(chunk)
+            live.update(Text("".join(buffer)))
+
+        result = runtime.run(prompt, mode=mode, session_id=session_id, on_token=on_token)
+    return result
 
 
 @app.command()
@@ -610,6 +658,9 @@ def plan(
     out: Annotated[Path, typer.Option("--out", help="Path for --format agraph output.")] = Path(
         "generated.agraph.yaml"
     ),
+    stream: Annotated[
+        bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
+    ] = False,
 ) -> None:
     """Run a read-only planning task."""
     if format == "agraph":
@@ -623,13 +674,20 @@ def plan(
     if format != "text":
         raise typer.BadParameter("--format must be text or agraph")
     try:
-        result = _runtime().run(prompt, mode="plan", session_id=resume_session)
+        result = _run_task(prompt, mode="plan", session_id=resume_session, stream=stream)
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
 
 
-@app.command("config")
+@config_app.callback(invoke_without_command=True)
+def config_root(ctx: typer.Context) -> None:
+    """Show resolved configuration, or run a config subcommand."""
+    if ctx.invoked_subcommand is None:
+        console.print_json(load_config().model_dump_json(indent=2))
+
+
+@config_app.command("show")
 def show_config() -> None:
     """Show resolved configuration."""
     console.print_json(load_config().model_dump_json(indent=2))
@@ -2417,12 +2475,12 @@ def mcp_prompt(
     console.print_json(data=result)
 
 
-@app.command()
-def doctor() -> None:
-    """Validate provider, permission, memory, Polaris, and artifact configuration."""
+@config_app.command("summary")
+def config_summary() -> None:
+    """Print a human-readable summary of the resolved configuration."""
     config = load_config()
     identity_diagnostic = diagnose_identity(config.identity)
-    console.print("[bold green]Loro doctor[/bold green]")
+    console.print("[bold green]Loro configuration[/bold green]")
     console.print(f"Model provider: {config.model.provider}")
     console.print(f"Model: {config.model.model}")
     if config.model.small_model:

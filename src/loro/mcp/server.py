@@ -54,6 +54,19 @@ class LoroMCPServerCatalog:
             raise MCPServerModeError(
                 "MCP server exports are not permitted: " + ", ".join(unsupported)
             )
+        # Path-reading exports are confined to workspace_roots, and the confinement check
+        # is skipped when no roots are configured. On a surface whose manifest declares
+        # "authority": none, that is a fail-open that exposes any file on the host, so
+        # refuse to export those tools rather than export them unconfined.
+        if not config.permissions.workspace_roots:
+            unconfined = sorted(
+                name for name in requested if name.startswith(("agraph.", "file."))
+            )
+            if unconfined:
+                raise MCPServerModeError(
+                    "MCP server mode requires permissions.workspace_roots before exporting "
+                    "path-reading tools: " + ", ".join(unconfined)
+                )
         self.exported = requested
 
     def manifest(self) -> dict[str, Any]:
@@ -113,7 +126,7 @@ class LoroMCPServerCatalog:
         roots = [
             Path(root).expanduser().resolve() for root in self.config.permissions.workspace_roots
         ]
-        if roots and not any(source == root or root in source.parents for root in roots):
+        if not roots or not any(source == root or root in source.parents for root in roots):
             raise MCPServerModeError("agraph path is outside managed workspace roots")
         document = load_graph(source, max_bytes=self.config.agraph.max_document_bytes)
         report = validate_graph(document)

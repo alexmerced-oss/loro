@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,17 @@ class Evaluator:
         self.tokens = self._tokenize(text)
         self.pos = 0
         self.scope = scope
+        # Depth of short-circuited operands. Tokens are still consumed so parsing stays
+        # in step, but nothing is evaluated and nothing can raise.
+        self.suppress = 0
+
+    @contextmanager
+    def _suppressed(self) -> Iterator[None]:
+        self.suppress += 1
+        try:
+            yield
+        finally:
+            self.suppress -= 1
 
     @staticmethod
     def _tokenize(text: str) -> list[_Token]:
@@ -53,21 +65,32 @@ class Evaluator:
     def _or(self) -> Any:
         value = self._and()
         while self._match("op", "||") or self._match("name", "or"):
-            right = self._and()
-            value = self._boolean(value, "or") or self._boolean(right, "or")
+            if self._boolean(value, "or"):
+                with self._suppressed():
+                    self._and()
+                value = True
+                continue
+            value = self._boolean(self._and(), "or")
         return value
 
     def _and(self) -> Any:
         value = self._in()
         while self._match("op", "&&") or self._match("name", "and"):
-            right = self._in()
-            value = self._boolean(value, "and") and self._boolean(right, "and")
+            if not self._boolean(value, "and"):
+                with self._suppressed():
+                    self._in()
+                value = False
+                continue
+            value = self._boolean(self._in(), "and")
         return value
 
     def _in(self) -> Any:
         value = self._equality()
         while self._match("name", "in"):
             container = self._equality()
+            if self.suppress:
+                value = None
+                continue
             if not isinstance(container, (str, list, dict)):
                 raise ExpressionError("right operand of 'in' must be string, array, or object")
             value = value in container
@@ -78,8 +101,13 @@ class Evaluator:
         while (token := self._peek()) and token.value in {"==", "!="}:
             self.pos += 1
             right = self._comparison()
-            self._same_type(value, right, token.value)
-            value = value == right if token.value == "==" else value != right
+            if self.suppress:
+                value = None
+                continue
+            # Spec: different types are never equal, and comparing them is not an error.
+            # _same_type belongs only to ordering comparisons.
+            equal = _json_equal(value, right)
+            value = equal if token.value == "==" else not equal
         return value
 
     def _comparison(self) -> Any:
@@ -87,6 +115,9 @@ class Evaluator:
         while (token := self._peek()) and token.value in {"<", "<=", ">", ">="}:
             self.pos += 1
             right = self._additive()
+            if self.suppress:
+                value = None
+                continue
             self._same_type(value, right, token.value)
             if not isinstance(value, (int, float, str)) or isinstance(value, bool):
                 raise ExpressionError(f"{token.value} requires numbers or strings")
@@ -105,8 +136,17 @@ class Evaluator:
         while (token := self._peek()) and token.value in {"+", "-"}:
             self.pos += 1
             right = self._multiplicative()
+            if self.suppress:
+                value = None
+                continue
             self._same_type(value, right, token.value)
-            if token.value == "+" and isinstance(value, (int, float, str)):
+            if token.value == "+" and isinstance(value, list) and isinstance(right, list):
+                value = [*value, *right]
+            elif (
+                token.value == "+"
+                and isinstance(value, (int, float, str))
+                and not isinstance(value, bool)
+            ):
                 value = value + right
             elif token.value == "-" and self._number(value) and self._number(right):
                 value = value - right
@@ -119,14 +159,17 @@ class Evaluator:
         while (token := self._peek()) and token.value in {"*", "/", "%"}:
             self.pos += 1
             right = self._unary()
+            if self.suppress:
+                value = None
+                continue
             if not self._number(value) or not self._number(right):
                 raise ExpressionError(f"{token.value} requires numeric operands")
             if token.value == "*":
                 value *= right
-            elif token.value == "/":
-                value /= right
-            else:
-                value %= right
+                continue
+            if right == 0:
+                raise ExpressionError(f"{token.value} by zero")
+            value = value / right if token.value == "/" else value % right
         return value
 
     def _unary(self) -> Any:
@@ -134,6 +177,8 @@ class Evaluator:
             return not self._boolean(self._unary(), "not")
         if self._match("op", "-"):
             value = self._unary()
+            if self.suppress:
+                return None
             if not self._number(value):
                 raise ExpressionError("unary '-' requires a number")
             return -value
@@ -175,17 +220,24 @@ class Evaluator:
                 while self._match("op", ","):
                     args.append(self._or())
             self._expect("op", ")")
+            if self.suppress:
+                return None
             return _call(token.value, args, self.scope)
         value: Any = self._lookup(token.value)
         while self._match("op", "."):
             part = self._take()
             if part.kind != "name":
                 raise ExpressionError("dotted reference segments must be names")
+            if self.suppress:
+                value = None
+                continue
             value = _member(value, part.value)
         return value
 
     def _lookup(self, name: str) -> Any:
         if name not in self.scope:
+            if self.suppress:
+                return None
             raise ExpressionError(f"unknown binding {name!r}")
         return self.scope[name]
 
@@ -210,8 +262,9 @@ class Evaluator:
         if token != _Token(kind, value):
             raise ExpressionError(f"expected {value!r}, got {token.value!r}")
 
-    @staticmethod
-    def _same_type(left: Any, right: Any, operation: str) -> None:
+    def _same_type(self, left: Any, right: Any, operation: str) -> None:
+        if self.suppress:
+            return
         numeric = Evaluator._number(left) and Evaluator._number(right)
         if not numeric and type(left) is not type(right):
             raise ExpressionError(f"{operation} operands must have the same type")
@@ -220,8 +273,9 @@ class Evaluator:
     def _number(value: Any) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool)
 
-    @staticmethod
-    def _boolean(value: Any, operation: str) -> bool:
+    def _boolean(self, value: Any, operation: str) -> bool:
+        if self.suppress:
+            return False
         if not isinstance(value, bool):
             raise ExpressionError(f"{operation} requires boolean operands")
         return value
@@ -230,7 +284,15 @@ class Evaluator:
 def evaluate(expression: str, scope: Mapping[str, Any]) -> Any:
     try:
         return Evaluator(expression, scope).parse()
-    except (AgxError, KeyError, IndexError, TypeError, ValueError, ZeroDivisionError) as error:
+    except (
+        AgxError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        re.error,
+    ) as error:
         if isinstance(error, ExpressionError):
             raise
         raise ExpressionError(str(error)) from error
@@ -238,7 +300,56 @@ def evaluate(expression: str, scope: Mapping[str, Any]) -> Any:
 
 def interpolate(template: str, scope: Mapping[str, Any]) -> str:
     pattern = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
-    return pattern.sub(lambda match: str(evaluate(match.group(1).strip(), scope)), template)
+    return pattern.sub(lambda match: stringify(evaluate(match.group(1).strip(), scope)), template)
+
+
+def stringify(value: Any) -> str:
+    """Render an AGX value for template interpolation.
+
+    Spec: scalars render directly, `null` renders as the empty string, and objects and
+    arrays render as compact JSON. Python `repr` would emit None/True/[1, 2] instead.
+    """
+
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        return json.dumps(value)
+    return json.dumps(value, separators=(",", ":"), sort_keys=False, default=str)
+
+
+def _json_equal(left: Any, right: Any) -> bool:
+    """Deep JSON equality where values of different types are simply unequal."""
+
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left is right
+    if left is None or right is None:
+        return left is None and right is None
+    if Evaluator._number(left) and Evaluator._number(right):
+        return bool(left == right)
+    if isinstance(left, str) and isinstance(right, str):
+        return left == right
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _json_equal(item, other) for item, other in zip(left, right, strict=True)
+        )
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return set(left) == set(right) and all(_json_equal(left[key], right[key]) for key in left)
+    return False
+
+
+def _dotted_get(value: Any, path: str, default: Any = None) -> Any:
+    """Walk a dotted path, returning `default` at the first missing segment."""
+
+    current = value
+    for segment in str(path).split("."):
+        if not isinstance(current, Mapping) or segment not in current:
+            return default
+        current = current[segment]
+    return current
 
 
 def _single_quote(value: str) -> str:
@@ -247,9 +358,9 @@ def _single_quote(value: str) -> str:
 
 def _member(value: Any, name: str) -> Any:
     if isinstance(value, Mapping):
-        if name not in value:
-            raise ExpressionError(f"object has no member {name!r}")
-        return value[name]
+        # Spec: a declared name whose value is absent at run time yields null. Raising
+        # here made default(nodes.x.outputs.y, "...") unreachable for its own use case.
+        return value.get(name)
     raise ExpressionError(f"cannot access member {name!r} on {type(value).__name__}")
 
 
@@ -271,7 +382,7 @@ def _call(name: str, args: list[Any], scope: Mapping[str, Any]) -> Any:
         "bool": bool,
         "str": str,
         "json": json.loads,
-        "get": lambda value, key, default=None: value.get(key, default),
+        "get": _dotted_get,
         "default": lambda value, fallback: fallback if value is None else value,
         "any": lambda values: all(isinstance(value, bool) for value in values) and any(values),
         "all": lambda values: all(isinstance(value, bool) for value in values) and all(values),
@@ -285,7 +396,7 @@ def _call(name: str, args: list[Any], scope: Mapping[str, Any]) -> Any:
         raise ExpressionError(f"unknown function {name!r}")
     try:
         return function(*args)
-    except (AttributeError, KeyError, TypeError, ValueError) as error:
+    except (AttributeError, KeyError, TypeError, ValueError, re.error) as error:
         raise ExpressionError(f"{name}() failed: {error}") from error
 
 

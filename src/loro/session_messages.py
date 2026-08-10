@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -170,6 +171,14 @@ class SessionMailbox:
         if not required.issubset(payload):
             raise ValueError(f"Session message record is incomplete: {path}")
         message = SessionMessage.from_payload(payload)
+        # The digest was written on save but never checked, so anyone with write access to
+        # the mailbox could rewrite `content` — which reaches AgentRuntime as cross-session
+        # context — and leave the stale digest in place.
+        stored_digest = payload.get("content_digest")
+        if not isinstance(stored_digest, str) or not stored_digest:
+            raise ValueError(f"Session message record has no content digest: {path}")
+        if not hmac.compare_digest(stored_digest, message_digest(message.content)):
+            raise ValueError(f"Session message content does not match its digest: {path}")
         if message.status not in {"queued", "delivered", "acknowledged"}:
             raise ValueError(f"Session message has invalid status: {message.status}")
         if message.recipient_session_id != recipient_session_id or path.stem != message.message_id:

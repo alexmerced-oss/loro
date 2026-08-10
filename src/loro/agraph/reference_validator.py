@@ -28,6 +28,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,18 @@ except ImportError:  # pragma: no cover
     jsonschema = None
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema" / "agentic-graph-1.0.schema.json"
+
+
+@lru_cache(maxsize=1)
+def _graph_schema_validator() -> Any:
+    """Compile the single on-disk graph schema once.
+
+    The schema lives only in schema/agentic-graph-1.0.schema.json — this validator loads
+    that file rather than keeping a second copy that could drift from it.
+    """
+
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    return jsonschema.Draft202012Validator(schema)
 
 SUPPORTED_MAJOR = 1
 SUPPORTED_MINOR = 0
@@ -431,8 +444,7 @@ class Validator:
         if jsonschema is None:
             self.report.add("AG001", "warning", "jsonschema is not installed; skipping layer 1.")
             return True
-        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-        validator = jsonschema.Draft202012Validator(schema)
+        validator = _graph_schema_validator()
         ok = True
         for error in sorted(validator.iter_errors(self.doc), key=lambda e: list(e.absolute_path)):
             ok = False

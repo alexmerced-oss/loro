@@ -65,6 +65,10 @@ class ModelConfig(BaseModel):
 
 
 class RuntimeConfig(BaseModel):
+    # Publish typed tool schemas to the provider so real models can call tools natively.
+    # The textual `@tool {json}` DSL keeps working either way and stays the deterministic
+    # test path; set this to false for endpoints that reject a tools field.
+    native_tool_calling: bool = True
     max_steps: int = 5
     max_tool_calls: int = Field(default=50, ge=0, le=10_000)
     max_model_input_bytes: int = Field(default=2_000_000, ge=1024, le=100_000_000)
@@ -72,6 +76,69 @@ class RuntimeConfig(BaseModel):
     max_input_tokens: int | None = Field(default=None, ge=1)
     max_output_tokens: int | None = Field(default=None, ge=1)
     max_cost_usd: float | None = Field(default=None, gt=0)
+
+
+# Loader and interpreter variables let a caller inject code into any child process, so
+# they can never be forwarded into a sandbox or an MCP server, however the operator
+# spells the allowlist.
+FORBIDDEN_CHILD_ENVIRONMENT = frozenset(
+    {
+        "BASH_ENV",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "ENV",
+        "GCONV_PATH",
+        "GIT_SSH",
+        "GIT_SSH_COMMAND",
+        "IFS",
+        "LD_AUDIT",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "NODE_OPTIONS",
+        "PERL5LIB",
+        "PERL5OPT",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "RUBYLIB",
+        "RUBYOPT",
+    }
+)
+
+
+def _validate_child_environment_names(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        name = value.strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+            raise ValueError(f"Invalid environment variable name: {value!r}")
+        if name.upper() in FORBIDDEN_CHILD_ENVIRONMENT:
+            raise ValueError(
+                f"Environment variable cannot be forwarded to a child process: {name}"
+            )
+        if name not in normalized:
+            normalized.append(name)
+    return normalized
+
+
+DEFAULT_READONLY_ROOTS = (
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/etc",
+    "/opt",
+)
+
+DEFAULT_MASKED_PATHS = (
+    "~/.ssh",
+    "~/.aws",
+    "~/.gnupg",
+    "~/.kube",
+    "~/.docker",
+    "~/.config/loro",
+)
 
 
 class SandboxProfileConfig(BaseModel):
@@ -83,22 +150,32 @@ class SandboxProfileConfig(BaseModel):
         default_factory=lambda: ["PATH", "LANG", "LC_ALL", "TMPDIR"]
     )
     writable_roots: list[str] = Field(default_factory=list)
+    # "minimal" binds only readonly_roots; "host_readonly" re-enables the old whole-root
+    # read-only bind, which exposes ~/.ssh, ~/.aws and the Loro credential store.
+    filesystem: Literal["minimal", "host_readonly"] = "minimal"
+    readonly_roots: list[str] = Field(default_factory=lambda: list(DEFAULT_READONLY_ROOTS))
+    # Masked with an empty tmpfs whenever they exist inside the sandbox view.
+    masked_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_MASKED_PATHS))
+    # Optional hard restriction: when non-empty, a basename-only entry in
+    # allowed_executables must also resolve under one of these prefixes. Regardless of
+    # this setting, a name-only match never accepts a binary inside a workspace or
+    # writable root, where the agent itself could have planted it.
+    trusted_executable_prefixes: list[str] = Field(default_factory=list)
     max_seconds: int = Field(default=120, ge=1, le=3600)
     max_output_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
 
     @field_validator("environment_allowlist")
     @classmethod
     def _validate_environment_allowlist(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for value in values:
-            name = value.strip()
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
-                raise ValueError(f"Invalid sandbox environment variable name: {value!r}")
-            if name not in normalized:
-                normalized.append(name)
-        return normalized
+        return _validate_child_environment_names(values)
 
-    @field_validator("allowed_executables", "writable_roots")
+    @field_validator(
+        "allowed_executables",
+        "writable_roots",
+        "readonly_roots",
+        "masked_paths",
+        "trusted_executable_prefixes",
+    )
     @classmethod
     def _normalize_nonempty_values(cls, values: list[str]) -> list[str]:
         return list(dict.fromkeys(value.strip() for value in values if value.strip()))
@@ -208,6 +285,7 @@ class PermissionsConfig(BaseModel):
     default: PermissionDecision = "ask"
     shell: PermissionDecision = "ask"
     edit: PermissionDecision = "ask"
+    artifact: PermissionDecision = "ask"
     shared_memory: PermissionDecision = "ask"
     governed_data: PermissionDecision = "allow"
     mcp: PermissionDecision = "ask"
@@ -301,14 +379,7 @@ class MCPServerConfig(BaseModel):
     @field_validator("env_allowlist")
     @classmethod
     def _validate_environment_names(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for value in values:
-            name = value.strip()
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
-                raise ValueError(f"Invalid environment variable name: {value!r}")
-            if name not in normalized:
-                normalized.append(name)
-        return normalized
+        return _validate_child_environment_names(values)
 
     @field_validator("allowed_protocol_versions")
     @classmethod
@@ -577,6 +648,9 @@ class AuditConfig(BaseModel):
     failure_mode: Literal["warn", "fail"] = "warn"
     buffer_path: str = "~/.local/state/loro/audit-buffer.jsonl"
     max_buffer_events: int = Field(default=1000, ge=1)
+    # Events delivered per HTTP request when flushing the buffer. 1 preserves the
+    # one-request-per-event wire format for collectors that cannot accept a batch.
+    http_batch_size: int = Field(default=50, ge=1, le=1000)
     max_retries: int = Field(default=2, ge=0, le=10)
     backoff_seconds: float = Field(default=0.25, ge=0, le=60)
     timeout_seconds: float = Field(default=10, gt=0, le=300)
@@ -611,6 +685,9 @@ class GatewayEndpointConfig(BaseModel):
     allowed_workspaces: list[str] = Field(default_factory=list)
     allowed_channels: list[str] = Field(default_factory=list)
     ephemeral_responses: bool = True
+    # teams/signal/generic bridges HMAC the body with no timestamp of their own, so
+    # freshness depends on the envelope carrying a signed `timestamp` field.
+    require_signed_timestamp: bool = True
 
     @field_validator("route")
     @classmethod

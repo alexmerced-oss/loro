@@ -21,7 +21,7 @@ from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.local import LocalMemoryStore
 from loro.memory.operations import search_shared_memories
 from loro.permissions import PermissionEngine, PermissionRequest
-from loro.polaris import PolarisClient
+from loro.polaris import PolarisClient, normalize_readonly_args
 from loro.resources import (
     filesystem_resource,
     git_resource,
@@ -399,8 +399,26 @@ class ToolRegistry:
     def _create_artifact(self, call: ToolCall) -> ToolExecution:
         kind = str(call.args.get("kind", "document"))
         prompt = str(call.args["prompt"])
-        output_dir = Path(str(call.args.get("output_dir", "artifacts")))
+        # Reject an unknown kind before prompting for approval on a request that cannot run.
+        factory = None if kind == "brief" else _artifact_factory(kind)
+        resource = filesystem_resource(
+            str(call.args.get("output_dir", "artifacts")),
+            operation="write",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        output_dir = Path(str(resource.fields["path"]))
         allow_sensitive = bool(call.args.get("allow_sensitive", False))
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="artifact",
+                action="create artifact",
+                target=str(output_dir),
+                resource=resource,
+            ),
+            approval_target=resource.target,
+            risk_reason="Generate artifact files in a filesystem directory.",
+        )
         decision = self.protection.evaluate(prompt, "artifact", allow_sensitive=allow_sensitive)
         if decision.blocked:
             detail = _data_protection_detail(decision)
@@ -412,11 +430,10 @@ class ToolRegistry:
                     "Set allow_sensitive only if policy allows persistence."
                 ),
             )
-        if kind == "brief":
+        if factory is None:
             brief_type = str(call.args.get("brief_type", "meeting"))
             result = create_brief_artifact(prompt, output_dir, brief_type=brief_type)
         else:
-            factory = _artifact_factory(kind)
             result = factory(prompt, output_dir)
         provenance_path = write_provenance(result=result, prompt_preview=prompt_preview(prompt))
         return ToolExecution(
@@ -492,13 +509,15 @@ class ToolRegistry:
         args = call.args.get("args")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise ValueError("polaris.readonly requires args as a list of strings.")
-        resource = polaris_resource(args, default_catalog=self.config.polaris.catalog)
+        # Normalize before authorizing so policy is evaluated against the exact argv that runs.
+        normalized_args = normalize_readonly_args(args)
+        resource = polaris_resource(normalized_args, default_catalog=self.config.polaris.catalog)
         self._authorize(
             call,
             PermissionRequest(
                 tool="governed_data",
                 action="read governed metadata",
-                target=" ".join(args),
+                target=" ".join(normalized_args),
                 resource=resource,
             ),
             approval_target=resource.target,
@@ -508,7 +527,7 @@ class ToolRegistry:
             self.config.polaris,
             self.config.sandbox,
             workspace_roots=self.config.permissions.workspace_roots,
-        ).run_readonly(args)
+        ).run_readonly(normalized_args)
         output = _format_process_output(
             returncode=result.returncode,
             stdout=result.stdout,
@@ -528,6 +547,7 @@ class ToolRegistry:
     def _run_mcp(self, call: ToolCall) -> ToolExecution:
         if not self.config.mcp.enabled:
             return ToolExecution(call=call, ok=False, output="MCP is disabled.")
+        call = _normalize_mcp_tool_call(call, set(self.config.mcp.servers))
         server_id = str(call.args["server_id"])
         server = MCPRegistry(self.config.mcp).get(server_id)
         endpoint = server_endpoint_for_display(server)
@@ -882,6 +902,35 @@ def _parse_json_tool_call(
     if not isinstance(args, dict):
         raise ValueError("Tool directive args must be a JSON object.")
     return ToolCall(name=name, args=args, origin=origin)
+
+
+def _normalize_mcp_tool_call(call: ToolCall, server_ids: set[str]) -> ToolCall:
+    """Accept `mcp.<server_id>.<tool_name>` as a first-class runtime tool target.
+
+    Composing a remote MCP tool used to mean spelling out `mcp.call` with a `server_id`
+    and `tool_name`. The dotted form names the remote tool directly, so permission rules
+    can scope it per tool while the call still runs under the same approval and audit
+    envelope as any other Loro tool.
+    """
+
+    segments = call.name.split(".")
+    if len(segments) < 3 or segments[0] != "mcp" or segments[1] not in server_ids:
+        return call
+    server_id, tool_name = segments[1], ".".join(segments[2:])
+    arguments = call.args.get("arguments", call.args)
+    if not isinstance(arguments, dict):
+        raise ValueError(f"{call.name} requires arguments as an object.")
+    arguments = {key: value for key, value in arguments.items() if key != "approved"}
+    return ToolCall(
+        name="mcp.call",
+        args={
+            "server_id": server_id,
+            "tool_name": tool_name,
+            "arguments": arguments,
+            **({"approved": True} if call.args.get("approved") else {}),
+        },
+        origin=call.origin,
+    )
 
 
 def _string_list(value: Any, message: str) -> list[str]:

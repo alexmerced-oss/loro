@@ -149,9 +149,15 @@ def polaris_resource(
 ) -> NormalizedResource:
     if not args or not all(isinstance(item, str) and item for item in args):
         raise ResourceNormalizationError("Polaris arguments must be non-empty strings.")
-    values = _option_values(args)
     operation = ".".join(args[:2]) if len(args) > 1 else args[0]
-    positional = [item for item in args[2:] if not item.startswith("--")]
+    rest = args[2:]
+    if "--" in rest:
+        separator = rest.index("--")
+        option_tokens, positional = rest[:separator], rest[separator + 1 :]
+    else:
+        option_tokens = rest
+        positional = [item for item in rest if not item.startswith("-")]
+    values = _option_values(option_tokens)
     return NormalizedResource(
         kind="polaris",
         fields={
@@ -265,9 +271,15 @@ def _option_values(args: list[str]) -> dict[str, str]:
     index = 0
     while index < len(args):
         item = args[index]
-        if item.startswith("--") and index + 1 < len(args):
-            values[item.removeprefix("--")] = args[index + 1]
-            index += 2
-            continue
+        if item.startswith("--"):
+            key, separator, inline_value = item.removeprefix("--").partition("=")
+            if separator:
+                values[key] = inline_value
+                index += 1
+                continue
+            if index + 1 < len(args):
+                values[key] = args[index + 1]
+                index += 2
+                continue
         index += 1
     return values

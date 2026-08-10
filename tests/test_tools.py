@@ -97,7 +97,7 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
     client = PolarisClient(PolarisConfig(cli_path="polaris"))
 
     assert client.list_catalogs().command == ["polaris", "catalogs", "list"]
-    assert client.get_catalog("prod").command == ["polaris", "catalogs", "get", "prod"]
+    assert client.get_catalog("prod").command == ["polaris", "catalogs", "get", "--", "prod"]
     assert client.list_namespaces(catalog="prod").command == [
         "polaris",
         "namespaces",
@@ -109,9 +109,10 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "polaris",
         "namespaces",
         "get",
-        "analytics",
         "--catalog",
         "prod",
+        "--",
+        "analytics",
     ]
     assert client.list_tables(namespace="analytics", catalog="prod").command == [
         "polaris",
@@ -126,11 +127,12 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "polaris",
         "tables",
         "get",
-        "events",
         "--namespace",
         "analytics",
         "--catalog",
         "prod",
+        "--",
+        "events",
     ]
     assert client.list_views(namespace="analytics", catalog="prod").command == [
         "polaris",
@@ -145,17 +147,19 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "polaris",
         "views",
         "get",
-        "daily_events",
         "--namespace",
         "analytics",
         "--catalog",
         "prod",
+        "--",
+        "daily_events",
     ]
     assert client.list_principal_roles().command == ["polaris", "principal-roles", "list"]
     assert client.get_principal_role("analyst").command == [
         "polaris",
         "principal-roles",
         "get",
+        "--",
         "analyst",
     ]
     assert client.list_catalog_roles(catalog="prod").command == [
@@ -169,9 +173,10 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "polaris",
         "catalog-roles",
         "get",
-        "reader",
         "--catalog",
         "prod",
+        "--",
+        "reader",
     ]
     assert client.list_privileges(catalog_role="reader", catalog="prod").command == [
         "polaris",
@@ -193,9 +198,10 @@ def test_polaris_typed_methods_build_readonly_commands(monkeypatch) -> None:
         "polaris",
         "policies",
         "get",
-        "pii-mask",
         "--catalog",
         "prod",
+        "--",
+        "pii-mask",
     ]
     assert client.list_applicable_policies(
         "events",

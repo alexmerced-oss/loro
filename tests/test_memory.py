@@ -1,6 +1,7 @@
 import builtins
 import sys
 import types
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -333,7 +334,9 @@ def test_search_shared_memories_executes_iceberg(monkeypatch) -> None:
     assert result.records[0].memory_id == "mem-1"
     assert result.records[0].citation == "iceberg:acme/team/platform/mem-1"
     scan_options = fake_catalog.tables["enterprise_memory.agent_facts"].scan_options
-    assert scan_options["row_filter"] == "tenant_id = 'acme'"
+    # The tenant-isolation predicate must be a typed expression, never an interpolated
+    # string that relies on hand-rolled quoting inside the PyIceberg filter parser.
+    assert scan_options["row_filter"] == FakeEqualTo(term="tenant_id", value="acme")
 
 
 def test_iceberg_lifecycle_appends_version_and_event(monkeypatch) -> None:
@@ -467,9 +470,18 @@ def test_iceberg_backend_check_reports_missing_pyiceberg(monkeypatch) -> None:
 
 def test_iceberg_backend_check_accepts_importable_pyiceberg(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "pyiceberg", types.ModuleType("pyiceberg"))
+    monkeypatch.setenv("LORO_ICEBERG_CATALOG_URI", "https://polaris.example.com/api/catalog")
     check = IcebergSharedMemoryStore(SharedMemoryConfig()).check()
     assert check.ok is True
     assert any("pyiceberg is importable" in message for message in check.messages)
+
+
+def test_iceberg_backend_check_requires_catalog_target(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "pyiceberg", types.ModuleType("pyiceberg"))
+    monkeypatch.delenv("LORO_ICEBERG_CATALOG_URI", raising=False)
+    check = IcebergSharedMemoryStore(SharedMemoryConfig()).check()
+    assert check.ok is False
+    assert any("No Iceberg catalog target is configured" in message for message in check.messages)
 
 
 class FakeArrowTable:
@@ -526,10 +538,25 @@ class FakeIcebergCatalog:
         return self.tables[identifier]
 
 
+@dataclass(frozen=True)
+class FakeEqualTo:
+    term: str
+    value: object
+
+
+@dataclass(frozen=True)
+class FakeAnd:
+    left: object
+    right: object
+
+
 def install_fake_iceberg_modules(monkeypatch, *, rows):
     fake_catalog = FakeIcebergCatalog(rows)
     pyiceberg_module = types.ModuleType("pyiceberg")
     catalog_module = types.ModuleType("pyiceberg.catalog")
+    expressions_module = types.ModuleType("pyiceberg.expressions")
+    expressions_module.EqualTo = FakeEqualTo
+    expressions_module.And = FakeAnd
     pyarrow_module = types.ModuleType("pyarrow")
     pyarrow_module.Table = FakeArrowTable
 
@@ -539,5 +566,6 @@ def install_fake_iceberg_modules(monkeypatch, *, rows):
     catalog_module.load_catalog = fake_load_catalog
     monkeypatch.setitem(sys.modules, "pyiceberg", pyiceberg_module)
     monkeypatch.setitem(sys.modules, "pyiceberg.catalog", catalog_module)
+    monkeypatch.setitem(sys.modules, "pyiceberg.expressions", expressions_module)
     monkeypatch.setitem(sys.modules, "pyarrow", pyarrow_module)
     return fake_catalog

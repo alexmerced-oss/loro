@@ -10,6 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from loro.config import MCPConfig
+from loro.fileio import atomic_write_text, file_lock
 
 TaskStatus = Literal["working", "input_required", "completed", "failed", "cancelled"]
 TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
@@ -52,31 +53,36 @@ class MCPTaskStore:
                 f"MCP task handle exceeded managed limit of {self.max_record_bytes} bytes."
             )
         self.root.mkdir(parents=True, exist_ok=True)
-        existing = self.find(handle.server_id, handle.task_id)
-        if existing is not None:
-            if existing.terminal and handle.status != existing.status:
-                raise MCPTaskError(
-                    "MCP task server attempted to change an observed terminal status."
-                )
-            handle.first_seen_at = existing.first_seen_at
-            handle.answered_input_keys = list(
-                dict.fromkeys(existing.answered_input_keys + handle.answered_input_keys)
-            )
-            handle.cancellation_requested_at = (
-                handle.cancellation_requested_at or existing.cancellation_requested_at
-            )
-        handle.last_seen_at = datetime.now(UTC).isoformat()
         path = self._path(handle.server_id, handle.task_id)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(handle.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(path)
+        # The lock spans find + merge + write. Without it the terminal-status regression
+        # guard is a TOCTOU any concurrent writer defeats, and answered_input_keys merges
+        # are lost; the staging file is unique per writer rather than a shared ".tmp".
+        with file_lock(path):
+            existing = self._find_unlocked(path)
+            if existing is not None:
+                if existing.terminal and handle.status != existing.status:
+                    raise MCPTaskError(
+                        "MCP task server attempted to change an observed terminal status."
+                    )
+                handle.first_seen_at = existing.first_seen_at
+                handle.answered_input_keys = list(
+                    dict.fromkeys(existing.answered_input_keys + handle.answered_input_keys)
+                )
+                handle.cancellation_requested_at = (
+                    handle.cancellation_requested_at or existing.cancellation_requested_at
+                )
+            handle.last_seen_at = datetime.now(UTC).isoformat()
+            atomic_write_text(
+                path,
+                json.dumps(handle.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+            )
         return handle
 
     def find(self, server_id: str, task_id: str) -> MCPTaskHandle | None:
-        path = self._path(server_id, task_id)
+        return self._find_unlocked(self._path(server_id, task_id))
+
+    @staticmethod
+    def _find_unlocked(path: Path) -> MCPTaskHandle | None:
         if not path.exists():
             return None
         return MCPTaskHandle.model_validate_json(path.read_text(encoding="utf-8"))
@@ -126,7 +132,7 @@ class MCPTaskStore:
                 status=status,
                 operation=operation,
                 name=name,
-                remote=remote,
+                remote=_canonical_remote(remote),
             )
         )
 
@@ -144,7 +150,7 @@ class MCPTaskStore:
         duplicate = sorted(set(response_keys) & set(handle.answered_input_keys))
         if duplicate:
             raise MCPTaskError("MCP task input keys were already answered: " + ", ".join(duplicate))
-        outstanding = handle.remote.get("inputRequests", {})
+        outstanding = _outstanding_input_requests(handle.remote)
         unknown = sorted(key for key in response_keys if key not in outstanding)
         if unknown:
             raise MCPTaskError("MCP task input keys are not outstanding: " + ", ".join(unknown))
@@ -318,6 +324,32 @@ def _sdk_types() -> dict[str, Any]:
         "CancelTaskRequest": CancelTaskRequest,
     }
     return _SDK_TYPE_CACHE
+
+
+def _outstanding_input_requests(remote: dict[str, Any]) -> dict[str, Any]:
+    """Read input requests under either spelling.
+
+    `_validate_detailed_task` accepts `inputRequests` or `input_requests`, so a server
+    emitting the snake_case form could reach `input_required` and then have every answer
+    rejected as "not outstanding" — a task with no way forward.
+    """
+
+    for key in ("inputRequests", "input_requests"):
+        value = remote.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _canonical_remote(remote: dict[str, Any]) -> dict[str, Any]:
+    """Store one canonical spelling so later reads never depend on the server's choice."""
+
+    canonical = dict(remote)
+    outstanding = _outstanding_input_requests(canonical)
+    if outstanding:
+        canonical.pop("input_requests", None)
+        canonical["inputRequests"] = outstanding
+    return canonical
 
 
 def _validate_detailed_task(status: str, payload: dict[str, Any]) -> None:

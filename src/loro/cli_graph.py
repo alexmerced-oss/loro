@@ -197,8 +197,16 @@ def graph_resume(
         values = json.loads(params)
         if not isinstance(values, dict):
             raise ValueError("params must be an object")
+        # `graph run` executes with the graph file's directory as the workspace. Resume
+        # used to default to Path.cwd(), so file_exists/artifact_present/json_schema
+        # criteria and local subgraph refs resolved against a different root.
+        store = GraphRunStore(config.agraph, DataProtectionEngine(config.safety))
+        source = str(store.get(run_id).get("metadata", {}).get("source", ""))
+        workspace = Path(source).resolve().parent if source else None
         record = GraphExecutor(
-            config, gate_provider=(lambda _prompt, _roles: True) if yes else None
+            config,
+            workspace=workspace,
+            gate_provider=(lambda _prompt, _roles: True) if yes else None,
         ).resume(
             run_id,
             force=force,

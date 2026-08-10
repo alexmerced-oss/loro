@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
 import re
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -73,17 +76,67 @@ class DataProtectionDecision:
         }
 
 
+def _shannon_entropy(value: str) -> float:
+    if not value:
+        return 0.0
+    total = len(value)
+    return -sum(
+        (count / total) * math.log2(count / total) for count in Counter(value).values()
+    )
+
+
+def _looks_like_aws_secret_key(value: str) -> bool:
+    """Shape and entropy gate for a bare 40-character AWS secret access key.
+
+    A 40-char token has no distinguishing prefix, so require the mixed charset AWS keys
+    always have (lower + upper + digit) and enough entropy to exclude hex digests,
+    repeated padding, and other structured 40-character strings.
+    """
+
+    if len(value) != 40:
+        return False
+    if not any(character.islower() for character in value):
+        return False
+    if not any(character.isupper() for character in value):
+        return False
+    if not any(character.isdigit() for character in value):
+        return False
+    return _shannon_entropy(value) >= 3.9
+
+
 class RegexContentScanner:
     BUILTIN_PATTERNS: tuple[tuple[str, str, Classification], ...] = (
-        ("private_key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "restricted"),
+        # Span the whole PEM block, not just the header line, so redaction removes the
+        # key material rather than leaving it in place.
+        (
+            "private_key",
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+            "restricted",
+        ),
+        # `_` is a word character, so a leading `\b` would never match `OPENAI_API_KEY=`.
+        # Anchor on a non-alphanumeric boundary and allow an arbitrary identifier prefix.
         (
             "assignment_secret",
-            r"(?i)\b(api[_-]?key|secret|token|password)\b\s*[:=]\s*['\"]?[^'\"\s]{8,}",
+            r"(?i)(?<![A-Za-z0-9])[A-Za-z0-9_.-]*"
+            r"(?:api[_-]?key|secret|token|passwd|password|credential)"
+            r"[A-Za-z0-9_.-]*"
+            r"\s*[:=]\s*['\"]?[^'\"\s]{8,}",
             "restricted",
         ),
         ("github_token", r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b", "restricted"),
         ("aws_access_key", r"\bAKIA[0-9A-Z]{16}\b", "restricted"),
+        # Bare 40-character AWS secret access keys carry no distinguishing prefix, so the
+        # regex only proposes candidates; VALIDATORS applies the shape/entropy check.
+        (
+            "aws_secret_key",
+            r"(?<![A-Za-z0-9/+])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+])",
+            "restricted",
+        ),
     )
+
+    VALIDATORS: dict[str, Callable[[str], bool]] = {
+        "aws_secret_key": staticmethod(_looks_like_aws_secret_key),  # type: ignore[dict-item]
+    }
 
     def __init__(
         self,
@@ -105,7 +158,10 @@ class RegexContentScanner:
     def scan(self, text: str) -> list[DataFinding]:
         findings: list[DataFinding] = []
         for kind, pattern, classification in self.patterns:
+            validator = self.VALIDATORS.get(kind)
             for match in pattern.finditer(text):
+                if validator is not None and not validator(match.group(0)):
+                    continue
                 findings.append(
                     DataFinding(
                         kind=kind,
@@ -241,6 +297,6 @@ class DataProtectionEngine:
 
 
 def _preview(value: str, redaction_text: str) -> str:
-    if len(value) <= 12:
-        return redaction_text
-    return f"{value[:4]}...{redaction_text}...{value[-4:]}"
+    """Describe a finding without echoing any of the matched characters."""
+
+    return f"{redaction_text} ({len(value)} chars)"

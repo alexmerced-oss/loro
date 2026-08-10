@@ -27,7 +27,22 @@ def enforce_server_policy(
         return
     if server.url is None:
         raise MCPTransportPolicyError("MCP HTTP server is missing its validated URL.")
-    parsed = urlsplit(server.url)
+    enforce_url_policy(policy, server.url, resolver=resolver)
+
+
+def enforce_url_policy(
+    policy: MCPConfig,
+    url: str,
+    *,
+    resolver: Callable[..., Any] = socket.getaddrinfo,
+) -> None:
+    """Apply managed transport policy to a single URL.
+
+    Used for the configured endpoint and again for every outgoing request, so a redirect
+    cannot walk the client off the allowlist or onto a private address.
+    """
+
+    parsed = urlsplit(url)
     hostname = (parsed.hostname or "").rstrip(".").casefold()
     is_loopback = _hostname_is_loopback(hostname)
     if (
@@ -45,6 +60,25 @@ def enforce_server_policy(
         raise MCPTransportPolicyError("MCP endpoint URL cannot contain a fragment.")
     if policy.block_private_networks and not is_loopback:
         _reject_unsafe_addresses(hostname, parsed.port, resolver)
+
+
+def request_policy_hook(
+    policy: MCPConfig,
+    *,
+    resolver: Callable[..., Any] = socket.getaddrinfo,
+) -> Callable[[Any], Awaitable[None]]:
+    """httpx request hook that re-validates every request URL against transport policy.
+
+    Loro resolves the host once and httpx resolves it again when connecting, so a DNS
+    answer that changes in between (rebinding) escapes the one-shot check; and with
+    follow_redirects enabled the redirect target was never checked at all. Re-running the
+    policy per request closes the redirect hole and re-checks the current DNS answer.
+    """
+
+    async def hook(request: Any) -> None:
+        enforce_url_policy(policy, str(request.url), resolver=resolver)
+
+    return hook
 
 
 def credential_environment(

@@ -81,8 +81,12 @@ def test_loader_rejects_duplicate_keys_and_digest_is_stable(tmp_path: Path) -> N
 def test_expression_evaluator_is_strict_and_never_uses_host_eval() -> None:
     scope = {"params": {"ready": True}, "nodes": {"build": {"status": "succeeded"}}}
     assert evaluate("params.ready && succeeded('build')", scope) is True
-    with pytest.raises(ExpressionError):
-        evaluate("1 == true", scope)
+    # Spec (references/expressions.md §4): different types are never equal, and comparing
+    # them is not an error. Ordering comparisons remain strictly typed.
+    assert evaluate("1 == true", scope) is False
+    assert evaluate("1 != true", scope) is True
+    with pytest.raises(ExpressionError, match="same type"):
+        evaluate("1 < 'two'", scope)
     with pytest.raises(ExpressionError):
         evaluate("__import__('os')", scope)
 

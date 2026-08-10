@@ -82,7 +82,7 @@ def test_runtime_resume_delivers_message_once_as_untrusted_context(tmp_path, mon
             return ModelResponse(content="I treated the relay as context only.")
 
     client = CapturingClient()
-    monkeypatch.setattr("loro.runtime.create_model_client", lambda _config: client)
+    monkeypatch.setattr("loro.runtime.create_model_client", lambda _config, tools=None: client)
     config = LoroConfig(
         sessions=sessions,
         memory=MemoryConfig(local=LocalMemoryConfig(enabled=False)),

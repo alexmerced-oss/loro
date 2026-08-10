@@ -17,12 +17,24 @@ class PolicyFinding:
     severity: str = "error"
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[PolicyFinding, ...]:
     findings: list[PolicyFinding] = []
+    if not isinstance(document, dict):
+        return (PolicyFinding("AG001", "graph document must be an object", ""),)
     if not config.enabled:
         findings.append(PolicyFinding("LP001", "Agentic Graph support is disabled.", ""))
         return tuple(findings)
     nodes = document.get("nodes") or {}
+    if not isinstance(nodes, dict):
+        return (PolicyFinding("AG001", "graph nodes must be an object", "/nodes"),)
+    nodes = {node_id: node for node_id, node in nodes.items() if isinstance(node, dict)}
     if len(nodes) > config.max_nodes:
         findings.append(
             PolicyFinding(
@@ -31,7 +43,19 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
                 "/nodes",
             )
         )
-    required_level = int(document.get("requires_conformance", 1))
+    # Callers evaluate policy on raw data before checking the schema report, so an
+    # out-of-enum tier or non-integer conformance level must produce a finding, not a
+    # KeyError/ValueError traceback.
+    required_level = _int_or_none(document.get("requires_conformance", 1))
+    if required_level is None:
+        findings.append(
+            PolicyFinding(
+                "AG001",
+                "requires_conformance must be an integer",
+                "/requires_conformance",
+            )
+        )
+        required_level = 1
     maximum_level = min(config.conformance_level, 3)
     if required_level > maximum_level:
         findings.append(
@@ -45,7 +69,15 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
     for node_id, node in nodes.items():
         pointer = f"/nodes/{node_id}"
         tier = ((node.get("intelligence") or {}).get("tier")) or "standard"
-        if TIER_RANK[tier] > TIER_RANK[config.max_tier]:
+        if tier not in TIER_RANK:
+            findings.append(
+                PolicyFinding(
+                    "AG001",
+                    f"unknown intelligence tier {tier!r}",
+                    f"{pointer}/intelligence/tier",
+                )
+            )
+        if TIER_RANK.get(tier, TIER_RANK["standard"]) > TIER_RANK[config.max_tier]:
             findings.append(
                 PolicyFinding(
                     "LP003",
