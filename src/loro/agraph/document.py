@@ -111,6 +111,14 @@ def _json_mapping(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _load_yaml(text: str) -> Any:
+    loader = _NoDuplicateLoader(text)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def load_graph(path: str | Path, *, max_bytes: int = 5_000_000) -> GraphDocument:
     source = Path(path).expanduser().resolve()
     if source.suffix.lower() not in {".json", ".yaml", ".yml"}:
@@ -122,7 +130,7 @@ def load_graph(path: str | Path, *, max_bytes: int = 5_000_000) -> GraphDocument
     try:
         text = source.read_text(encoding="utf-8")
         raw = (
-            yaml.load(text, Loader=_NoDuplicateLoader)
+            _load_yaml(text)
             if source.suffix.lower() in {".yaml", ".yml"}
             else json.loads(text, object_pairs_hook=_json_mapping)
         )

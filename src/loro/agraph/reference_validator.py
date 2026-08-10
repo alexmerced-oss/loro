@@ -395,7 +395,11 @@ def load_document(path: Path, report: Report) -> Any | None:
             if yaml is None:
                 report.add("AG001", "error", "PyYAML is not installed; cannot read YAML.")
                 return None
-            return yaml.load(text, Loader=_NoDuplicateLoader)
+            loader = _NoDuplicateLoader(text)
+            try:
+                return loader.get_single_data()
+            finally:
+                loader.dispose()
         return json.loads(text)
     except Exception as exc:  # noqa: BLE001 - any parse failure is a document error
         message = str(exc).replace("\n", " ")
