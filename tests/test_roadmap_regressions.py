@@ -1,7 +1,7 @@
 """Regression coverage for the August 10 2026 audit findings.
 
-Each test here would have failed against the pre-fix code. They are grouped by the bug id
-from `roadmap_aug10.md` so a future change that reintroduces one is obvious.
+Each test here would have failed against the pre-fix code. They are grouped by the bug ID
+from the August 10, 2026 repository audit so a future regression is obvious.
 """
 
 from __future__ import annotations

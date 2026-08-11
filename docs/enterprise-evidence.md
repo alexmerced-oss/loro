@@ -2,11 +2,10 @@
 
 ## How To Use This Register
 
-This is the closure checklist for the
-[Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md). An item is complete only when
-its implementation, automated test, operational proof, documentation, accountable owner, and
-review are linked. Repository paths below are current evidence or planned placeholders; `TBD`
-means the milestone remains open.
+This is the closure checklist for the [Roadmap To Loro 1.0](roadmap-1.0.md). An item is complete
+only when its implementation, automated test, operational proof, documentation, accountable
+owner, and review are linked. Repository paths below are current evidence or planned
+placeholders; `TBD` means the milestone remains open.
 
 Evidence states:
 
@@ -24,7 +23,7 @@ Evidence states:
 | E0-02 | Data classifications and permitted flows approved | Security/privacy (TBD) | Partial | [Data classification](data-classification.md) drafted; corporate mapping and approval TBD. |
 | E0-03 | Reference deployment and supported matrix reproducible | Operations/release (TBD) | Partial | [Reference deployment](reference-deployment.md) drafted; pinned manifests and reproduction result TBD. |
 | E0-04 | Accountable owners assigned | Product (TBD) | Planned | Role table exists in reference deployment; named owners and acceptance dates TBD. |
-| E0-05 | Every later phase has criteria and evidence placeholders | Release (TBD) | Existing | This register and the enterprise roadmap. |
+| E0-05 | Every later phase has criteria and evidence placeholders | Release (TBD) | Existing | This register and the [roadmap to 1.0](roadmap-1.0.md). |
 | E0-06 | Baseline quality, reliability, performance, and cost recorded | Runtime/release (TBD) | Partial | Unit/coverage CI exists; versioned benchmark, provider cost, live reliability, and integration report TBD. |
 
 ## Phase 1: Identity, Policy, And Approval

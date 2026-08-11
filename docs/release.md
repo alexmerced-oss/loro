@@ -100,7 +100,7 @@ claims, graph failure-injection evidence, and signed gateway interoperability fi
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
-- Confirm `docs/roadmap.md` statuses are current.
+- Confirm `docs/roadmap-1.0.md` statuses and remaining gates are current.
 - Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
 - Confirm the MCP support matrix matches green conformance workflow artifacts for the release

@@ -82,8 +82,8 @@ share the client facade but are never left open without time and event ceilings.
 through the existing permission, approval, normalized-resource, session, and audit boundaries.
 `loro.mcp.server` exposes a hard-coded ceiling of explicitly configured read-only Loro tools,
 resources, and prompts. Server mode, Skills, and client calls share the same policy and audit
-boundaries. See [Model Context Protocol](docs/mcp.md) and the
-[MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
+boundaries. See [Model Context Protocol](docs/mcp.md), the
+[MCP Support Matrix](docs/mcp-support-matrix.md), and [Agent Skills](docs/skills.md).
 
 ## Runtime Flow
 

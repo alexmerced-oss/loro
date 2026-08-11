@@ -822,8 +822,8 @@ Operational metrics:
 - SSO/internal gateway integration.
 - Secret scanning.
 - Sandbox profiles.
-- Dual-era MCP support and Agent Skills support as detailed in
-  `docs/mcp-skills-roadmap.md`.
+- Dual-era MCP and Agent Skills support governed by the documented support and interoperability
+  matrices.
 - Integration tests and security review.
 
 ### Milestone 8: Secure Remote Work And Credentials
