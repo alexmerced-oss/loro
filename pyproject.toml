@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loro-agent"
-version = "0.7.0"
+version = "0.8.0"
 description = "Enterprise memory-sharing CLI agent harness for coding, governed data, and productivity work."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Alex Merced" }]
 keywords = ["agents", "cli", "enterprise", "memory", "iceberg", "polaris"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: Information Technology",

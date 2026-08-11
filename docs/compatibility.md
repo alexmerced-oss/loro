@@ -28,5 +28,5 @@ approval, audit, data protection, and explicit-memory rules still apply.
   or shared-memory write mode.
 - Unknown configuration or persisted-record versions are rejected instead of guessed.
 
-No surface is deprecated in `0.7.0`; the warning type and policy establish the contract for later
+No surface is deprecated in `0.8.0`; the warning type and policy establish the contract for later
 releases.

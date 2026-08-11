@@ -21,10 +21,10 @@ Evidence states:
 | --- | --- | --- | --- | --- |
 | E0-01 | Threat model and data flow reviewed | Security (TBD) | Partial | [Threat model](threat-model.md) drafted; security/engineering review record TBD. |
 | E0-02 | Data classifications and permitted flows approved | Security/privacy (TBD) | Partial | [Data classification](data-classification.md) drafted; corporate mapping and approval TBD. |
-| E0-03 | Reference deployment and supported matrix reproducible | Operations/release (TBD) | Partial | [Reference deployment](reference-deployment.md) drafted; pinned manifests and reproduction result TBD. |
+| E0-03 | Reference deployment and supported matrix reproducible | Operations/release (TBD) | Partial | [Reference deployment](reference-deployment.md), a pinned machine-readable manifest, managed policy, compose stack, and CI checker exist; adopting-environment reproduction remains external. |
 | E0-04 | Accountable owners assigned | Product (TBD) | Planned | Role table exists in reference deployment; named owners and acceptance dates TBD. |
 | E0-05 | Every later phase has criteria and evidence placeholders | Release (TBD) | Existing | This register and the [roadmap to 1.0](roadmap-1.0.md). |
-| E0-06 | Baseline quality, reliability, performance, and cost recorded | Runtime/release (TBD) | Partial | Unit/coverage CI exists; versioned benchmark, provider cost, live reliability, and integration report TBD. |
+| E0-06 | Baseline quality, reliability, performance, and cost recorded | Runtime/release (TBD) | Partial | Unit/coverage CI and a scheduled content-free local benchmark gate exist; protected provider cost, live reliability, integration, and adopting-environment baselines remain external. |
 
 ## Phase 1: Identity, Policy, And Approval
 
@@ -82,14 +82,14 @@ Evidence states:
 
 | ID | Exit item | Owner | Status | Evidence and remaining proof |
 | --- | --- | --- | --- | --- |
-| E5-01 | Restricted pilot scope and success measures approved | Product/security (TBD) | Planned | Pilot charter, users, repositories, data classes, measures, and duration TBD. |
-| E5-02 | Admin/operator/user/privacy/incident docs published | Product/operations (TBD) | Partial | Current user docs exist; enterprise role guides and incident materials TBD. |
-| E5-03 | Privacy-preserving product telemetry supports pilot evaluation | Product/privacy (TBD) | Planned | Data inventory, consent/notice, event schema, and review TBD. |
+| E5-01 | Restricted pilot scope and success measures approved | Product/security (TBD) | Partial | A [restricted beta charter template](pilot-charter.md) defines required scope, measures, stop conditions, and evidence; organization completion and approval remain external. |
+| E5-02 | Admin/operator/user/privacy/incident docs published | Product/operations (TBD) | Existing | The [enterprise beta guide](enterprise-beta.md), [operator runbook](operator-runbook.md), [security/privacy guide](security-privacy-review.md), support policy, role-specific integration docs, and user guides cover the repository-owned surface. Deployment contacts and organization procedures remain external. |
+| E5-03 | Privacy-preserving product telemetry supports pilot evaluation | Product/privacy (TBD) | Partial | Content-free operational metrics and benchmark schemas are implemented and documented; deployment notice, dashboard access/retention, success-measure mapping, and privacy approval remain external. |
 | E5-04 | Incident tabletop and offboarding review completed | Operations/security (TBD) | External | Exercise reports and remediation links TBD. |
 | E5-05 | Independent penetration test findings resolved or accepted | Security (TBD) | External | Report, remediation evidence, and risk acceptance TBD. |
 | E5-06 | GA sign-off and operational ownership complete | Executive/product (TBD) | External | Security/privacy/legal/operations/product approvals and on-call record TBD. |
 | E5-07 | Backup/restore and disaster recovery exercised | Operations/data (TBD) | External | Dated drill result, recovery objectives, gaps, and remediation TBD. |
-| E5-08 | Supported and unsupported use cases are published | Product (TBD) | Partial | Reference-deployment limitations exist; GA compatibility and support policy TBD. |
+| E5-08 | Supported and unsupported use cases are published | Product (TBD) | Existing | The machine-readable support matrix, [enterprise beta guide](enterprise-beta.md), [reference deployment](reference-deployment.md), and [beta support policy](support-policy.md) publish the beta boundary; the frozen GA contract remains future work. |
 
 ## Release Evidence Template
 

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "release_line": "0.8",
+  "stability": "enterprise-beta",
+  "operating_system": "ubuntu-24.04",
+  "python": "3.12",
+  "components": {
+    "postgres": "16-alpine",
+    "apache_polaris": "1.6.0",
+    "apache_iceberg": "1.10.1",
+    "pyiceberg": "0.11.1",
+    "duckdb": "1.5.5",
+    "rustfs": "1.0.0-alpha.81"
+  },
+  "stable_memory_backend": "postgres",
+  "experimental_memory_backends": ["iceberg"],
+  "required_environment": [
+    "LORO_AUDIT_COLLECTOR_TOKEN",
+    "LORO_IDENTITY_SUBJECT",
+    "LORO_IDENTITY_TENANT",
+    "LORO_POSTGRES_DSN"
+  ],
+  "external_controls": [
+    "corporate-identity-assertion",
+    "managed-policy-distribution",
+    "production-tls-and-egress-policy",
+    "immutable-audit-retention",
+    "organization-owned-backup-and-restore",
+    "provider-residency-and-retention-approval"
+  ]
+}

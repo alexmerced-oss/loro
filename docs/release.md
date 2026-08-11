@@ -97,6 +97,10 @@ Release `0.7.0` adds governed provider contracts, route pinning and correlation,
 claims, graph failure-injection evidence, and signed gateway interoperability fixtures. See
 [Loro 0.7.0](releases/0.7.0.md).
 
+Release `0.8.0` adds the versioned enterprise-beta reference bundle, content-free benchmark gate,
+role-based operational documentation, and beta support contract. See
+[Loro 0.8.0](releases/0.8.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.

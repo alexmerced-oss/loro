@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.7.0`. It covers the
-`0.8` enterprise beta, the `0.9` release candidate, and the first stable `1.0` release. Completed
-milestones belong in release notes; implementation proof belongs in the
+This is the single authoritative roadmap for work remaining after Loro `0.8.0`. It covers the
+`0.9` release candidate and the first stable `1.0` release. Completed milestones belong in
+release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
 
 No calendar date is promised. A milestone ships when its repository-owned work is complete and
@@ -13,20 +13,19 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.7.0` was released on August 11, 2026. The repository currently provides:
+Loro `0.8.0` was released on August 11, 2026. In addition to the agent, memory, governance,
+provider, MCP, Skill, graph, gateway, artifact, and release controls delivered through `0.7`,
+the repository now provides:
 
-- a bounded Python CLI agent loop for coding and productivity work;
-- document, presentation, spreadsheet, brief, and Agentic Graph generation;
-- local memory and explicit-user-only shared-memory commits through Postgres or Iceberg;
-- constrained Apache Polaris REST and CLI access;
-- versioned configuration, identity context, policy, approvals, sandbox profiles, data
-  protection, audit delivery, metrics, and recovery tooling;
-- governed provider contracts, MCP client/server support, Agent Skills, Claude/Pi skill import,
-  AGS 1.0 execution, and six authenticated channel adapters;
-- OS-vaulted named credentials, security scans, SBOMs, checksums, release manifests, and build
-  provenance.
+- a pinned machine-readable reference deployment and restrictive managed-policy example;
+- a synthetic Postgres and authenticated audit-collector compose stack;
+- a content-free local benchmark contract with scheduled and release-artifact evidence;
+- administrator, operator, security/privacy, pilot, support, upgrade, rollback, uninstall,
+  incident, and offboarding guidance;
+- automated checks keeping package, deployment, support, data, and interoperability versions and
+  safety invariants aligned.
 
-The [0.7 release notes](releases/0.7.0.md), [support matrix](support-matrix.json),
+The [0.8 release notes](releases/0.8.0.md), [support matrix](support-matrix.json),
 [interoperability matrix](interoperability-matrix.json), and
 [data support matrix](data-support-matrix.json) describe the exact shipped boundary.
 
@@ -70,67 +69,9 @@ proof remain experimental or are excluded rather than weakening the release gate
 
 | Release | Status | Outcome |
 | --- | --- | --- |
-| `0.8` | Next | A reproducible reference deployment is measurable and operable for a restricted beta. |
-| `0.9` | Planned | The stable boundary is frozen and exercised through a controlled pilot and independent assurance. |
+| `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
+| `0.9` | Next | The stable boundary is frozen and exercised through a controlled pilot and independent assurance. |
 | `1.0` | Planned | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
-
-## 0.8: Enterprise Beta
-
-**Goal:** make one narrow reference deployment reproducible, observable, supportable, and ready
-for restricted users.
-
-### Batch 1: Freeze The Reference Deployment
-
-- Freeze proposed `1.0` versions for Linux, Python, Loro, the approved provider gateway,
-  Postgres, Polaris/Iceberg, MCP, and channel adapters.
-- Publish versioned deployment manifests and managed configuration examples with no embedded
-  credentials.
-- Make installation, configuration validation, migration, backup, restore, rollback, and
-  uninstallation reproducible in a clean environment.
-- Exercise upgrade from `0.7` to `0.8` and rollback without losing committed memory, approvals,
-  sessions, graph records, or audit continuity.
-- Decide whether Polaris/Iceberg shared memory has enough protected evidence for stable `1.0`
-  support; otherwise keep it experimental.
-
-### Batch 2: Complete Role-Based Documentation
-
-- Publish focused guides for administrators, operators, security/privacy reviewers, data
-  stewards, MCP/Skill authors, gateway administrators, and end users.
-- Document data flows, classifications, telemetry, retention, deletion, credential ownership,
-  unsupported uses, incident escalation, and support intake.
-- Keep CLI help, PyPI documentation, machine-readable matrices, runbooks, and examples aligned.
-- Add automated checks for stale commands, versions, links, matrix claims, and packaged docs.
-
-### Batch 3: Reliability And Performance Baselines
-
-- Define versioned targets for startup, orchestration overhead, memory retrieval, artifact
-  creation, graph scheduling, gateway queueing, audit delivery, and recovery.
-- Add reproducible benchmark tooling that records environment and configuration without prompt
-  content.
-- Run concurrency, soak, provider outage, database outage, audit outage, disk-pressure, queue
-  saturation, retry, and cancellation tests against the reference deployment.
-- Prove declared RPO/RTO, audit-buffer bounds, replay behavior, budget enforcement, and
-  operator-visible degradation.
-
-### Batch 4: Restricted-Beta Operations
-
-- Define a beta charter, approved users/data, observation period, success measures, privacy
-  notice, support path, and accountable owners.
-- Add content-free product/operational metrics only after privacy review.
-- Exercise provider and gateway credential rotation, policy rollout/rollback, tenant
-  offboarding, emergency disable, data lifecycle jobs, and audit reconciliation.
-- Run the deployment checklist with organization-owned identity, DLP, database, catalog, audit,
-  ingress, and provider controls.
-
-### 0.8 Exit Gate
-
-- A clean environment reproduces the supported deployment from versioned documentation.
-- Upgrade, rollback, backup, restore, and uninstall drills pass without unacknowledged loss.
-- Declared beta reliability/performance targets pass at the restricted load.
-- Every supported matrix cell links to a green release-commit or controlled-environment result.
-- Evidence `E0-01` through `E0-06`, `E3-02` through `E3-07`, `E4-01`, `E4-02`, `E4-07`, and
-  repository-owned portions of `E5-01` through `E5-03` and `E5-08` are complete or explicitly
-  external with owners and dates.
 
 ## 0.9: Release Candidate
 

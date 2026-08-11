@@ -37,6 +37,17 @@ static, secret-baseline, license, SBOM, overall coverage, and module-specific br
 coverage gates. Artifacts are retained for 30 days. Current module floors are encoded in
 `scripts/check_security_coverage.py`.
 
+The scheduled/manual `Enterprise Beta Benchmark` workflow runs the content-free local baseline
+on the pinned Ubuntu 24.04/Python 3.12 reference and uploads its JSON result for 90 days. Run the
+same gate locally with:
+
+```bash
+loro operations benchmark --iterations 50 --warmup 5 --strict --output loro-benchmark.json
+```
+
+This baseline intentionally excludes live-provider latency, database recovery, gateway load, and
+production RPO/RTO. Those measurements belong to the controlled deployment evidence record.
+
 ## Integration Tests
 
 Postgres integration tests use an ephemeral local container through Testcontainers:

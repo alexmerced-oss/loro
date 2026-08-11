@@ -28,7 +28,7 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Loro 0.7.0 provides typed identity context, governed provider/interoperability contracts,
+Loro 0.8.0 provides typed identity context, governed provider/interoperability contracts,
 versioned Postgres memory migrations and
 reconciliation, authenticated audit collection, content-free metrics, and executable recovery
 checks. Corporate identity verification, a production immutable audit destination, and
@@ -54,6 +54,10 @@ those controls until its evidence items are closed.
 The repository reference stack is pinned in [data-support-matrix.json](data-support-matrix.json).
 Deployment owners may select other versions only after recording compatibility evidence;
 "latest" images or clients are not an acceptable pilot baseline.
+
+The machine-readable manifest, restrictive managed-policy example, synthetic Postgres/audit
+compose stack, and reproduction instructions live in [`deploy/reference`](../deploy/reference).
+CI validates their versions and safety invariants against the package and support matrices.
 
 ## Required Components And Responsibilities
 

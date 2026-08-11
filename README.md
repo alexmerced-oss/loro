@@ -327,8 +327,20 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [MCP Support Matrix](docs/mcp-support-matrix.md)
 - [Agent Skills](docs/skills.md)
 - [Cross-Session Messaging](docs/session-messaging.md)
+- [Enterprise Beta Guide](docs/enterprise-beta.md)
+- [Enterprise Operator Runbook](docs/operator-runbook.md)
+- [Beta Support Policy](docs/support-policy.md)
 - [Roadmap To Loro 1.0](docs/roadmap-1.0.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)
+
+For a restricted enterprise beta, begin with the versioned bundle in `deploy/reference`, assign
+the organization-owned controls, then capture a content-free local baseline:
+
+```bash
+loro config check --strict
+loro doctor
+loro operations benchmark --strict --output loro-benchmark.json
+```
 
 ## License
 

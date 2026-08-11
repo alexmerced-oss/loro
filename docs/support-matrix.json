@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.7",
-  "stability": "alpha",
+  "release_line": "0.8",
+  "stability": "beta",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
   },

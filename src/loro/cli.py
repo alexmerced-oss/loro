@@ -29,6 +29,7 @@ from loro.audit.collector import (
     token_from_environment,
 )
 from loro.audit.metrics import OperationalMetrics
+from loro.benchmarks import run_reference_benchmarks, write_benchmark_report
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
@@ -1989,6 +1990,30 @@ def operations_recovery_targets() -> None:
             "scope": "Postgres shared-memory state and lifecycle events",
         }
     )
+
+
+@operations_app.command("benchmark")
+def operations_benchmark(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Content-free JSON evidence output path.")
+    ] = Path("loro-benchmark.json"),
+    iterations: Annotated[
+        int, typer.Option("--iterations", min=1, help="Measured iterations per scenario.")
+    ] = 25,
+    warmup: Annotated[
+        int, typer.Option("--warmup", min=0, help="Unmeasured warmup iterations.")
+    ] = 3,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Exit non-zero when a beta target is missed.")
+    ] = False,
+) -> None:
+    """Record reproducible local enterprise-beta performance baselines."""
+    report = run_reference_benchmarks(iterations=iterations, warmup=warmup)
+    destination = write_benchmark_report(report, output)
+    console.print_json(data=report.to_payload())
+    console.print(f"Wrote benchmark evidence: {destination}")
+    if strict and not report.passed:
+        raise typer.Exit(code=1)
 
 
 @operations_app.command("backup")
