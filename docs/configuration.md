@@ -39,6 +39,8 @@ backoff_seconds = 0.25
 verify_tls = true
 # ca_bundle_env = "LORO_CA_BUNDLE"
 # proxy_env = "LORO_HTTPS_PROXY"
+# allowed_base_url_hosts = ["models.example.com"]
+# request_id_header = "X-Enterprise-Request-ID"
 temperature = 0.2
 input_cost_per_million = 0
 output_cost_per_million = 0
@@ -320,6 +322,9 @@ Provider calls retry timeouts, connection failures, HTTP 429, and HTTP 5xx respo
 bounded exponential backoff. Other HTTP 4xx responses and malformed payloads fail immediately.
 `ca_bundle_env` and `proxy_env` name environment variables; they never store the CA path or proxy
 credential in TOML. Keep `verify_tls = true` in managed deployments.
+`allowed_base_url_hosts` pins the resolved request URL to reviewed provider/gateway hosts, and
+`request_id_header` controls the fresh correlation header sent with every HTTP provider request.
+Loro does not implicitly retry a request through another provider.
 
 Runtime usage records provider-reported token counts where available and otherwise uses a
 conservative character estimate. Cost enforcement is active only when the configured model has

@@ -26,6 +26,7 @@ def test_audit_source_and_enterprise_evidence_checks_pass() -> None:
         "check_audit_inventory.py",
         "check_data_support_matrix.py",
         "check_enterprise_evidence.py",
+        "check_interoperability_matrix.py",
     ):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / script)],
@@ -42,7 +43,7 @@ def test_machine_readable_support_matrix_has_explicit_stability() -> None:
     matrix = json.loads((ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8"))
 
     assert matrix["schema_version"] == "1.0"
-    assert matrix["release_line"] == "0.6"
+    assert matrix["release_line"] == "0.7"
     assert matrix["stability"] == "alpha"
     assert "linux" in matrix["operating_systems"]["supported"]
     assert "iceberg" in matrix["memory_backends"]["experimental"]
@@ -52,7 +53,7 @@ def test_machine_readable_support_matrix_has_explicit_stability() -> None:
 def test_release_manifest_hashes_actual_artifacts(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()
-    artifact = dist / "loro_agent-0.6.0-py3-none-any.whl"
+    artifact = dist / "loro_agent-0.7.0-py3-none-any.whl"
     artifact.write_bytes(b"fixture-wheel")
     output = dist / "release-manifest.json"
 
@@ -80,6 +81,7 @@ def test_release_manifest_hashes_actual_artifacts(tmp_path: Path) -> None:
     assert manifest["commit"] == "a" * 40
     assert manifest["workflow_run"] == "fixture-run"
     assert manifest["data_support_matrix"]["release_line"] == "0.6"
+    assert manifest["interoperability_matrix"]["release_line"] == "0.7"
     assert manifest["artifacts"] == [
         {
             "bytes": len(b"fixture-wheel"),

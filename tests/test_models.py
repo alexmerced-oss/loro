@@ -339,7 +339,40 @@ def test_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:
     request = client.build_request([ModelMessage(role="user", content="hello")])
     assert request.url == "https://example.com/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer test-key"
+    assert request.headers["X-Loro-Request-ID"]
     assert request.json["model"] == "gpt-test"
+
+
+def test_provider_base_url_host_allowlist_prevents_route_drift() -> None:
+    allowed = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="fixture",
+            base_url="https://us.models.example.test/v1",
+            allowed_base_url_hosts=["us.models.example.test"],
+        )
+    )
+    assert allowed.build_request([]).url.startswith("https://us.models.example.test/")
+
+    blocked = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="fixture",
+            base_url="https://other-region.example.test/v1",
+            allowed_base_url_hosts=["us.models.example.test"],
+        )
+    )
+    with pytest.raises(ModelProviderError, match="outside the managed allowlist"):
+        blocked.build_request([])
+
+
+def test_provider_request_id_header_is_configurable() -> None:
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="fixture", request_id_header="X-Trace-ID")
+    )
+    request = client.build_request([])
+    assert request.headers["X-Trace-ID"]
+    assert "X-Loro-Request-ID" not in request.headers
 
 
 def test_prime_intellect_request_adds_optional_team_header(monkeypatch) -> None:

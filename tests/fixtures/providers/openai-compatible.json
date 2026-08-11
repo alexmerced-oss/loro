@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "protocol": "openai-compatible",
+  "sanitized": true,
+  "source": "synthetic from public protocol documentation; no production content",
+  "cases": {
+    "completion": {"response": {"id": "chatcmpl_fixture", "choices": [{"message": {"role": "assistant", "content": "fixture-ok"}}]}},
+    "native_tools": {"response": {"choices": [{"message": {"content": null, "tool_calls": [{"id": "call_fixture", "type": "function", "function": {"name": "file__read", "arguments": "{\"path\":\"README.md\"}"}}]}}]}},
+    "streaming": {"events": [{"choices": [{"delta": {"content": "fixture-"}}]}, {"choices": [{"delta": {"content": "ok"}}]}]},
+    "usage": {"response": {"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9}}, "expected": {"input_tokens": 7, "output_tokens": 2}},
+    "malformed": {"response": {"choices": "not-a-list"}, "error_contains": "choices[0].message.content"},
+    "retryable_error": {"statuses": [429, 500, 503], "terminal_status": 400}
+  }
+}

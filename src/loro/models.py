@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 
@@ -75,6 +76,23 @@ class BaseModelClient:
 
         protocol = get_provider_profile(self.config.provider).protocol
         return provider_tool_payload(protocol, self.tools)
+
+    def _base_url(self, default: str) -> str:
+        base_url = (self.config.base_url or default).rstrip("/")
+        parsed = urlsplit(base_url)
+        host = (parsed.hostname or "").casefold()
+        allowed = {item.casefold() for item in self.config.allowed_base_url_hosts}
+        if allowed and host not in allowed:
+            raise ModelProviderError(
+                f"{self.config.provider} base URL host {host!r} is outside the managed allowlist."
+            )
+        return base_url
+
+    def _request_headers(self, headers: dict[str, str] | None = None) -> dict[str, str]:
+        return {
+            **(headers or {}),
+            self.config.request_id_header: str(uuid4()),
+        }
 
     def _api_key(self) -> str | None:
         if self.config.api_key_env:
@@ -287,8 +305,10 @@ class MockModelClient(BaseModelClient):
 
 class OpenAICompatibleClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
-        base_url = (self.config.base_url or "https://api.openai.com/v1").rstrip("/")
-        headers = {"Content-Type": "application/json", **self._optional_provider_headers()}
+        base_url = self._base_url("https://api.openai.com/v1")
+        headers = self._request_headers(
+            {"Content-Type": "application/json", **self._optional_provider_headers()}
+        )
         api_key = self._api_key()
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -425,11 +445,13 @@ class AnthropicClient(BaseModelClient):
         return payload
 
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
-        base_url = (self.config.base_url or "https://api.anthropic.com").rstrip("/")
-        headers = {
-            "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
-        }
+        base_url = self._base_url("https://api.anthropic.com")
+        headers = self._request_headers(
+            {
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+            }
+        )
         api_key = self._api_key()
         if api_key:
             headers["x-api-key"] = api_key
@@ -560,7 +582,7 @@ class GeminiClient(BaseModelClient):
         return contents
 
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
-        base_url = (self.config.base_url or "https://generativelanguage.googleapis.com").rstrip("/")
+        base_url = self._base_url("https://generativelanguage.googleapis.com")
         api_key = self._api_key()
         url = f"{base_url}/v1beta/models/{self.config.model}:generateContent"
         if api_key:
@@ -569,7 +591,7 @@ class GeminiClient(BaseModelClient):
         return ModelRequest(
             method="POST",
             url=url,
-            headers={"Content-Type": "application/json"},
+            headers=self._request_headers({"Content-Type": "application/json"}),
             json=_gemini_payload(
                 contents=contents,
                 model=self.config.model,
@@ -605,11 +627,11 @@ class GeminiClient(BaseModelClient):
 
 class OllamaClient(BaseModelClient):
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
-        base_url = (self.config.base_url or "http://localhost:11434").rstrip("/")
+        base_url = self._base_url("http://localhost:11434")
         return ModelRequest(
             method="POST",
             url=f"{base_url}/api/chat",
-            headers={"Content-Type": "application/json"},
+            headers=self._request_headers({"Content-Type": "application/json"}),
             json={
                 "model": self.config.model,
                 "messages": self._message_payload(messages),

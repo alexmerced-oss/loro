@@ -1,6 +1,8 @@
 name: AGS Conformance
 
 on:
+  push:
+    tags: ["v*"]
   pull_request:
     paths:
       - "src/loro/agraph/**"

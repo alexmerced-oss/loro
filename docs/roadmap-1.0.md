@@ -165,6 +165,12 @@ Exit gate:
 
 **Goal:** make Loro's extension and communication surfaces predictable across supported peers.
 
+Status: **repository work complete for 0.7.0**. Sanitized and wheel-bundled provider contracts,
+managed route pinning, exact compatibility claims, hostile MCP/graph/gateway fixtures, and
+protected conformance workflows are implemented. Production provider residency/rate evidence,
+platform test-app governance, and organization-owned live credentials remain external; see the
+[0.7 work record](roadmap-0.7.md).
+
 Implementation batches:
 
 1. **Provider contracts**

@@ -60,6 +60,8 @@ class ModelConfig(BaseModel):
     verify_tls: bool = True
     ca_bundle_env: str | None = None
     proxy_env: str | None = None
+    allowed_base_url_hosts: list[str] = Field(default_factory=list)
+    request_id_header: str = Field(default="X-Loro-Request-ID", pattern=r"^[A-Za-z0-9-]{1,64}$")
     temperature: float = 0.2
     max_tokens: int | None = None
     input_cost_per_million: float = Field(default=0, ge=0)
@@ -950,6 +952,10 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
             data["ca_bundle_env"] = config.model.ca_bundle_env
         if config.model.proxy_env:
             data["proxy_env"] = config.model.proxy_env
+        if config.model.allowed_base_url_hosts:
+            data["allowed_base_url_hosts"] = config.model.allowed_base_url_hosts
+        if config.model.request_id_header != "X-Loro-Request-ID":
+            data["request_id_header"] = config.model.request_id_header
         if config.model.max_tokens:
             data["max_tokens"] = config.model.max_tokens
         if config.model.input_cost_per_million:

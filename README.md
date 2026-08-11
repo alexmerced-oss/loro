@@ -9,6 +9,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 ```bash
 python -m pip install loro-agent
 loro --version
+loro providers conformance
 ```
 
 Optional extras:

@@ -193,6 +193,41 @@ def test_operational_metrics_never_persist_content(tmp_path: Path) -> None:
     assert snapshot.sums["provider_input_tokens"] == 30
 
 
+def test_operational_metrics_cover_governed_families_and_reject_bad_state(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "metrics.json"
+    metrics = OperationalMetrics(path)
+    metrics.observe(
+        "approval.used",
+        {"status": "approved once", "cost_usd": 0.25, "queue_depth": 3, "ignored": True},
+        delivery_status="buffered/retry",
+    )
+    metrics.observe("memory.shared_committed", {}, delivery_status="delivered")
+    metrics.observe("gateway.rejected", {}, delivery_status="delivered")
+    metrics.observe("unknown.event", {}, delivery_status="failed")
+
+    snapshot = metrics.snapshot()
+    assert snapshot.counters["approval.used"] == 1
+    assert snapshot.counters["memory.shared_committed"] == 1
+    assert snapshot.counters["gateway.rejected"] == 1
+    assert snapshot.counters["family.unknown"] == 1
+    assert snapshot.counters["result.approved_once"] == 1
+    assert snapshot.sums["provider_cost_usd"] == 0.25
+    assert snapshot.sums["gateway_queue_depth_observed"] == 3
+    assert 'metric="delivery.buffered_retry"' in metrics.prometheus()
+
+    path.write_text("not-json", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Invalid operational metrics state"):
+        metrics.snapshot()
+    path.write_text(
+        json.dumps({"schema_version": "2.0", "counters": {}, "sums": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="Unsupported operational metrics schema"):
+        metrics.snapshot()
+
+
 def _event(event_type: str) -> dict[str, object]:
     return {
         "schema_version": "1.0",

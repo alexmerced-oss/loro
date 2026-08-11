@@ -27,6 +27,7 @@ loro providers request "hello" --provider openai --model gpt-5.6-luna
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute --stream
+loro providers conformance
 loro configure
 loro setup provider
 loro setup quickstart
@@ -114,6 +115,27 @@ not expose native tool calling.
 Provider/network errors are normalized into Loro provider errors so CLI and runtime output can
 show clear messages for timeouts, HTTP status failures, malformed JSON, missing response
 content, malformed tool calls, and optional SDK issues.
+
+## Governed Routing And Conformance
+
+Set `allowed_base_url_hosts` to prevent a local or managed configuration layer from routing a
+provider request to an unapproved gateway or region. Every HTTP provider request includes a fresh
+`X-Loro-Request-ID`; deployments may rename that header for an enterprise gateway.
+
+```toml
+[model]
+provider = "openai"
+base_url = "https://us.models.example.com/v1"
+allowed_base_url_hosts = ["us.models.example.com"]
+request_id_header = "X-Enterprise-Request-ID"
+```
+
+`loro providers conformance` validates the bundled sanitized contract fixtures and verifies that
+every built-in profile still maps to the reviewed protocol family. The fixtures cover completion,
+streaming or documented stream fallback, native tools, usage, malformed responses, and retryable
+errors. This command is hermetic; use `loro providers smoke --execute` for a credentialed call.
+Loro never performs implicit cross-provider fallback. Graph tier routing occurs only through
+explicitly configured tiers and remains subject to normal provider policy.
 
 ## Live-Tested Provider Examples
 

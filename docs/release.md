@@ -10,6 +10,7 @@ python -m ruff check .
 PYTHONPATH=src python scripts/check_audit_inventory.py
 PYTHONPATH=src python scripts/check_enterprise_evidence.py
 python scripts/check_data_support_matrix.py
+PYTHONPATH=src python scripts/check_interoperability_matrix.py
 PYTHONPATH=src python scripts/audit_outage_drill.py --events 1000
 python -m pytest --cov --cov-report=term-missing --cov-report=json:security-coverage.json
 python scripts/check_security_coverage.py security-coverage.json
@@ -33,6 +34,7 @@ loro --version
 loro doctor
 loro providers list
 loro providers smoke "hello" --provider mock --execute --stream
+loro providers conformance
 loro memory schema --backend postgres
 loro memory schema --backend iceberg
 loro memory migrate --target 2
@@ -91,6 +93,10 @@ Release `0.6.0` adds versioned Postgres memory migrations, idempotent operation 
 reconciliation, a pinned Polaris/Iceberg/DuckDB matrix, authenticated audit collection,
 content-free metrics, and executable backup/restore drills. See [Loro 0.6.0](releases/0.6.0.md).
 
+Release `0.7.0` adds governed provider contracts, route pinning and correlation, frozen MCP/Skill
+claims, graph failure-injection evidence, and signed gateway interoperability fixtures. See
+[Loro 0.7.0](releases/0.7.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
@@ -118,7 +124,8 @@ python -m twine check dist/*
 Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement, builds
 distributions in protected CI, smoke-tests the wheel and bundled Agent Skill, generates SHA-256
 checksums, creates GitHub/Sigstore build-provenance attestations, and retains the artifact bundle.
-The bundle also contains the machine-readable product and data support matrices, CycloneDX
+The bundle also contains the machine-readable product, data, and interoperability support
+matrices, CycloneDX
 release SBOM, and a release manifest binding the commit, workflow run, artifact digests,
 evidence documents, and known limitations.
 Verify an attested artifact with:

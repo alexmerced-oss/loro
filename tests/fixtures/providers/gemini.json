@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "protocol": "gemini",
+  "sanitized": true,
+  "source": "synthetic from public protocol documentation; no production content",
+  "cases": {
+    "completion": {"response": {"candidates": [{"content": {"role": "model", "parts": [{"text": "fixture-ok"}]}}]}},
+    "native_tools": {"response": {"candidates": [{"content": {"parts": [{"functionCall": {"name": "file__read", "args": {"path": "README.md"}}}]}}]}},
+    "streaming": {"events": [{"candidates": [{"content": {"parts": [{"text": "fixture-"}]}}]}, {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}]},
+    "usage": {"response": {"candidates": [{"content": {"parts": [{"text": "ok"}]}}], "usageMetadata": {"promptTokenCount": 7, "candidatesTokenCount": 2, "totalTokenCount": 9}}, "expected": {"input_tokens": 7, "output_tokens": 2}},
+    "malformed": {"response": {"candidates": []}, "error_contains": "candidates[0].content.parts"},
+    "retryable_error": {"statuses": [429, 500, 503], "terminal_status": 403}
+  }
+}

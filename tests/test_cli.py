@@ -29,6 +29,15 @@ def test_version() -> None:
     assert "loro" in result.stdout
 
 
+def test_provider_conformance_command_reports_advertised_contracts() -> None:
+    result = CliRunner().invoke(app, ["providers", "conformance"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert "openai-compatible" in payload["protocols"]
+    assert "anthropic.json" in payload["fixtures"]
+
+
 def test_gateway_setup_writes_references_and_scope(tmp_path) -> None:
     output = tmp_path / "config.local.toml"
     result = CliRunner().invoke(

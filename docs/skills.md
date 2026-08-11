@@ -101,6 +101,13 @@ list-form `allowed-tools`, and resolves `${CLAUDE_PLUGIN_ROOT}`, `${LORO_SKILL_R
 `{baseDir}` to the installed skill directory at activation. Existing Loro policy remains
 authoritative, and imported scripts remain disabled by default.
 
+The 0.7 compatibility subset is frozen in
+[`interoperability-matrix.json`](interoperability-matrix.json). Loro accepts Agent Skills content,
+the skill portions of Claude and Pi packages, and separately approved environment-referenced MCP
+definitions from Claude plugins. Claude agents, commands, hooks, LSP integrations, binaries, and
+settings are reported as unsupported. Pi TypeScript extensions, prompts, and themes are likewise
+reported and left inert. Import reports name every unsupported host component before any write.
+
 ## Runtime Activation
 
 Loro activates up to `[skills].max_active` matching skills from metadata. Force explicit

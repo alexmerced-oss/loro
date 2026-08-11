@@ -99,6 +99,11 @@ from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request, smoke_model_client
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient, PolarisResult
+from loro.provider_contracts import (
+    ProviderContractError,
+    default_contract_paths,
+    validate_provider_contracts,
+)
 from loro.providers import (
     check_provider_config,
     get_provider_profile,
@@ -4218,6 +4223,18 @@ def providers_smoke(
     console.print_json(data=result)
     if execute and not result.get("ok", False):
         raise typer.Exit(code=1)
+
+
+@providers_app.command("conformance")
+def providers_conformance() -> None:
+    """Validate sanitized provider contracts and the advertised profile matrix."""
+    matrix, fixtures = default_contract_paths()
+    try:
+        report = validate_provider_contracts(matrix, fixtures)
+    except ProviderContractError as error:
+        console.print_json(data={"ok": False, "error": str(error)})
+        raise typer.Exit(code=1) from error
+    console.print_json(data=report.as_dict())
 
 
 @sessions_app.command("list")

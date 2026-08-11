@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "protocol": "bedrock",
+  "sanitized": true,
+  "source": "synthetic from public protocol documentation; no production content",
+  "cases": {
+    "completion": {"response": {"output": {"message": {"role": "assistant", "content": [{"text": "fixture-ok"}]}}, "usage": {"inputTokens": 7, "outputTokens": 2}}},
+    "native_tools": {"response": {"output": {"message": {"content": [{"toolUse": {"toolUseId": "tool_fixture", "name": "file__read", "input": {"path": "README.md"}}}]}}}},
+    "streaming": {"support": "SDK-managed fallback to complete(); native streaming is not advertised"},
+    "usage": {"response": {"output": {"message": {"content": [{"text": "ok"}]}}, "usage": {"inputTokens": 7, "outputTokens": 2}}, "expected": {"input_tokens": 7, "output_tokens": 2}},
+    "malformed": {"response": {"output": {}}, "error_contains": "output.message.content"},
+    "retryable_error": {"errors": ["ThrottlingException", "ServiceUnavailableException"], "support": "botocore retry policy"}
+  }
+}

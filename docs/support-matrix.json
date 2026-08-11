@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.6",
+  "release_line": "0.7",
   "stability": "alpha",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
@@ -21,7 +21,8 @@
     "experimental": ["polaris-cli", "iceberg-rest"]
   },
   "extensions": {
-    "experimental": ["mcp", "agent-skills", "claude-skill-import", "pi-skill-import"]
+    "supported": ["agent-skills", "claude-skill-import", "pi-skill-import"],
+    "experimental": ["mcp", "agentic-graphs"]
   },
   "remote_gateways": {
     "experimental": ["slack", "discord", "telegram", "teams", "signal-bridge", "generic"]

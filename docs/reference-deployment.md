@@ -28,7 +28,8 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Loro 0.6.0 provides typed identity context, versioned Postgres memory migrations and
+Loro 0.7.0 provides typed identity context, governed provider/interoperability contracts,
+versioned Postgres memory migrations and
 reconciliation, authenticated audit collection, content-free metrics, and executable recovery
 checks. Corporate identity verification, a production immutable audit destination, and
 supported-platform sandbox evidence are deployment responsibilities; a pilot must not claim

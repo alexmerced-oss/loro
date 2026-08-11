@@ -61,6 +61,7 @@ jobs:
           /tmp/loro-release-smoke/bin/loro skills import-claude --help
           /tmp/loro-release-smoke/bin/loro skills import-pi --help
           /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream
+          /tmp/loro-release-smoke/bin/loro providers conformance
           /tmp/loro-release-smoke/bin/loro graph validate \
             docs/examples/agraph/release-readiness.agraph.yaml --strict
           skill_path=$(/tmp/loro-release-smoke/bin/loro graph skill-path)
@@ -81,11 +82,13 @@ jobs:
         run: |
           cp docs/support-matrix.json dist/support-matrix.json
           cp docs/data-support-matrix.json dist/data-support-matrix.json
+          cp docs/interoperability-matrix.json dist/interoperability-matrix.json
           python scripts/generate_release_manifest.py \
             --dist dist --commit "${GITHUB_SHA}" --workflow-run "${GITHUB_RUN_ID}"
           cd dist
           sha256sum loro_agent-* release-sbom.cdx.json support-matrix.json \
             data-support-matrix.json \
+            interoperability-matrix.json \
             release-manifest.json > SHA256SUMS
 
       - name: Attest build provenance

@@ -33,7 +33,7 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.6.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.7.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
@@ -53,7 +53,7 @@ loro config: check, show, summary
 loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, migrate, migration-status, proposals, propose, reconcile, remember, schema, search, shared-search, snapshots, sweep
 loro operations: backup, recovery-targets, restore, verify-backup
 loro policy: explain
-loro providers: check, list, request, show, smoke
+loro providers: check, conformance, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake

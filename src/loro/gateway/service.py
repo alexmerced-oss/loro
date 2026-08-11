@@ -18,7 +18,12 @@ from loro.audit import AuditLogger
 from loro.config import GatewayEndpointConfig, IdentityConfig, LoroConfig
 from loro.credentials import CredentialError, CredentialVault
 from loro.fileio import atomic_write_text
-from loro.gateway.adapters import ChannelMessage, GatewayAdapterError, parse_inbound
+from loro.gateway.adapters import (
+    ChannelMessage,
+    GatewayAdapterError,
+    GatewayUnsupportedEventError,
+    parse_inbound,
+)
 from loro.runtime import AgentRuntime
 
 
@@ -107,6 +112,9 @@ class GatewayDispatcher:
                 secret,
                 max_age_seconds=self.config.gateway.request_max_age_seconds,
             )
+        except GatewayUnsupportedEventError as error:
+            self._audit("gateway.rejected", endpoint_id=endpoint_id, reason=str(error))
+            return self._json(422, {"error": "gateway event type is unsupported"})
         except GatewayAdapterError as error:
             self._audit("gateway.rejected", endpoint_id=endpoint_id, reason=str(error))
             return self._json(401, {"error": "gateway authentication failed"})

@@ -155,6 +155,7 @@ def test_teams_and_generic_bridge_signatures() -> None:
     body = json.dumps(
         {
             "id": "message-1",
+            "type": "message",
             "text": "status",
             "timestamp": 1000,
             "from": {"id": "user-1"},

@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "release_line": "0.7",
+  "providers": {
+    "protocols": {
+      "anthropic": {"status": "supported", "fixture": "anthropic.json"},
+      "bedrock": {"status": "experimental", "fixture": "bedrock.json"},
+      "gemini": {"status": "supported", "fixture": "gemini.json"},
+      "openai-compatible": {"status": "supported", "fixture": "openai-compatible.json"}
+    },
+    "profiles": {
+      "anthropic": "anthropic",
+      "azure-openai": "openai-compatible",
+      "bedrock": "bedrock",
+      "cerebras": "openai-compatible",
+      "deepseek": "openai-compatible",
+      "fireworks": "openai-compatible",
+      "gemini": "gemini",
+      "generic-openai": "openai-compatible",
+      "groq": "openai-compatible",
+      "lmstudio": "openai-compatible",
+      "mistral": "openai-compatible",
+      "mock": "local",
+      "nous": "openai-compatible",
+      "ollama": "ollama",
+      "openai": "openai-compatible",
+      "opencode-go": "openai-compatible",
+      "opencode-zen": "openai-compatible",
+      "openrouter": "openai-compatible",
+      "perplexity": "openai-compatible",
+      "prime-intellect": "openai-compatible",
+      "together": "openai-compatible",
+      "trustedrouter": "openai-compatible",
+      "vllm": "openai-compatible",
+      "xai": "openai-compatible"
+    }
+  },
+  "mcp": {
+    "revisions": {
+      "2026-07-28": "supported-sdk-interoperability",
+      "2025-11-25": "supported-runner-conformance",
+      "2024-11-05": "compatibility-only"
+    },
+    "transports": ["stdio", "streamable-http"],
+    "roles": ["client", "server"],
+    "evidence": [".github/workflows/mcp-conformance.yml", "tests/test_mcp_hostile.py"]
+  },
+  "skills": {
+    "supported": [
+      "agent-skills-filesystem",
+      "claude-skill-content",
+      "claude-environment-referenced-mcp",
+      "pi-skill-content"
+    ],
+    "unsupported": [
+      "claude-agents",
+      "claude-commands",
+      "claude-hooks",
+      "claude-lsp",
+      "claude-binaries",
+      "pi-typescript-extensions",
+      "pi-prompts",
+      "pi-themes"
+    ],
+    "evidence": ["tests/test_skill_compat.py", "docs/skills.md"]
+  },
+  "graphs": {
+    "specification": "agentic-graph-spec-1.0",
+    "evidence": [".github/workflows/ags-conformance.yml", "tests/test_agraph_failures.py"]
+  },
+  "gateways": {
+    "platforms": ["slack", "discord", "telegram", "teams", "signal", "generic"],
+    "accepted_event_types": {
+      "slack": ["url_verification", "message"],
+      "discord": ["ping", "application_command"],
+      "telegram": ["message", "edited_message"],
+      "teams": ["signed_bridge_message"],
+      "signal": ["signed_bridge_message"],
+      "generic": ["signed_bridge_message"]
+    },
+    "evidence": ["tests/test_gateway_interop.py", "docs/channel-gateways.md"]
+  }
+}

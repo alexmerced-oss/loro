@@ -16,6 +16,10 @@ class GatewayAdapterError(ValueError):
     """Raised when a gateway request is unauthenticated or malformed."""
 
 
+class GatewayUnsupportedEventError(GatewayAdapterError):
+    """Raised after authentication when an event type is outside Loro's frozen claim."""
+
+
 @dataclass(frozen=True)
 class ChannelMessage:
     platform: str
@@ -57,6 +61,10 @@ def parse_inbound(
         if payload.get("type") == "url_verification":
             return InboundResult(200, {"challenge": payload.get("challenge", "")})
         event = payload.get("event") or {}
+        if event.get("type") != "message":
+            raise GatewayUnsupportedEventError(
+                f"unsupported Slack event type: {event.get('type')!r}"
+            )
         if event.get("bot_id") or event.get("subtype") == "bot_message":
             return InboundResult(200, {})
         return InboundResult(
@@ -78,6 +86,10 @@ def parse_inbound(
         payload = _payload(body)
         if payload.get("type") == 1:
             return InboundResult(200, {"type": 1})
+        if payload.get("type") != 2:
+            raise GatewayUnsupportedEventError(
+                f"unsupported Discord interaction type: {payload.get('type')!r}"
+            )
         user = (payload.get("member") or {}).get("user") or payload.get("user") or {}
         data = payload.get("data") or {}
         text = _discord_text(data)
@@ -105,6 +117,8 @@ def parse_inbound(
         if not supplied or not _digest_equal(expected, supplied):
             raise GatewayAdapterError("invalid Telegram webhook secret")
         payload = _payload(body)
+        if "message" not in payload and "edited_message" not in payload:
+            raise GatewayUnsupportedEventError("unsupported Telegram update type")
         message = payload.get("message") or payload.get("edited_message") or {}
         sender = message.get("from") or {}
         chat = message.get("chat") or {}
@@ -125,6 +139,11 @@ def parse_inbound(
     if config.platform in {"teams", "signal", "generic"}:
         _verify_bridge(config.platform, normalized, body, secret("signing-secret"))
         payload = _payload(body)
+        event_type = payload.get("type")
+        if event_type not in {None, "message", "signed_bridge_message"}:
+            raise GatewayUnsupportedEventError(
+                f"unsupported {config.platform} event type: {event_type!r}"
+            )
         if config.require_signed_timestamp:
             _verify_bridge_freshness(config.platform, payload, now, max_age_seconds)
         sender = payload.get("from") or {}
