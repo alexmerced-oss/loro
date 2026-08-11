@@ -5,7 +5,9 @@ installation:
 
 ```bash
 sha256sum -c SHA256SUMS
-python -m pip install ./loro_agent-0.9.0-py3-none-any.whl
+git config gpg.ssh.allowedSignersFile docs/keys/allowed_signers
+git verify-tag v0.10.0
+python -m pip install ./loro_agent-0.10.0-py3-none-any.whl
 loro --version
 loro providers conformance
 loro operations benchmark --strict --output loro-benchmark.json
@@ -16,6 +18,8 @@ Compare `release-manifest.json` commit and artifact hashes to the immutable tag.
 CycloneDX SBOM and support, data, interoperability, reference-deployment, and release-contract
 files. Verify GitHub artifact attestations using the repository and tag as the trusted source;
 do not treat a checksum hosted beside a compromised artifact as an independent trust root.
+See [Release Signing And Verification](release-signing.md) for the key fingerprint and complete
+trust procedure.
 
 The readiness JSON contains no prompt, response, memory, tool output, hostname, username, or
 credential values. Retain it only under the organization's approved evidence policy because its

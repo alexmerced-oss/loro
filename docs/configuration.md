@@ -66,7 +66,7 @@ skill_profile = "skill-script"
 backend = "process"
 require_os_enforcement = false
 network = "inherit"
-allowed_executables = ["*"]
+allowed_executables = ["bash", "git", "node", "npm", "npx", "python", "python3", "pytest", "rg", "ruff", "sh", "uv"]
 environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
 writable_roots = []
 max_seconds = 120
@@ -98,7 +98,7 @@ mcp = "ask"
 skills = "ask"
 session_message = "ask"
 web = "deny"
-workspace_roots = []
+workspace_roots = ["/workspace"]
 
 [[permissions.rules]]
 tool = "edit"

@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 import tomli_w
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from loro.fileio import atomic_write_text
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -965,6 +967,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"model": data}
     if section == "identity":
         return {"identity": config.identity.model_dump(exclude_none=True)}
+    if section == "permissions":
+        return {"permissions": config.permissions.model_dump(exclude_none=True)}
     if section == "approvals":
         return {"approvals": config.approvals.model_dump(exclude_none=True)}
     if section == "sandbox":
@@ -994,7 +998,7 @@ def write_config_sections(path: Path, config: LoroConfig, sections: list[str]) -
     data = migrate_config_data(data)
     for section in sections:
         data = _merge(data, _config_section_data(config, section))
-    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    atomic_write_text(path, tomli_w.dumps(data))
     return path
 
 
@@ -1007,7 +1011,7 @@ def replace_config_section(path: Path, config: LoroConfig, section: str) -> Path
     data = _read_toml(path)
     data = migrate_config_data(data)
     data[section] = section_data[section]
-    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    atomic_write_text(path, tomli_w.dumps(data))
     return path
 
 

@@ -33,6 +33,8 @@ LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/tes
 loro --version
 loro doctor
 loro providers list
+loro configure mock
+loro config check --strict
 loro providers smoke "hello" --provider mock --execute --stream
 loro providers conformance
 loro memory schema --backend postgres
@@ -48,6 +50,8 @@ loro skills import-pi --help
 loro graph validate docs/examples/agraph/release-readiness.agraph.yaml --strict
 loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
 loro skills validate "$(loro graph skill-path)"
+loro docs create "Release verification" --output-dir /tmp/loro-release-artifacts
+loro artifacts verify /tmp/loro-release-artifacts/*.provenance.json
 ```
 
 When a secure OS keyring and test gateway configuration are available:
@@ -105,6 +109,10 @@ Release `0.9.0` freezes the machine-readable release contract, adds installed-en
 readiness evidence, and publishes pilot/assurance/consumer-verification procedures. See
 [Loro 0.9.0](releases/0.9.0.md).
 
+Release `0.10.0` resolves repository hardening findings, freezes the deliberately small stable
+core, adds digest-bound artifact verification, and establishes signed release tags. See
+[Loro 0.10.0](releases/0.10.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
@@ -130,7 +138,8 @@ python -m build
 python -m twine check dist/*
 ```
 
-Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement, builds
+Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement and the
+SSH tag signature, builds
 distributions in protected CI, smoke-tests the wheel and bundled Agent Skill, generates SHA-256
 checksums, creates GitHub/Sigstore build-provenance attestations, and retains the artifact bundle.
 The bundle also contains the machine-readable product, data, and interoperability support
@@ -143,6 +152,9 @@ Verify an attested artifact with:
 gh attestation verify dist/loro_agent-*.whl --repo alexmerced-oss/loro
 (cd dist && sha256sum --check SHA256SUMS)
 ```
+
+See [Release Signing And Verification](release-signing.md) for tag verification and the signing
+key fingerprint.
 
 The workflow intentionally does not upload to PyPI. Publication still requires release-owner
 approval after all protected checks and external evidence gates pass.

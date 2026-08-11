@@ -17,11 +17,11 @@ from rich.text import Text
 from loro import __version__
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
-from loro.artifacts.common import ArtifactResult, write_provenance
+from loro.artifacts.common import ArtifactResult, verify_provenance, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
-from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.audit import AuditDeliveryError, AuditLogger, prompt_preview, verify_jsonl_audit
 from loro.audit.collector import (
     AuditCollector,
     AuditCollectorError,
@@ -61,6 +61,7 @@ from loro.config import (
     write_config_sections,
 )
 from loro.data_protection import DataProtectionEngine, DataSurface
+from loro.fileio import atomic_write_bytes
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -110,7 +111,6 @@ from loro.providers import (
     get_provider_profile,
     model_config_from_profile,
     provider_names,
-    write_local_model_config,
 )
 from loro.recovery import (
     DEFAULT_RPO_SECONDS,
@@ -173,6 +173,7 @@ skills_app = typer.Typer(help="Discover and govern portable Agent Skills package
 sandbox_app = typer.Typer(help="Inspect subprocess isolation profiles.")
 config_app = typer.Typer(help="Show and lint resolved configuration.")
 operations_app = typer.Typer(help="Run data protection, backup, and recovery operations.")
+artifacts_app = typer.Typer(help="Verify generated artifact provenance and integrity.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -199,6 +200,7 @@ app.add_typer(graph_app, name="graph")
 app.add_typer(config_app, name="config")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(operations_app, name="operations")
+app.add_typer(artifacts_app, name="artifacts")
 app.command("doctor")(ops_doctor)
 config_app.command("check")(ops_config_check)
 audit_app.command("query")(ops_audit_query)
@@ -851,14 +853,78 @@ def configure(
         credential_ref=credential_ref,
         base_url=chosen_base_url,
     )
-    written = write_local_model_config(output, config)
-    _audit().write(
-        "config.provider_written",
-        provider=config.model.provider,
-        model=config.model.model,
-        path=str(written),
+    new_local_profile = not output.exists()
+    profile_config = _strict_local_profile(config) if new_local_profile else config
+    written = _write_audited_provider_config(
+        output,
+        profile_config,
+        include_local_profile=new_local_profile,
     )
     console.print(f"Wrote provider config: {written}")
+
+
+def _strict_local_profile(config: LoroConfig) -> LoroConfig:
+    local = LoroConfig()
+    local.model = config.model.model_copy(deep=True)
+    local.permissions.workspace_roots = [str(Path.cwd().resolve())]
+    local.sandbox.profiles["controlled-shell"].allowed_executables = [
+        "bash",
+        "git",
+        "node",
+        "npm",
+        "npx",
+        "python",
+        "python3",
+        "pytest",
+        "rg",
+        "ruff",
+        "sh",
+        "uv",
+    ]
+    local.sandbox.profiles["mcp-stdio"].allowed_executables = [
+        "node",
+        "npx",
+        "python",
+        "python3",
+        "uvx",
+    ]
+    return local
+
+
+def _write_audited_provider_config(
+    output: Path,
+    config: LoroConfig,
+    *,
+    include_local_profile: bool,
+) -> Path:
+    existed = output.exists()
+    previous = output.read_bytes() if existed else None
+    sections = ["model", "permissions", "sandbox"] if include_local_profile else ["model"]
+    try:
+        written = write_config_sections(output, config, sections)
+        _audit().write(
+            "config.provider_written",
+            provider=config.model.provider,
+            model=config.model.model,
+            path=str(written),
+            local_profile_initialized=include_local_profile,
+        )
+    except AuditDeliveryError as error:
+        try:
+            if previous is None:
+                output.unlink(missing_ok=True)
+            else:
+                atomic_write_bytes(output, previous)
+        except OSError as rollback_error:
+            raise typer.BadParameter(
+                "Required audit delivery failed and provider configuration rollback also "
+                f"failed; inspect {output}: {rollback_error}"
+            ) from error
+        raise typer.BadParameter(
+            "Provider configuration was rolled back because required audit delivery failed: "
+            f"{error}"
+        ) from error
+    return written
 
 
 @setup_app.command("provider")
@@ -2028,7 +2094,7 @@ def operations_release_readiness(
         typer.Option("--strict", help="Exit non-zero on warnings as well as failed checks."),
     ] = False,
 ) -> None:
-    """Evaluate this installation against the frozen release-candidate contract."""
+    """Evaluate this installation against the frozen stabilization contract."""
     report = assess_release_readiness(load_config())
     payload = report.to_payload()
     console.print_json(data=payload)
@@ -3578,6 +3644,17 @@ def docs_create(
         context="artifact.document",
         factory=create_document_artifact,
     )
+
+
+@artifacts_app.command("verify")
+def artifacts_verify(
+    provenance: Annotated[Path, typer.Argument(help="Artifact provenance JSON path.")],
+) -> None:
+    """Verify every file digest and byte count in an artifact provenance record."""
+
+    report = verify_provenance(provenance)
+    console.print_json(data=report.to_payload())
+    raise typer.Exit(code=0 if report.ok else 1)
 
 
 @slides_app.command("create")

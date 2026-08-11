@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.9.0`. It covers the
+This is the single authoritative roadmap for work remaining after Loro `0.10.0`. It covers the
 first stable `1.0` release. Completed milestones belong in release notes; implementation proof
 belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -13,7 +13,7 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.9.0` was released on August 11, 2026. In addition to the agent, memory, governance,
+Loro `0.10.0` is the 1.0 stabilization baseline. In addition to the agent, memory, governance,
 provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark, and release controls
 delivered through `0.8`, the repository now provides:
 
@@ -24,8 +24,10 @@ delivered through `0.8`, the repository now provides:
 - pilot defect severity/disposition, independent assurance, consumer verification, support,
   vulnerability, upgrade, rollback, incident, and offboarding procedures;
 - a truly fail-closed managed identity requirement that cannot be satisfied by local fallbacks.
+- strict-ready provider setup, transactional audited configuration, digest-bound artifact
+  provenance, and a signed-tag verification path.
 
-The [0.9 release notes](releases/0.9.0.md), [release contract](release-contract.json),
+The [0.10 release notes](releases/0.10.0.md), [release contract](release-contract.json),
 [support matrix](support-matrix.json),
 [interoperability matrix](interoperability-matrix.json), and
 [data support matrix](data-support-matrix.json) describe the exact shipped boundary.
@@ -38,8 +40,8 @@ deployment can:
 - run approved coding and productivity tasks through governed AI routes;
 - keep provider credentials isolated from tools and subprocesses;
 - maintain local memory while requiring an explicit user decision for every shared-memory write;
-- use tenant-scoped Postgres shared memory and constrained Polaris-governed data access;
-- use supported MCP, Agent Skills, graph, and channel integrations without bypassing Loro policy;
+- use tenant-scoped Postgres shared memory and supported Agent Skills without bypassing Loro
+  policy;
 - attribute consequential actions to identity, tenant, policy, approval, session, and target;
 - survive documented provider, database, audit, and process failures without silent data loss or
   security downgrade;
@@ -48,7 +50,10 @@ deployment can:
 - produce verifiable operational, security, compatibility, and release evidence.
 
 The stable promise applies only to the frozen `1.0` support matrix. Integrations without enough
-proof remain experimental or are excluded rather than weakening the release gate.
+proof remain experimental or are excluded rather than weakening the release gate. For the 0.10
+stabilization line, Iceberg/Polaris, MCP, Agentic Graphs, Bedrock, and remote gateways are outside
+the stable compatibility promise even though their policy-governed implementations remain
+available for evaluation.
 
 ## Release Principles
 
@@ -72,6 +77,7 @@ proof remain experimental or are excluded rather than weakening the release gate
 | --- | --- | --- |
 | `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
 | `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
+| `0.10` | Stabilization | Repository hardening, release signing, and the deliberately small stable core are frozen. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 1.0: General Availability
@@ -90,7 +96,7 @@ proof remain experimental or are excluded rather than weakening the release gate
 
 ### GA Gate
 
-- All `0.9` exit evidence remains valid for the final commit and artifacts.
+- All `0.10` exit evidence remains valid for the final commit and artifacts.
 - Public PyPI clean install, upgrade, rollback, and basic agent-task smoke tests pass.
 - Named support/on-call ownership, escalation, vulnerability response, and release authority are
   active.

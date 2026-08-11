@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.9",
-  "stability": "release-candidate",
+  "release_line": "0.10",
+  "stability": "stabilization",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
   },

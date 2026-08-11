@@ -1,6 +1,6 @@
-# Release Candidate Support Policy
+# Stabilization Support Policy
 
-Loro `0.9` is a best-effort open-source release candidate for controlled enterprise evaluation.
+Loro `0.10` is a best-effort open-source stabilization release for controlled enterprise evaluation.
 GitHub Issues is the public defect and feature intake channel. Do not include secrets, prompts,
 model responses, customer data, memory content, private infrastructure details, or unredacted
 audit records in public reports.
@@ -12,5 +12,5 @@ provider/database/catalog/chat applications, identity, backups, retention, and i
 Patch releases may fix correctness, security, compatibility, packaging, or documentation defects
 without expanding the stable boundary. The CLI, configuration schema, storage records, provider
 contracts, protocol revisions, and support matrix remain pre-1.0 interfaces and may change with
-documented migration guidance. Only cells marked `supported` are in the candidate support boundary;
+documented migration guidance. Only cells marked `supported` are in the stabilization boundary;
 experimental integrations require organization-owned evidence and may change more quickly.

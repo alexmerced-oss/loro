@@ -35,6 +35,12 @@ jobs:
           package_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "${GITHUB_REF_NAME#v}" = "$package_version"
 
+      - name: Verify signed release tag
+        if: github.ref_type == 'tag'
+        run: |
+          git config gpg.ssh.allowedSignersFile docs/keys/allowed_signers
+          git verify-tag "${GITHUB_REF_NAME}"
+
       - name: Build distributions
         run: python -m build
 
@@ -49,6 +55,7 @@ jobs:
           /tmp/loro-release-smoke/bin/loro --version
           /tmp/loro-release-smoke/bin/loro doctor --help
           /tmp/loro-release-smoke/bin/loro config check --help
+          /tmp/loro-release-smoke/bin/loro artifacts verify --help
           /tmp/loro-release-smoke/bin/loro credentials --help
           /tmp/loro-release-smoke/bin/loro gateway --help
           /tmp/loro-release-smoke/bin/loro audit query --help
@@ -66,6 +73,17 @@ jobs:
           /tmp/loro-release-smoke/bin/loro skills import-pi --help
           /tmp/loro-release-smoke/bin/loro providers smoke "hello" --provider mock --execute --stream
           /tmp/loro-release-smoke/bin/loro providers conformance
+          mkdir -p /tmp/loro-config-smoke
+          cd /tmp/loro-config-smoke
+          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro configure mock
+          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro config check --strict
+          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro docs create \
+            "Release verification document" --output-dir /tmp/loro-release-artifacts
+          provenance=$(find /tmp/loro-release-artifacts -name '*.provenance.json' -print -quit)
+          test -n "$provenance"
+          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro artifacts verify \
+            "$provenance"
+          cd "${GITHUB_WORKSPACE}"
           /tmp/loro-release-smoke/bin/loro graph validate \
             docs/examples/agraph/release-readiness.agraph.yaml --strict
           skill_path=$(/tmp/loro-release-smoke/bin/loro graph skill-path)

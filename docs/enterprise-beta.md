@@ -1,6 +1,6 @@
 # Enterprise Beta Guide
 
-Loro `0.9` carries the restricted enterprise beta deployment into its release-candidate line. The
+Loro `0.10` carries the restricted enterprise beta deployment into its stabilization line. The
 supported reference shape is a managed Linux endpoint, Python 3.11-3.14, an explicitly approved
 model route, Postgres shared memory, and the authenticated audit collector. Iceberg memory,
 Polaris, MCP, graphs, and remote gateways retain the stability labels in the machine-readable

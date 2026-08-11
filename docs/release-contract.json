@@ -1,8 +1,11 @@
 {
-  "change_policy": "release-blocking-fixes-and-evidence-only",
+  "change_policy": "stable-core-fixes-and-evidence-only",
   "cli": {
     "approvals": [
       "list"
+    ],
+    "artifacts": [
+      "verify"
     ],
     "audit": [
       "collect",
@@ -205,12 +208,12 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:2a315012095ba2fc1cc8f2f9b703a2dde0854df1da1ff076dc0889c97ff936ba",
-    "interoperability_matrix": "sha256:7d1ef0b4eda906032851ae18ef55ad4eace4e73eca6fc73506a081cc3ea969ac",
+    "data_support_matrix": "sha256:d852b01e61a941e4a73d408b2d8d4a4a9d921944c1976ac1a4d10ba320c92e9c",
+    "interoperability_matrix": "sha256:6ad838cd3ec397e93e537e01727e25860cd5168dba721f048283619b228f15f5",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:1a0230973a955c8eede4736aa8ced3a27d92adb136fd23cc0baa7570d328ae9e",
-    "reference_managed_policy": "sha256:9a5cb8a84245ee0936353e35d8bed791332e4f216c0725f50b8a66e3724bdadc",
-    "support_matrix": "sha256:35a23d782b45ef41d3f8a6c05b4856578625120a6ca080426ee132a359ca0782"
+    "reference_deployment": "sha256:813e813b66c7dcbea0ec7ca73e03f35ae7b4a4a9211cbf82210c80e3db5c080d",
+    "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
+    "support_matrix": "sha256:5742a1639efcf85c18a8f824f505916ae37ce5e32a1b4d99846f234831b2b9a5"
   },
   "experimental": {
     "extensions": [
@@ -249,7 +252,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.9.0",
+  "package_version": "0.10.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -264,7 +267,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.9",
+  "release_line": "0.10",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",
@@ -275,7 +278,7 @@
     "postgres_memory": 2,
     "recovery": "1.0"
   },
-  "stability": "release-candidate",
+  "stability": "stabilization",
   "supported": {
     "extensions": [
       "agent-skills",

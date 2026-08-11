@@ -33,11 +33,12 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.9.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.10.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: approvals, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: approvals, artifacts, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro artifacts: verify
 loro approvals: list
 loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
 loro brief: executive, incident, meeting, project

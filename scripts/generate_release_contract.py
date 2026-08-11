@@ -52,8 +52,8 @@ def build_contract() -> dict[str, object]:
         "schema_version": "1.0",
         "release_line": ".".join(__version__.split(".")[:2]),
         "package_version": __version__,
-        "stability": "release-candidate",
-        "change_policy": "release-blocking-fixes-and-evidence-only",
+        "stability": "stabilization",
+        "change_policy": "stable-core-fixes-and-evidence-only",
         "cli": command_map,
         "schemas": {
             "approval": JsonApprovalStore.SCHEMA_VERSION,

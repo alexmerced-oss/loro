@@ -28,6 +28,7 @@ Loro ships with a provider setup wizard. Run it with no flags for an interactive
 
 ```bash
 loro configure
+loro config check --strict
 loro doctor
 loro plan "Create a release readiness checklist for this project."
 ```
@@ -102,7 +103,7 @@ loro setup quickstart
 - PyIceberg execution support for governed Iceberg shared-memory search and draft commits.
 - Polaris client for read-only governed catalog discovery.
 - Artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
-- Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
+- SHA-256-bound artifact provenance sidecars with `loro artifacts verify` integrity checks.
 - Versioned JSONL/HTTP audit delivery with bounded buffering, retry, diagnostics, and flush.
 - Durable session records and non-authoritative cross-session message delivery.
 - Permission-gated file and shell tools.

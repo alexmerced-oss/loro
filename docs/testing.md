@@ -50,7 +50,7 @@ production RPO/RTO. Those measurements belong to the controlled deployment evide
 
 ## Release Contract And Readiness
 
-The release-candidate contract freezes the command map, schema and protocol versions, support
+The stabilization contract freezes the command map, schema and protocol versions, support
 classifications, and matrix/deployment digests:
 
 ```bash

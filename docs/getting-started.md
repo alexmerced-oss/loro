@@ -32,6 +32,7 @@ For the fastest path, run the interactive provider wizard:
 
 ```bash
 loro configure
+loro config check --strict
 loro doctor
 ```
 
@@ -87,8 +88,10 @@ loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro providers check ollama
 ```
 
-`loro configure` writes `.loro/config.local.toml` by default. Keep API keys in environment
-variables, not in config files.
+For a new project, `loro configure` writes a strict-ready `.loro/config.local.toml` with the
+current workspace and explicit local executable allowlists. Rerunning it preserves existing
+policy sections and updates only the model section. Keep API keys in environment variables or
+the OS credential vault, not in config files.
 
 Additional setup wizards configure the rest of the local quick-start surface:
 
