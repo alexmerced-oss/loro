@@ -146,12 +146,13 @@ def record_migration_sql(schema: str, migration: PostgresMemoryMigration) -> str
 
 
 def _record_migration_sql(schema: str, version: int, name: str, checksum: str) -> str:
-    return f"""
+    # Schema is identifier-validated; migration metadata is defined in this module.
+    return f"""  # nosec B608
 INSERT INTO {migration_table(schema)} (version, name, checksum)
 VALUES ({version}, '{name}', '{checksum}')
 ON CONFLICT (version) DO UPDATE
 SET name = EXCLUDED.name, checksum = EXCLUDED.checksum;
-""".strip()
+""".strip()  # nosec B608
 
 
 def _tenant_rls(memory_table: str, events_table: str) -> str:

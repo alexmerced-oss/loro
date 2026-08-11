@@ -175,7 +175,8 @@ def _run(
     if dsn is not None:
         environment["PGDATABASE"] = dsn
     try:
-        return subprocess.run(
+        # Executable is resolved by _executable, arguments are a list, and no shell is used.
+        return subprocess.run(  # nosec B603
             command,
             env=environment,
             check=True,

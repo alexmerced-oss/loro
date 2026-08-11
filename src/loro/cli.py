@@ -1930,7 +1930,8 @@ def audit_collect(
     token_env: Annotated[
         str,
         typer.Option("--token-env", help="Environment variable containing the bearer token."),
-    ] = "LORO_AUDIT_COLLECTOR_TOKEN",
+    # This is an environment variable name, not a credential.
+    ] = "LORO_AUDIT_COLLECTOR_TOKEN",  # nosec B107
     host: Annotated[str, typer.Option("--host", help="Collector bind host.")] = "127.0.0.1",
     port: Annotated[
         int,

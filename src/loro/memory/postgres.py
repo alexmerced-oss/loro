@@ -481,7 +481,7 @@ SELECT
                         return 0
                     cursor.execute(
                         "SELECT COALESCE(MAX(version), 0) FROM "
-                        f"{migration_table(self.config.postgres_schema)}"
+                        f"{migration_table(self.config.postgres_schema)}"  # nosec B608
                     )
                     return int(cursor.fetchone()[0])
 
@@ -519,7 +519,7 @@ SELECT
                     if cursor.fetchone()[0] is not None:
                         cursor.execute(
                             "SELECT version, checksum FROM "
-                            f"{migration_table(self.config.postgres_schema)} ORDER BY version"
+                            f"{migration_table(self.config.postgres_schema)} ORDER BY version"  # nosec B608
                         )
                         applied_rows = dict(cursor.fetchall())
                         current = max(applied_rows, default=0)
@@ -557,7 +557,7 @@ SELECT
                                 cursor.execute(migration.down)
                                 cursor.execute(
                                     "DELETE FROM "
-                                    f"{migration_table(self.config.postgres_schema)} "
+                                    f"{migration_table(self.config.postgres_schema)} "  # nosec B608
                                     "WHERE version = %s",
                                     (migration.version,),
                                 )
