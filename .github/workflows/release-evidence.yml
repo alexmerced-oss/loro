@@ -75,7 +75,7 @@ jobs:
           /tmp/loro-release-smoke/bin/loro providers conformance
           mkdir -p /tmp/loro-config-smoke
           cd /tmp/loro-config-smoke
-          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro configure mock
+          HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro configure --provider mock
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro config check --strict
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro docs create \
             "Release verification document" --output-dir /tmp/loro-release-artifacts
