@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.5",
+  "release_line": "0.6",
   "stability": "alpha",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
@@ -30,6 +30,8 @@
     "Production identity assertion verification is deployment-owned.",
     "Process sandbox mode is not an operating-system security boundary.",
     "Iceberg, Polaris, MCP, and remote gateways require protected deployment evidence before stable support.",
-    "Per-user and per-tenant period budgets require an external shared gateway or coordinator."
+    "Per-user and per-tenant period budgets require an external shared gateway or coordinator.",
+    "The reference audit collector needs deployment-managed TLS, immutable retention, and external chain anchoring.",
+    "The declared recovery targets require validation in each organization's managed environment."
   ]
 }

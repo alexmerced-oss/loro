@@ -9,8 +9,12 @@ import pytest
 from loro.config import IdentityConfig, LoroConfig, MemoryConfig, SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft, SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
-from loro.memory.iceberg import IcebergSharedMemoryStore
+from loro.memory.iceberg import IcebergSharedMemoryStore, _snapshot_status
 from loro.memory.local import LocalMemoryStore
+from loro.memory.migrations import (
+    LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    postgres_memory_migrations,
+)
 from loro.memory.operations import (
     apply_shared_memory_lifecycle,
     create_shared_memory_draft,
@@ -34,6 +38,21 @@ def test_shared_memory_schema_postgres() -> None:
     schema = shared_memory_schema("postgres")
     assert "CREATE TABLE IF NOT EXISTS shared_memories" in schema
     assert "memory_events" in schema
+    assert "loro_memory_schema_migrations" in schema
+    assert "operation_id UUID" in schema
+
+
+def test_postgres_memory_migrations_are_versioned_and_reversible() -> None:
+    migrations = postgres_memory_migrations("enterprise", tenant_isolation=True)
+
+    assert [migration.version for migration in migrations] == list(
+        range(1, LATEST_POSTGRES_MEMORY_SCHEMA_VERSION + 1)
+    )
+    assert all(migration.checksum.startswith("sha256:") for migration in migrations)
+    assert "enterprise.shared_memories" in migrations[0].up
+    assert "FORCE ROW LEVEL SECURITY" in migrations[0].up
+    assert migrations[0].rollback == "destructive"
+    assert "DROP COLUMN IF EXISTS operation_id" in migrations[1].down
 
 
 def test_shared_memory_schema_iceberg_uses_config() -> None:
@@ -46,6 +65,25 @@ def test_shared_memory_schema_iceberg_uses_config() -> None:
     )
     assert "CREATE TABLE IF NOT EXISTS enterprise_memory.agent_facts" in schema
     assert "CREATE TABLE IF NOT EXISTS enterprise_memory.memory_events" in schema
+
+
+def test_iceberg_snapshot_status_is_content_free() -> None:
+    snapshot = types.SimpleNamespace(
+        snapshot_id=42,
+        parent_snapshot_id=41,
+        sequence_number=8,
+        timestamp_ms=1_785_000_000_000,
+    )
+    table = types.SimpleNamespace(
+        metadata=types.SimpleNamespace(snapshots=[object(), object()]),
+        current_snapshot=lambda: snapshot,
+    )
+
+    status = _snapshot_status(table, "agent_memory.shared_memories")
+
+    assert status.snapshot_count == 2
+    assert status.current_snapshot_id == 42
+    assert "content" not in status.__dict__
 
 
 def test_shared_memory_draft_store(tmp_path) -> None:
@@ -104,6 +142,7 @@ def test_postgres_shared_memory_insert_sql() -> None:
     statement = PostgresSharedMemoryStore(SharedMemoryConfig()).render_insert(draft)
     assert "INSERT INTO public.shared_memories" in statement.sql
     assert "INSERT INTO public.memory_events" in statement.sql
+    assert "operation_id" in statement.sql
     assert statement.params["tenant_id"] == "acme"
     assert statement.params["content"] == "Use the launch readiness template"
     assert statement.params["created_by"] == "alex"
@@ -136,6 +175,7 @@ def test_postgres_memory_lifecycle_renders_event_and_guards_hold(action) -> None
     statement = PostgresSharedMemoryStore(SharedMemoryConfig()).render_lifecycle(request)
 
     assert "INSERT INTO public.memory_events" in statement.sql
+    assert "existing_operation" in statement.sql
     assert statement.params["event_type"] == f"memory.{action}"
     if action in {"delete", "expire"}:
         assert "AND legal_hold = FALSE" in statement.sql

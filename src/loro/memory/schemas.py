@@ -2,54 +2,12 @@ from typing import Literal
 
 from loro.config import SharedMemoryConfig
 from loro.memory.iceberg import IcebergSharedMemoryStore
+from loro.memory.migrations import render_postgres_memory_schema
 
 SharedBackend = Literal["postgres", "iceberg"]
 
 
-POSTGRES_SHARED_MEMORY_SCHEMA = """
-CREATE TABLE IF NOT EXISTS shared_memories (
-  memory_id UUID PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  scope_type TEXT NOT NULL,
-  scope_key TEXT NOT NULL,
-  memory_type TEXT NOT NULL,
-  content TEXT NOT NULL,
-  summary TEXT NOT NULL,
-  tags TEXT[] NOT NULL DEFAULT '{}',
-  classification TEXT NOT NULL,
-  source JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_by TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ,
-  status TEXT NOT NULL DEFAULT 'active',
-  confidence DOUBLE PRECISION,
-  review JSONB,
-  embedding_ref TEXT,
-  supersedes UUID[] NOT NULL DEFAULT '{}',
-  expires_at TIMESTAMPTZ,
-  legal_hold BOOLEAN NOT NULL DEFAULT FALSE,
-  deleted_at TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS memory_events (
-  event_id UUID PRIMARY KEY,
-  memory_id UUID,
-  tenant_id TEXT NOT NULL,
-  event_type TEXT NOT NULL,
-  actor TEXT NOT NULL,
-  event_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  payload JSONB NOT NULL DEFAULT '{}'::jsonb
-);
-
-ALTER TABLE shared_memories ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE shared_memories ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-
-CREATE INDEX IF NOT EXISTS idx_shared_memories_scope
-  ON shared_memories (tenant_id, scope_type, scope_key, status);
-
-CREATE INDEX IF NOT EXISTS idx_shared_memories_type
-  ON shared_memories (tenant_id, memory_type, status);
-""".strip()
+POSTGRES_SHARED_MEMORY_SCHEMA = render_postgres_memory_schema("public")
 
 
 ICEBERG_SHARED_MEMORY_SCHEMA = """

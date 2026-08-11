@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "release_line": "0.6",
+  "reference_stack": {
+    "postgres": "16-alpine",
+    "apache_polaris": "1.6.0",
+    "iceberg_rest_api": "v1",
+    "apache_iceberg": "1.10.1",
+    "pyiceberg": "0.11.1",
+    "duckdb": "1.5.5",
+    "rustfs": "1.0.0-alpha.81"
+  },
+  "python": {
+    "core": ["3.11", "3.12", "3.13", "3.14"],
+    "credentialed_pyiceberg_evidence": ["3.11", "3.12", "3.13"]
+  },
+  "evidence": {
+    "postgres_ephemeral_ci": "supported",
+    "polaris_quickstart_service_smoke": "supported",
+    "duckdb_seed_validation": "supported",
+    "credentialed_polaris_authorization": "external",
+    "production_object_store": "external"
+  },
+  "sources": {
+    "polaris_release": "https://polaris.apache.org/downloads/1.6.0/",
+    "polaris_quickstart": "https://raw.githubusercontent.com/apache/polaris/refs/tags/apache-polaris-1.6.0/site/content/guides/quickstart/docker-compose.yml",
+    "iceberg_rest": "https://iceberg.apache.org/rest-catalog-spec/",
+    "pyiceberg": "https://pypi.org/project/pyiceberg/0.11.1/",
+    "duckdb": "https://duckdb.org/2026/07/22/announcing-duckdb-155"
+  }
+}

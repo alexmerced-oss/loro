@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the release plan from Loro `0.4.1` to the first stable `1.0` release. It consolidates
+This is the release plan from Loro `0.5.0` to the first stable `1.0` release. It consolidates
 the product work in the [Development Roadmap](roadmap.md), the controls in the
 [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md), and the proof tracked by the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -34,7 +34,7 @@ provider, identity system, operating system, chat service, catalog, or audit des
 
 ## Current Baseline
 
-The `0.4.1` release is the starting point. It includes the agent loop, provider adapters,
+The `0.5.0` release is the current published baseline. It includes the agent loop, provider adapters,
 productivity artifacts, local and shared memory, Postgres and Iceberg adapters, Polaris access,
 policy and approvals, sandbox profiles, audit delivery, MCP, Agent Skills, Agentic Graphs,
 credential storage, remote gateways, tests, security scans, SBOM generation, checksums, and
@@ -69,7 +69,7 @@ The remaining risk is concentrated in four areas:
 | Release | Status | Theme | Primary outcome |
 | --- | --- | --- | --- |
 | `0.5` | Repository work complete | Control contracts | Security-critical interfaces are versioned, testable, and complete. |
-| `0.6` | Planned | Data and operations | The reference data and audit path survives realistic lifecycle and failure tests. |
+| `0.6` | Repository work complete | Data and operations | The reference data and audit path survives realistic lifecycle and failure tests. |
 | `0.7` | Planned | Interoperability | Providers, MCP, Skills, graphs, and gateways have governed compatibility evidence. |
 | `0.8` | Planned | Enterprise beta | A reproducible reference deployment is operable by pilot administrators and users. |
 | `0.9` | Planned | Release candidate | The product is feature-frozen and independently exercised in a controlled pilot. |
@@ -119,6 +119,10 @@ Exit gate:
   dependency.
 
 ## 0.6: Enterprise Data And Operations
+
+Status: **repository work complete for 0.6.0**. Protected Polaris authorization, managed
+object-store behavior, immutable audit retention, and organization-approved recovery objectives
+remain external deployment evidence. See the [0.6 work record](roadmap-0.6.md).
 
 **Goal:** prove the reference storage, governed-data, audit, and recovery paths under realistic
 load and failure.

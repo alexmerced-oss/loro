@@ -17,8 +17,8 @@ This job:
 
 - Downloads the official Apache Polaris quickstart Docker Compose file.
 - Starts Polaris plus the quickstart S3-compatible object store.
-- Waits for the Polaris REST API on `http://localhost:8181`.
-- Installs Loro with `.[dev,data]` and `duckdb`.
+- Pins the upstream compose file to Apache Polaris `1.6.0` and waits for its health endpoint.
+- Installs Loro with `.[dev,data,integration]`, including pinned DuckDB `1.5.5`.
 - Uses DuckDB to create deterministic CSV and Parquet seed files in `/tmp/loro-ci-seed`.
 - Runs Loro Iceberg shared-memory schema rendering and dry-run shared-memory search.
 - Runs `loro memory backend-check` to verify PyIceberg and env-backed REST catalog settings.
@@ -71,7 +71,7 @@ preloaded CLI authentication.
 
 ### Level 3: Full Governed Iceberg Execution
 
-A future CI job can create the Loro shared-memory Iceberg tables, commit a shared-memory draft,
+A protected CI job can create the Loro shared-memory Iceberg tables, commit a shared-memory draft,
 and search it back through PyIceberg. That requires one additional bootstrapping step:
 
 - Extract or provide Polaris quickstart credentials.
@@ -79,8 +79,8 @@ and search it back through PyIceberg. That requires one additional bootstrapping
 - Create the Iceberg namespace and tables through PyIceberg, Spark, or Trino before running
   `loro memory commit-draft <draft-id> --execute`.
 
-Until that is automated, Level 3 should stay manual or run only on a protected self-hosted
-runner.
+Level 3 must stay manual or run only on a protected self-hosted runner because its authorization
+evidence depends on enterprise-managed identities and object storage.
 
 ## Storage Choice
 

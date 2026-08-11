@@ -194,6 +194,37 @@ optional JSON implementation persists metadata and digests with owner-only permi
 cross-process locking, atomic replacement, bounded/schema-validated input, and compare-and-set
 updates. It is a single-host durability boundary rather than a distributed approval service.
 
+## Data Operations
+
+Postgres shared memory is governed by ordered, checksummed migrations recorded in
+`loro_memory_schema_migrations`. Migration execution takes a transaction-scoped advisory lock,
+verifies previously applied checksums, and labels rollback steps as safe or destructive. Schema
+version 2 adds tenant-scoped operation IDs to the append-only event table. Draft and lifecycle
+statements bind these IDs to content/action metadata, making exact retries idempotent while
+rejecting conflicting reuse.
+
+Reconciliation treats state and lifecycle events as two views of one contract. It detects orphan
+events, state without creation provenance, tenant disagreement, and deleted/held state without
+the corresponding event. Iceberg retains append-only state versions and exposes content-free
+snapshot metadata for operational comparison.
+
+The recovery boundary uses PostgreSQL custom-format backups plus a JSON manifest containing the
+source schema version, digest, size, format, and declared RPO/RTO. Restore requires explicit
+execution authorization and reconciliation before service resumes.
+
+## Audit Operations
+
+The reference HTTP collector is a separate trust boundary. It validates bearer authentication
+and event schema, accepts batches in a SQLite `BEGIN IMMEDIATE` transaction, deduplicates by
+`event_id`, and advances a canonical SHA-256 chain only when the transaction commits. Its success
+response therefore means the event is durably owned by the collector. Exact retry is safe;
+conflicting replay fails the whole batch.
+
+Operational metrics are derived from event family and bounded numeric metadata after data
+protection. The metrics store has no fields for prompt, response, tool, memory, artifact, gateway
+message, identity, or tenant content. Production TLS, replicated storage, retention immutability,
+and independent anchoring remain outside the single-node reference collector.
+
 ## AI Providers
 
 Provider profiles are stored in `loro.providers`. Profiles capture:

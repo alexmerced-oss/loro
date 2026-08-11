@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -16,6 +17,29 @@ from loro.memory.base import (
 )
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class IcebergTableSnapshotStatus:
+    table: str
+    snapshot_count: int
+    current_snapshot_id: int | None
+    parent_snapshot_id: int | None
+    sequence_number: int | None
+    timestamp_ms: int | None
+
+
+@dataclass(frozen=True)
+class IcebergSnapshotReport:
+    memory: IcebergTableSnapshotStatus
+    events: IcebergTableSnapshotStatus
+
+    @property
+    def aligned(self) -> bool:
+        return (
+            self.memory.current_snapshot_id is not None
+            and self.events.current_snapshot_id is not None
+        )
 
 
 class IcebergSharedMemoryStore:
@@ -307,6 +331,14 @@ LIMIT 1;
             backend="iceberg",
             ok=pyiceberg_available and catalog_configured,
             messages=messages,
+        )
+
+    def snapshot_report(self) -> IcebergSnapshotReport:
+        """Return content-free snapshot metadata for lifecycle/recovery diagnostics."""
+        catalog = self._load_catalog()
+        return IcebergSnapshotReport(
+            memory=_snapshot_status(catalog.load_table(self.memory_table), self.memory_table),
+            events=_snapshot_status(catalog.load_table(self.events_table), self.events_table),
         )
 
     def commit_draft(self, draft: SharedMemoryDraft) -> None:
@@ -709,3 +741,17 @@ def _memory_version_time(row: dict[str, Any]) -> datetime:
         except ValueError:
             pass
     return datetime.min.replace(tzinfo=UTC)
+
+
+def _snapshot_status(table: Any, name: str) -> IcebergTableSnapshotStatus:
+    metadata = getattr(table, "metadata", None)
+    snapshots = getattr(metadata, "snapshots", ()) if metadata is not None else ()
+    current = table.current_snapshot() if hasattr(table, "current_snapshot") else None
+    return IcebergTableSnapshotStatus(
+        table=name,
+        snapshot_count=len(snapshots or ()),
+        current_snapshot_id=getattr(current, "snapshot_id", None),
+        parent_snapshot_id=getattr(current, "parent_snapshot_id", None),
+        sequence_number=getattr(current, "sequence_number", None),
+        timestamp_ms=getattr(current, "timestamp_ms", None),
+    )

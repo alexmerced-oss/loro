@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loro-agent"
-version = "0.5.0"
+version = "0.6.0"
 description = "Enterprise memory-sharing CLI agent harness for coding, governed data, and productivity work."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -52,7 +52,7 @@ artifacts = [
 data = [
   "sqlalchemy>=2.0.35",
   "psycopg[binary]>=3.2.0",
-  "pyiceberg>=0.8.0",
+  "pyiceberg>=0.11.1,<0.12",
   "pyarrow>=17.0.0",
 ]
 aws = [
@@ -65,6 +65,7 @@ gateway = [
   "cryptography>=50.0.0",
 ]
 integration = [
+  "duckdb==1.5.5",
   "psycopg[binary]>=3.2.0",
   "testcontainers[postgres]>=4.8.0",
 ]

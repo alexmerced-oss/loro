@@ -165,6 +165,23 @@ loro audit verify
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain
 explicit-only and draft-gated.
 
+The 0.6 data operations add checksummed Postgres migrations, idempotent operation IDs,
+state/event reconciliation, verified backup manifests, an authenticated audit collector, and
+content-free operational metrics:
+
+```bash
+loro memory migration-status
+loro memory migrate --target 2 --execute
+loro memory reconcile
+loro operations backup --output /secure/loro-memory.dump --execute
+loro operations verify-backup /secure/loro-memory.dump
+loro audit collector-verify --path /var/lib/loro/audit.sqlite3
+```
+
+These are reference controls. Production TLS, immutable audit retention, protected Polaris
+authorization, object-store behavior, and organization-approved RPO/RTO evidence remain
+deployment-owned.
+
 ## Run Agentic Tasks
 
 ```bash
@@ -302,6 +319,8 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Managed Data Protection](docs/data-protection.md)
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
+- [Reference Audit Collector](docs/audit-collector.md)
+- [Backup, Restore, And Recovery](docs/recovery.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
 - [Model Context Protocol](docs/mcp.md)
 - [MCP Support Matrix](docs/mcp-support-matrix.md)
@@ -309,6 +328,7 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Cross-Session Messaging](docs/session-messaging.md)
 - [Development Roadmap](docs/roadmap.md)
 - [Roadmap To Loro 1.0](docs/roadmap-1.0.md)
+- [Loro 0.6 Work Record](docs/roadmap-0.6.md)
 - [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
 - [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)

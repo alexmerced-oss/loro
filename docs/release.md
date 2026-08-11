@@ -9,6 +9,8 @@ python -m pip install -e ".[dev]"
 python -m ruff check .
 PYTHONPATH=src python scripts/check_audit_inventory.py
 PYTHONPATH=src python scripts/check_enterprise_evidence.py
+python scripts/check_data_support_matrix.py
+PYTHONPATH=src python scripts/audit_outage_drill.py --events 1000
 python -m pytest --cov --cov-report=term-missing --cov-report=json:security-coverage.json
 python scripts/check_security_coverage.py security-coverage.json
 python -m compileall src tests
@@ -18,7 +20,9 @@ If optional services are available:
 
 ```bash
 python -m pip install -e ".[dev,integration,data,aws,mcp]"
-LORO_INTEGRATION_POSTGRES=1 python -m pytest -m integration tests/integration/test_postgres_memory_integration.py
+LORO_INTEGRATION_POSTGRES=1 python -m pytest -m integration \
+  tests/integration/test_postgres_memory_integration.py \
+  tests/integration/test_postgres_recovery_integration.py
 LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/test_polaris_cli_integration.py
 ```
 
@@ -31,6 +35,8 @@ loro providers list
 loro providers smoke "hello" --provider mock --execute --stream
 loro memory schema --backend postgres
 loro memory schema --backend iceberg
+loro memory migrate --target 2
+loro operations recovery-targets
 loro data polaris catalogs list
 loro mcp doctor
 loro mcp server-inspect
@@ -81,6 +87,10 @@ Release `0.5.0` adds versioned control contracts, durable single-host approval s
 audit/evidence inventories, poisoned-memory labeling, and artifact-bound release evidence. See
 [Loro 0.5.0](releases/0.5.0.md).
 
+Release `0.6.0` adds versioned Postgres memory migrations, idempotent operation IDs,
+reconciliation, a pinned Polaris/Iceberg/DuckDB matrix, authenticated audit collection,
+content-free metrics, and executable backup/restore drills. See [Loro 0.6.0](releases/0.6.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
@@ -108,9 +118,9 @@ python -m twine check dist/*
 Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement, builds
 distributions in protected CI, smoke-tests the wheel and bundled Agent Skill, generates SHA-256
 checksums, creates GitHub/Sigstore build-provenance attestations, and retains the artifact bundle.
-The bundle also contains the machine-readable support matrix, CycloneDX release SBOM, and a
-release manifest binding the commit, workflow run, artifact digests, evidence documents, and
-known limitations.
+The bundle also contains the machine-readable product and data support matrices, CycloneDX
+release SBOM, and a release manifest binding the commit, workflow run, artifact digests,
+evidence documents, and known limitations.
 Verify an attested artifact with:
 
 ```bash

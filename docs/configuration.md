@@ -173,6 +173,8 @@ include_prompt_preview = true
 failure_mode = "warn"
 buffer_path = ".loro/audit-buffer.jsonl"
 max_buffer_events = 1000
+metrics_enabled = true
+metrics_path = "/var/lib/loro/operational-metrics.json"
 max_retries = 2
 backoff_seconds = 0.25
 timeout_seconds = 10
@@ -446,6 +448,8 @@ limits. See [Model Context Protocol](mcp.md) for the Tasks configuration and com
 ```bash
 export LORO_POSTGRES_DSN="postgresql://user:pass@host:5432/loro"
 loro memory backend-check
+loro memory migration-status
+loro memory reconcile
 ```
 
 The command validates local client readiness only. It does not create tables or commit

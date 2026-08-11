@@ -28,10 +28,11 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Loro 0.5.0 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
-profiles. Corporate identity verification, a production audit destination, and supported-platform
-sandbox evidence are deployment responsibilities; a pilot must not claim those controls until its
-evidence items are closed.
+Loro 0.6.0 provides typed identity context, versioned Postgres memory migrations and
+reconciliation, authenticated audit collection, content-free metrics, and executable recovery
+checks. Corporate identity verification, a production immutable audit destination, and
+supported-platform sandbox evidence are deployment responsibilities; a pilot must not claim
+those controls until its evidence items are closed.
 
 ## Deployment Matrix
 
@@ -43,14 +44,14 @@ evidence items are closed.
 | Model access | Internal OpenAI-compatible gateway preferred; otherwise explicitly approved direct provider | Provider unit and controlled live smoke tests | Record class ceiling, residency, retention, TLS/proxy, budgets, and fallback policy. |
 | Configuration | `/etc/loro/managed.toml` or `LORO_MANAGED_CONFIG`; managed values load last | Unit tests cover precedence | Protect distribution and integrity; validate version and fail closed when required. |
 | Identity | Typed context propagated to runtime, approvals, memory, sessions, and audit | Context foundation implemented | Integrate and verify a corporate assertion source before pilot attribution is trusted. |
-| Shared memory | Managed Postgres | Opt-in Testcontainers integration | Pin supported Postgres version; require TLS, least privilege, backup/restore, tenant tests, and retention. |
+| Shared memory | Managed Postgres 16 | Ephemeral lifecycle, migration, reconciliation, forced-RLS, and recovery CI | Require TLS, least privilege, managed backup/restore, tenant tests, and retention. |
 | Scale-out memory | Polaris-governed Iceberg REST catalog | PyIceberg adapter plus service/dry-run quickstart | Not in first production pilot until full read/write, isolation, lifecycle, and recovery tests pass. |
 | Governed data | Polaris CLI typed read-only discovery; Iceberg REST for approved memory access | Unit tests and opt-in Polaris smoke | Pin Polaris CLI/server versions, authenticate as the user/workload, scope catalogs/resources, and prove denial behavior. |
 | Audit | Schema `1.0`; JSONL development sink; bearer-authenticated HTTP sink with retry, bounded buffering, doctor/flush | Unit and failure-injection tests | Deploy and load-test the collector; add destination immutability/tamper evidence, retention, alerting, and stronger authentication as required before pilot. |
 | Isolation | Tool policy and workspace boundaries | Unit tests | Named enforceable sandbox profile, environment allowlist, network rules, time/output limits before broader pilot. |
 
-Version numbers for Postgres, Polaris, object storage, and the model gateway remain deployment
-decisions. The deployment owner must pin and test them in version-controlled infrastructure;
+The repository reference stack is pinned in [data-support-matrix.json](data-support-matrix.json).
+Deployment owners may select other versions only after recording compatibility evidence;
 "latest" images or clients are not an acceptable pilot baseline.
 
 ## Required Components And Responsibilities

@@ -660,6 +660,8 @@ class AuditConfig(BaseModel):
     max_retries: int = Field(default=2, ge=0, le=10)
     backoff_seconds: float = Field(default=0.25, ge=0, le=60)
     timeout_seconds: float = Field(default=10, gt=0, le=300)
+    metrics_enabled: bool = False
+    metrics_path: str = "~/.local/state/loro/operational-metrics.json"
 
 
 class SessionConfig(BaseModel):

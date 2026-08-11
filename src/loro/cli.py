@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import shutil
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -21,6 +22,13 @@ from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.audit.collector import (
+    AuditCollector,
+    AuditCollectorError,
+    serve_audit_collector,
+    token_from_environment,
+)
+from loro.audit.metrics import OperationalMetrics
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
@@ -72,7 +80,12 @@ from loro.mcp.extensions import TASKS_EXTENSION_ID
 from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.base import SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
+from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
+from loro.memory.migrations import (
+    LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    postgres_memory_migrations,
+)
 from loro.memory.operations import (
     apply_shared_memory_lifecycle,
     check_shared_memory_backend,
@@ -92,6 +105,13 @@ from loro.providers import (
     model_config_from_profile,
     provider_names,
     write_local_model_config,
+)
+from loro.recovery import (
+    DEFAULT_RPO_SECONDS,
+    DEFAULT_RTO_SECONDS,
+    create_postgres_backup,
+    restore_postgres_backup,
+    verify_postgres_backup,
 )
 from loro.resources import (
     NormalizedResource,
@@ -145,6 +165,7 @@ mcp_app = typer.Typer(help="Configure and use Model Context Protocol servers.")
 skills_app = typer.Typer(help="Discover and govern portable Agent Skills packages.")
 sandbox_app = typer.Typer(help="Inspect subprocess isolation profiles.")
 config_app = typer.Typer(help="Show and lint resolved configuration.")
+operations_app = typer.Typer(help="Run data protection, backup, and recovery operations.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -170,6 +191,7 @@ setup_app.command("gateway")(gateway_setup)
 app.add_typer(graph_app, name="graph")
 app.add_typer(config_app, name="config")
 app.add_typer(approvals_app, name="approvals")
+app.add_typer(operations_app, name="operations")
 app.command("doctor")(ops_doctor)
 config_app.command("check")(ops_config_check)
 audit_app.command("query")(ops_audit_query)
@@ -1561,6 +1583,13 @@ def setup_audit(
     timeout_seconds: Annotated[
         float | None, typer.Option("--timeout-seconds", help="HTTP request timeout.")
     ] = None,
+    metrics_enabled: Annotated[
+        bool | None,
+        typer.Option("--metrics/--no-metrics", help="Enable content-free operational metrics."),
+    ] = None,
+    metrics_path: Annotated[
+        str | None, typer.Option("--metrics-path", help="Operational metrics state path.")
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1578,6 +1607,8 @@ def setup_audit(
         max_retries,
         backoff_seconds,
         timeout_seconds,
+        metrics_enabled,
+        metrics_path,
     ]
     wizard = all(value is None for value in values)
     config = load_config()
@@ -1607,6 +1638,14 @@ def setup_audit(
             )
             timeout_seconds = typer.prompt(
                 "HTTP timeout (seconds)", default=audit.timeout_seconds, type=float
+            )
+        metrics_enabled = typer.confirm(
+            "Enable content-free operational metrics?",
+            default=audit.metrics_enabled,
+        )
+        if metrics_enabled:
+            metrics_path = typer.prompt(
+                "Operational metrics state path", default=audit.metrics_path
             )
     if sink is not None:
         normalized_sink = sink.strip().casefold()
@@ -1642,6 +1681,10 @@ def setup_audit(
         if not 0 < timeout_seconds <= 300:
             raise typer.BadParameter("HTTP timeout must be between 0 and 300 seconds.")
         audit.timeout_seconds = timeout_seconds
+    if metrics_enabled is not None:
+        audit.metrics_enabled = metrics_enabled
+    if metrics_path is not None:
+        audit.metrics_path = metrics_path
     if audit.sink == "http" and not audit.http_url:
         raise typer.BadParameter("HTTP audit sink requires --http-url.")
     written = write_config_sections(output, config, ["audit"])
@@ -1864,6 +1907,183 @@ def audit_verify(
     result = verify_jsonl_audit(config.path, expected_final_hash=anchor)
     console.print_json(data=result.__dict__)
     raise typer.Exit(code=0 if result.ok else 1)
+
+
+@audit_app.command("metrics")
+def audit_metrics() -> None:
+    """Render content-free operational metrics in Prometheus text format."""
+    config = load_config().audit
+    if not config.metrics_enabled:
+        raise typer.BadParameter("Operational metrics are disabled in audit configuration.")
+    try:
+        console.print(OperationalMetrics(config.metrics_path).prometheus(), end="")
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@audit_app.command("collect")
+def audit_collect(
+    path: Annotated[
+        Path,
+        typer.Option("--path", help="SQLite collector database path."),
+    ] = Path("~/.local/state/loro/audit-collector.sqlite3"),
+    token_env: Annotated[
+        str,
+        typer.Option("--token-env", help="Environment variable containing the bearer token."),
+    ] = "LORO_AUDIT_COLLECTOR_TOKEN",
+    host: Annotated[str, typer.Option("--host", help="Collector bind host.")] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", min=1, max=65535, help="Collector bind port."),
+    ] = 8788,
+    max_body_bytes: Annotated[
+        int,
+        typer.Option("--max-body-bytes", min=1024, help="Maximum accepted request body."),
+    ] = 5_000_000,
+) -> None:
+    """Run the reference authenticated, deduplicating audit collector."""
+    try:
+        collector = AuditCollector(
+            path,
+            token_from_environment(token_env),
+            max_body_bytes=max_body_bytes,
+        )
+    except (AuditCollectorError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print(f"Audit collector listening on http://{host}:{port}")
+    serve_audit_collector(collector, host=host, port=port)
+
+
+@audit_app.command("collector-verify")
+def audit_collector_verify(
+    path: Annotated[
+        Path,
+        typer.Option("--path", help="SQLite collector database path."),
+    ] = Path("~/.local/state/loro/audit-collector.sqlite3"),
+) -> None:
+    """Verify the reference collector's durable hash chain."""
+    expanded = path.expanduser()
+    if not expanded.exists():
+        raise typer.BadParameter(f"Audit collector database does not exist: {expanded}")
+    try:
+        result = AuditCollector(expanded, "verification-only").verify()
+    except (AuditCollectorError, ValueError, OSError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=result.__dict__)
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@operations_app.command("recovery-targets")
+def operations_recovery_targets() -> None:
+    """Show the declared reference-deployment recovery objectives."""
+    console.print_json(
+        data={
+            "rpo_seconds": DEFAULT_RPO_SECONDS,
+            "rto_seconds": DEFAULT_RTO_SECONDS,
+            "scope": "Postgres shared-memory state and lifecycle events",
+        }
+    )
+
+
+@operations_app.command("backup")
+def operations_backup(
+    output: Annotated[Path, typer.Option("--output", "-o", help="Backup output path")],
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Run pg_dump. Without this flag, show the plan."),
+    ] = False,
+) -> None:
+    """Create a checksummed Postgres shared-memory backup and manifest."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reference backup currently supports Postgres memory only.")
+    if not execute:
+        console.print_json(
+            data={
+                "execute": False,
+                "backend": "postgres",
+                "schema": config.memory.shared.postgres_schema,
+                "output": str(output.expanduser()),
+                "rpo_seconds": DEFAULT_RPO_SECONDS,
+                "rto_seconds": DEFAULT_RTO_SECONDS,
+            }
+        )
+        return
+    try:
+        backup = create_postgres_backup(config.memory.shared, output)
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("memory.backup_created", backend="postgres", target=str(backup))
+    console.print(f"Created backup and manifest: {backup}")
+
+
+@operations_app.command("verify-backup")
+def operations_verify_backup(
+    backup: Annotated[Path, typer.Argument(help="Postgres custom-format backup path.")],
+) -> None:
+    """Verify a backup checksum, manifest, and pg_restore catalog."""
+    result = verify_postgres_backup(backup)
+    console.print_json(data=result.__dict__)
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@operations_app.command("restore")
+def operations_restore(
+    backup: Annotated[Path, typer.Argument(help="Postgres custom-format backup path.")],
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Run pg_restore against the configured database."),
+    ] = False,
+    clean: Annotated[
+        bool,
+        typer.Option("--clean", help="Remove conflicting target objects before restore."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Authorize an executed restore and destructive clean."),
+    ] = False,
+) -> None:
+    """Restore a verified shared-memory backup with explicit authorization."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reference restore currently supports Postgres memory only.")
+    verification = verify_postgres_backup(backup)
+    if not verification.ok:
+        raise typer.BadParameter(verification.issue or "Backup verification failed.")
+    if not execute:
+        console.print_json(
+            data={
+                "execute": False,
+                "verified": True,
+                "backup": str(backup.expanduser()),
+                "clean": clean,
+                "target_env": config.memory.shared.postgres_dsn_env,
+            }
+        )
+        return
+    if not yes:
+        raise typer.BadParameter("Executed restore requires --yes explicit authorization.")
+    dsn = os.environ.get(config.memory.shared.postgres_dsn_env)
+    if not dsn:
+        raise typer.BadParameter(
+            f"Missing DSN env var: {config.memory.shared.postgres_dsn_env}"
+        )
+    try:
+        restore_postgres_backup(
+            backup,
+            dsn,
+            clean=clean,
+            allow_destructive=yes,
+        )
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.backup_restored",
+        backend="postgres",
+        target=config.memory.shared.postgres_schema,
+        clean=clean,
+    )
+    console.print("Restore completed. Run `loro memory reconcile` before returning to service.")
 
 
 @mcp_app.command("list")
@@ -2840,6 +3060,110 @@ def memory_apply_schema(
     console.print(shared_memory_schema(backend, config.memory.shared))
 
 
+@memory_app.command("migration-status")
+def memory_migration_status() -> None:
+    """Show the applied Postgres shared-memory schema version."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Migration status is available only for Postgres memory.")
+    store = PostgresSharedMemoryStore(config.memory.shared)
+    try:
+        current = store.schema_version()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(
+        data={
+            "backend": "postgres",
+            "current_version": current,
+            "latest_version": LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+            "up_to_date": current == LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+        }
+    )
+
+
+@memory_app.command("migrate")
+def memory_migrate(
+    target: Annotated[
+        int,
+        typer.Option("--target", min=0, help="Target Postgres memory schema version."),
+    ] = LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Apply the migration plan to the configured database."),
+    ] = False,
+    allow_destructive: Annotated[
+        bool,
+        typer.Option(
+            "--allow-destructive",
+            help="Authorize rollback below the durable baseline. This can delete memory data.",
+        ),
+    ] = False,
+) -> None:
+    """Render or apply versioned Postgres shared-memory migrations."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Migrations are available only for Postgres memory.")
+    if target > LATEST_POSTGRES_MEMORY_SCHEMA_VERSION:
+        raise typer.BadParameter(
+            f"Latest supported schema is version {LATEST_POSTGRES_MEMORY_SCHEMA_VERSION}."
+        )
+    store = PostgresSharedMemoryStore(config.memory.shared)
+    if not execute:
+        migrations = postgres_memory_migrations(
+            config.memory.shared.postgres_schema,
+            tenant_isolation=config.memory.shared.tenant_isolation == "identity",
+        )
+        console.print(
+            f"Postgres memory migration plan to version {target} "
+            "(render only; pass --execute to apply):"
+        )
+        for migration in migrations:
+            if migration.version <= target:
+                console.print(f"\n-- {migration.version}: {migration.name}\n{migration.up}")
+        return
+    try:
+        result = store.migrate(target_version=target, allow_destructive=allow_destructive)
+    except (RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.schema_migrated",
+        backend="postgres",
+        previous_version=result.previous_version,
+        current_version=result.current_version,
+        applied=list(result.applied),
+        rolled_back=list(result.rolled_back),
+    )
+    console.print_json(data=jsonable_mapping(result.__dict__))
+
+
+@memory_app.command("reconcile")
+def memory_reconcile() -> None:
+    """Compare Postgres memory state rows with append-only lifecycle events."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reconciliation is available only for Postgres memory.")
+    identity = resolve_identity(config.identity)
+    store = PostgresSharedMemoryStore(
+        config.memory.shared,
+        authorized_tenant_id=(
+            identity.tenant if config.memory.shared.tenant_isolation == "identity" else None
+        ),
+    )
+    try:
+        report = store.reconcile()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.reconciled",
+        backend="postgres",
+        tenant=identity.tenant,
+        ok=report.ok,
+        issues=list(report.issues),
+    )
+    console.print_json(data=jsonable_mapping(report.__dict__ | {"ok": report.ok}))
+    raise typer.Exit(code=0 if report.ok else 1)
+
+
 @memory_app.command("backend-check")
 def memory_backend_check() -> None:
     """Check whether the configured shared memory backend is ready."""
@@ -2847,6 +3171,32 @@ def memory_backend_check() -> None:
     check = check_shared_memory_backend(config.memory.shared)
     console.print_json(data=check.__dict__)
     raise typer.Exit(code=0 if check.ok else 1)
+
+
+@memory_app.command("snapshots")
+def memory_snapshots() -> None:
+    """Show content-free Iceberg memory and event snapshot state."""
+    config = load_config()
+    if config.memory.shared.backend != "iceberg":
+        raise typer.BadParameter("Snapshot diagnostics are available only for Iceberg memory.")
+    identity = resolve_identity(config.identity)
+    store = IcebergSharedMemoryStore(
+        config.memory.shared,
+        authorized_tenant_id=(
+            identity.tenant if config.memory.shared.tenant_isolation == "identity" else None
+        ),
+    )
+    try:
+        report = store.snapshot_report()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    payload = {
+        "memory": report.memory.__dict__,
+        "events": report.events.__dict__,
+        "aligned": report.aligned,
+    }
+    _audit().write("memory.iceberg_snapshots_inspected", **payload)
+    console.print_json(data=jsonable_mapping(payload))
 
 
 @memory_app.command("commit-draft")

@@ -1,0 +1,27 @@
+services:
+  audit-collector:
+    build:
+      context: ../..
+      dockerfile: deploy/audit-collector/Dockerfile
+    environment:
+      LORO_AUDIT_COLLECTOR_TOKEN: ${LORO_AUDIT_COLLECTOR_TOKEN:?set collector token}
+    ports:
+      - "127.0.0.1:8788:8788"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - audit-data:/var/lib/loro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8788/health').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  audit-data:

@@ -31,6 +31,9 @@ def main() -> int:
     support_matrix = json.loads(
         (ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8")
     )
+    data_support_matrix = json.loads(
+        (ROOT / "docs" / "data-support-matrix.json").read_text(encoding="utf-8")
+    )
     commit = args.commit or subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
@@ -48,6 +51,7 @@ def main() -> int:
         "workflow_run": args.workflow_run or os.environ.get("GITHUB_RUN_ID"),
         "artifacts": artifacts,
         "support_matrix": support_matrix,
+        "data_support_matrix": data_support_matrix,
         "evidence": {
             "enterprise_register": "docs/enterprise-evidence.md",
             "external_requirements": "docs/external-enterprise-requirements.md",

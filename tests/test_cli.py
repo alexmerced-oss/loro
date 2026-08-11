@@ -607,6 +607,34 @@ def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
     assert "FROM public.shared_memories" in result.stdout
 
 
+def test_memory_migrate_renders_versioned_plan(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    result = CliRunner().invoke(app, ["memory", "migrate", "--target", "2"])
+
+    assert result.exit_code == 0
+    assert "1: shared_memory_baseline" in result.stdout
+    assert "2: idempotent_operation_ids" in result.stdout
+    assert "render only" in result.stdout
+
+
+def test_operations_backup_is_dry_run_without_execute(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    result = CliRunner().invoke(
+        app,
+        ["operations", "backup", "--output", str(tmp_path / "memory.dump")],
+    )
+
+    assert result.exit_code == 0
+    assert '"execute": false' in result.stdout
+    assert '"rpo_seconds": 300' in result.stdout
+
+
 def test_shared_memory_lifecycle_accepts_release_hold_alias(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",

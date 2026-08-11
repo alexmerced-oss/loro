@@ -28,7 +28,7 @@ The main GitHub Actions workflow runs on pushes and pull requests to `main`:
 - `python -m pytest --cov --cov-report=term-missing --cov-report=xml`
 - `python -m compileall src tests`
 
-The `Integration` workflow runs Postgres and the pinned Polaris `1.5.0` quickstart weekly and can
+The `Integration` workflow runs Postgres and the pinned Polaris `1.6.0` quickstart weekly and can
 also be dispatched manually. The credentialed Polaris CLI job remains manual for a preconfigured
 protected runner.
 
@@ -48,8 +48,8 @@ LORO_INTEGRATION_POSTGRES=1 python -m pytest -m integration tests/integration
 
 These tests require Docker or a Docker-compatible runtime. They create a temporary
 Postgres container, apply the shared-memory schema through `PostgresSharedMemoryStore`,
-commit a real shared-memory draft,
-verify rows, and tear the container down.
+commit a real shared-memory draft, verify lifecycle idempotency and forced RLS, run migration
+rollback/forward and reconciliation checks, exercise backup/restore, and tear the containers down.
 
 Run normal tests without integrations:
 
@@ -63,7 +63,7 @@ Current high-value gaps that need external services or workflow infrastructure:
 - Bedrock requests with real AWS credentials.
 - Production-gateway MCP authorization and hostile remote-server testing.
 - Corporate secret-baseline adjudication and risk acceptance.
-- Production audit collector load/outage evidence and externally retained hash anchors.
+- Production audit collector load evidence, immutable retention, and externally retained hash anchors.
 
 ## Agentic Graph Tests
 
