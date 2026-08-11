@@ -14,6 +14,7 @@ from loro.memory.local import LocalMemoryStore
 from loro.memory.migrations import (
     LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
     postgres_memory_migrations,
+    record_migration_sql,
 )
 from loro.memory.operations import (
     apply_shared_memory_lifecycle,
@@ -53,6 +54,7 @@ def test_postgres_memory_migrations_are_versioned_and_reversible() -> None:
     assert "FORCE ROW LEVEL SECURITY" in migrations[0].up
     assert migrations[0].rollback == "destructive"
     assert "DROP COLUMN IF EXISTS operation_id" in migrations[1].down
+    assert all("#" not in record_migration_sql("enterprise", item) for item in migrations)
 
 
 def test_shared_memory_schema_iceberg_uses_config() -> None:

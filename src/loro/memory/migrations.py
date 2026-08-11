@@ -147,7 +147,7 @@ def record_migration_sql(schema: str, migration: PostgresMemoryMigration) -> str
 
 def _record_migration_sql(schema: str, version: int, name: str, checksum: str) -> str:
     # Schema is identifier-validated; migration metadata is defined in this module.
-    return f"""  # nosec B608
+    return f"""
 INSERT INTO {migration_table(schema)} (version, name, checksum)
 VALUES ({version}, '{name}', '{checksum}')
 ON CONFLICT (version) DO UPDATE
