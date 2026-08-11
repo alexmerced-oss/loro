@@ -1,6 +1,6 @@
 # Security Policy
 
-Loro is pre-1.0 release-candidate software and has not completed an independent penetration test or enterprise
+Loro is pre-1.0 stabilization software and has not completed an independent penetration test or enterprise
 certification. Report suspected vulnerabilities privately through the repository's GitHub
 Security Advisories. Include affected versions, reproduction steps, impact, and a minimal safe
 proof of concept. Do not place credentials or customer data in a report.

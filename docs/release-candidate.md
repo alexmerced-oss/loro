@@ -1,6 +1,10 @@
-# Release Candidate Operations
+# 0.9 Release Candidate Operations (Historical)
 
-Loro `0.9` freezes the candidate contract in `release-contract.json`. After the release commit,
+This document records the operating policy used for the Loro `0.9` release-candidate line. The
+current status and remaining promotion gates are maintained in [Project Status](project-status.md)
+and the [Roadmap To 1.0](roadmap-1.0.md).
+
+Loro `0.9` froze the candidate contract in `release-contract.json`. After the release commit,
 only release-blocking correctness or security fixes, dependency/security updates, documentation
 corrections, and evidence work are permitted. Any CLI, schema, protocol, matrix, or deployment
 change requires explicit review and regeneration of the contract.

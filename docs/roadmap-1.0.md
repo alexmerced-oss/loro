@@ -13,9 +13,9 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.10.0` is the 1.0 stabilization baseline. In addition to the agent, memory, governance,
-provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark, and release controls
-delivered through `0.8`, the repository now provides:
+Loro `0.10.0`, released August 11, 2026, is the 1.0 stabilization baseline. In addition to the
+agent, memory, governance, provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark,
+and release controls delivered through `0.8`, the repository now provides:
 
 - a frozen machine-readable snapshot of the CLI, schemas, protocols, support classifications,
   matrices, managed policy, compose stack, and reference deployment;
@@ -77,7 +77,7 @@ available for evaluation.
 | --- | --- | --- |
 | `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
 | `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
-| `0.10` | Stabilization | Repository hardening, release signing, and the deliberately small stable core are frozen. |
+| `0.10` | Released | Repository hardening, release signing, and the deliberately small stable core are frozen. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 1.0: General Availability

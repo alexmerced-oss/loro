@@ -1,10 +1,12 @@
 # Loro Docs
 
-This folder contains working documentation for Loro's MVP and near-term enterprise architecture.
+This folder contains the maintained documentation for Loro's released stabilization baseline and
+path to 1.0. Historical release documents are labeled as such.
 
 ## Contents
 
 - [Getting Started](getting-started.md)
+- [Project Status](project-status.md)
 - [CLI Guide](cli.md)
 - [Configuration](configuration.md)
 - [Compatibility And Deprecation](compatibility.md)
@@ -39,7 +41,7 @@ This folder contains working documentation for Loro's MVP and near-term enterpri
 - [Security And Privacy Review Guide](security-privacy-review.md)
 - [Restricted Beta Charter](pilot-charter.md)
 - [Stabilization Support Policy](support-policy.md)
-- [Release Candidate Operations](release-candidate.md)
+- [0.9 Release Candidate Operations (Historical)](release-candidate.md)
 - [Independent Assurance Playbook](assurance-playbook.md)
 - [Consumer Release Verification](consumer-verification.md)
 - [Release Signing And Verification](release-signing.md)

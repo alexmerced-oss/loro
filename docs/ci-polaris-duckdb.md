@@ -2,7 +2,7 @@
 
 Loro can run a containerized Polaris test environment in GitHub Actions through the manual
 `Integration` workflow. This is intentionally opt-in because the stack starts containers,
-downloads the current Apache Polaris quickstart compose file, and may take longer than the
+downloads the pinned Apache Polaris quickstart compose file, and may take longer than the
 default unit-test workflow.
 
 ## Workflow Trigger

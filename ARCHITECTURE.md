@@ -1,5 +1,9 @@
 # Loro Architecture
 
+> Architecture baseline: Loro `0.10.0`. This document describes implemented components and their
+> intended boundaries; the [Project Status](docs/project-status.md) and machine-readable
+> [support matrix](docs/support-matrix.json) determine which components are stable or experimental.
+
 Loro is a Python CLI agent harness for enterprise coding, governed data access, and productivity artifact generation. Its architecture is intentionally layered so the terminal UX, runtime loop, tools, memory, governance integrations, and artifacts can evolve independently.
 
 ## System Context

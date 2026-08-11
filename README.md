@@ -4,6 +4,11 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
+Loro `0.10.0` is a released pre-1.0 stabilization baseline. Its deliberately limited stable core
+is release-quality for controlled evaluation; experimental integrations and adopting-organization
+evidence remain outside the stable promise. See [Project Status](docs/project-status.md) for the
+precise boundary and remaining 1.0 gates.
+
 ## Install
 
 ```bash
@@ -313,6 +318,7 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [Project Status](docs/project-status.md)
 - [CLI Guide](docs/cli.md)
 - [Configuration](docs/configuration.md)
 - [Identity Context](docs/identity.md)
@@ -330,8 +336,8 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Cross-Session Messaging](docs/session-messaging.md)
 - [Enterprise Beta Guide](docs/enterprise-beta.md)
 - [Enterprise Operator Runbook](docs/operator-runbook.md)
-- [Release Candidate Support Policy](docs/support-policy.md)
-- [Release Candidate Operations](docs/release-candidate.md)
+- [Stabilization Support Policy](docs/support-policy.md)
+- [0.9 Release Candidate Operations (Historical)](docs/release-candidate.md)
 - [Independent Assurance Playbook](docs/assurance-playbook.md)
 - [Consumer Release Verification](docs/consumer-verification.md)
 - [Frozen Release Contract](docs/release-contract.json)
