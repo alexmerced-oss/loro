@@ -149,7 +149,14 @@ def restore_postgres_backup(
         raise RuntimeError(verification.issue or "Backup verification failed.")
     if clean and not allow_destructive:
         raise RuntimeError("A clean restore requires explicit destructive authorization.")
-    command = [_executable(pg_restore), "--no-owner", "--no-privileges"]
+    database_name = _postgres_environment(dsn)["PGDATABASE"]
+    command = [
+        _executable(pg_restore),
+        "--no-owner",
+        "--no-privileges",
+        "--dbname",
+        database_name,
+    ]
     if clean:
         command.extend(["--clean", "--if-exists"])
     command.append(str(Path(backup).expanduser()))

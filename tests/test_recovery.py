@@ -44,7 +44,17 @@ target = next(item.split('=', 1)[1] for item in sys.argv if item.startswith('--f
 pathlib.Path(target).write_bytes(b'loro-postgres-backup')
 """,
     )
-    _executable(bin_path / "pg_restore", "import sys; raise SystemExit(0)\n")
+    _executable(
+        bin_path / "pg_restore",
+        """
+import os, sys
+if '--list' not in sys.argv:
+    assert sys.argv[sys.argv.index('--dbname') + 1] == 'restored'
+    assert os.environ['PGHOST'] == 'example.invalid'
+    assert not any('postgresql://' in argument for argument in sys.argv)
+raise SystemExit(0)
+""",
+    )
     monkeypatch.setenv("PATH", f"{bin_path}:{os.environ.get('PATH', '')}")
     backup = tmp_path / "memory.dump"
 
