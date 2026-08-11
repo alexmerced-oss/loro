@@ -57,6 +57,8 @@ jobs:
           /tmp/loro-release-smoke/bin/loro operations recovery-targets
           /tmp/loro-release-smoke/bin/loro operations benchmark \
             --iterations 5 --warmup 1 --strict --output dist/release-benchmark.json
+          /tmp/loro-release-smoke/bin/loro operations release-readiness \
+            --output dist/release-readiness.json
           /tmp/loro-release-smoke/bin/loro memory migrate --help
           /tmp/loro-release-smoke/bin/loro memory reconcile --help
           /tmp/loro-release-smoke/bin/loro memory sweep --help
@@ -86,10 +88,12 @@ jobs:
           cp docs/data-support-matrix.json dist/data-support-matrix.json
           cp docs/interoperability-matrix.json dist/interoperability-matrix.json
           cp deploy/reference/manifest.json dist/reference-deployment-manifest.json
+          cp docs/release-contract.json dist/release-contract.json
           python scripts/generate_release_manifest.py \
             --dist dist --commit "${GITHUB_SHA}" --workflow-run "${GITHUB_RUN_ID}"
           cd dist
-          sha256sum loro_agent-* release-benchmark.json \
+          sha256sum loro_agent-* release-benchmark.json release-readiness.json \
+            release-contract.json \
             reference-deployment-manifest.json release-sbom.cdx.json support-matrix.json \
             data-support-matrix.json \
             interoperability-matrix.json \

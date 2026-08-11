@@ -96,6 +96,31 @@ def test_required_identity_fields_fail_closed() -> None:
         resolve_identity(config, environ={})
 
 
+def test_required_identity_fields_are_not_satisfied_by_local_fallbacks() -> None:
+    config = IdentityConfig(required_fields=["subject", "tenant", "auth_method", "source"])
+
+    diagnostic = diagnose_identity(config, environ={})
+
+    assert diagnostic.ok is False
+    assert diagnostic.missing_fields == ("subject", "tenant", "auth_method", "source")
+
+
+def test_required_identity_fields_accept_explicit_managed_assertions() -> None:
+    config = IdentityConfig(required_fields=["subject", "tenant", "auth_method", "source"])
+
+    diagnostic = diagnose_identity(
+        config,
+        environ={
+            "LORO_IDENTITY_SUBJECT": "user-123",
+            "LORO_IDENTITY_TENANT": "acme",
+            "LORO_IDENTITY_AUTH_METHOD": "oidc",
+            "LORO_IDENTITY_SOURCE": "managed-launcher",
+        },
+    )
+
+    assert diagnostic.ok is True
+
+
 def test_prompt_like_environment_value_has_no_special_authority() -> None:
     identity = build_identity_context(
         IdentityConfig(subject="configured-user"),

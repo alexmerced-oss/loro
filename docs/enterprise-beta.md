@@ -1,9 +1,10 @@
 # Enterprise Beta Guide
 
-Loro `0.8` is a restricted enterprise beta. The supported reference shape is a managed Linux
-endpoint, Python 3.11-3.14, an explicitly approved model route, Postgres shared memory, and the
-authenticated audit collector. Iceberg memory, Polaris, MCP, graphs, and remote gateways retain
-the stability labels in the machine-readable support matrix.
+Loro `0.9` carries the restricted enterprise beta deployment into its release-candidate line. The
+supported reference shape is a managed Linux endpoint, Python 3.11-3.14, an explicitly approved
+model route, Postgres shared memory, and the authenticated audit collector. Iceberg memory,
+Polaris, MCP, graphs, and remote gateways retain the stability labels in the machine-readable
+support matrix.
 
 ## Administrator Checklist
 
@@ -43,7 +44,7 @@ publish an organization-specific lock file or trust root.
 ## Upgrade And Rollback
 
 Before upgrading, stop new gateway work, drain or record audit backlog, record the active config
-digest, back up Postgres shared memory, and verify the backup. Install `0.8` in a new virtual
+digest, back up Postgres shared memory, and verify the backup. Install `0.9` in a new virtual
 environment, run configuration checks and migrations, then exercise a synthetic read, explicit
 shared-memory write, audit delivery, and rollback test before admitting users.
 

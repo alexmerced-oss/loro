@@ -21,7 +21,7 @@ store = "json"
 store_path = "/var/lib/loro/approvals.json"
 
 [permissions]
-version = "enterprise-beta-v1"
+version = "release-candidate-v1"
 default = "deny"
 shell = "ask"
 edit = "ask"

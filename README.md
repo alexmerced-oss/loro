@@ -329,7 +329,11 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Cross-Session Messaging](docs/session-messaging.md)
 - [Enterprise Beta Guide](docs/enterprise-beta.md)
 - [Enterprise Operator Runbook](docs/operator-runbook.md)
-- [Beta Support Policy](docs/support-policy.md)
+- [Release Candidate Support Policy](docs/support-policy.md)
+- [Release Candidate Operations](docs/release-candidate.md)
+- [Independent Assurance Playbook](docs/assurance-playbook.md)
+- [Consumer Release Verification](docs/consumer-verification.md)
+- [Frozen Release Contract](docs/release-contract.json)
 - [Roadmap To Loro 1.0](docs/roadmap-1.0.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)
 
@@ -340,6 +344,7 @@ the organization-owned controls, then capture a content-free local baseline:
 loro config check --strict
 loro doctor
 loro operations benchmark --strict --output loro-benchmark.json
+loro operations release-readiness --output loro-readiness.json
 ```
 
 ## License

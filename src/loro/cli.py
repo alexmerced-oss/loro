@@ -119,6 +119,7 @@ from loro.recovery import (
     restore_postgres_backup,
     verify_postgres_backup,
 )
+from loro.release_readiness import assess_release_readiness
 from loro.resources import (
     NormalizedResource,
     filesystem_resource,
@@ -2004,15 +2005,44 @@ def operations_benchmark(
         int, typer.Option("--warmup", min=0, help="Unmeasured warmup iterations.")
     ] = 3,
     strict: Annotated[
-        bool, typer.Option("--strict", help="Exit non-zero when a beta target is missed.")
+        bool, typer.Option("--strict", help="Exit non-zero when a candidate target is missed.")
     ] = False,
 ) -> None:
-    """Record reproducible local enterprise-beta performance baselines."""
+    """Record reproducible local release-candidate performance baselines."""
     report = run_reference_benchmarks(iterations=iterations, warmup=warmup)
     destination = write_benchmark_report(report, output)
     console.print_json(data=report.to_payload())
     console.print(f"Wrote benchmark evidence: {destination}")
     if strict and not report.passed:
+        raise typer.Exit(code=1)
+
+
+@operations_app.command("release-readiness")
+def operations_release_readiness(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write the content-free JSON report to this path."),
+    ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Exit non-zero on warnings as well as failed checks."),
+    ] = False,
+) -> None:
+    """Evaluate this installation against the frozen release-candidate contract."""
+    report = assess_release_readiness(load_config())
+    payload = report.to_payload()
+    console.print_json(data=payload)
+    if output is not None:
+        destination = output.expanduser()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        console.print(f"Wrote readiness evidence: {destination}")
+    blocked = not report.ready or (
+        strict and any(check.status == "warn" for check in report.checks)
+    )
+    if blocked:
         raise typer.Exit(code=1)
 
 

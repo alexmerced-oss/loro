@@ -48,6 +48,20 @@ loro operations benchmark --iterations 50 --warmup 5 --strict --output loro-benc
 This baseline intentionally excludes live-provider latency, database recovery, gateway load, and
 production RPO/RTO. Those measurements belong to the controlled deployment evidence record.
 
+## Release Contract And Readiness
+
+The release-candidate contract freezes the command map, schema and protocol versions, support
+classifications, and matrix/deployment digests:
+
+```bash
+PYTHONPATH=src python scripts/generate_release_contract.py --check
+loro operations release-readiness --output loro-readiness.json
+loro operations release-readiness --strict
+```
+
+Normal readiness exits nonzero on failed checks. Strict readiness also blocks warnings. External
+gates are always reported separately and cannot be closed by the local command.
+
 ## Integration Tests
 
 Postgres integration tests use an ephemeral local container through Testcontainers:

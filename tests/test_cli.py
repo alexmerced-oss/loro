@@ -4,6 +4,7 @@ import tomllib
 from typer.testing import CliRunner
 
 from loro.cli import app
+from loro.memory.base import SharedMemoryBackendCheck
 from loro.sandbox import SandboxResult
 
 
@@ -528,6 +529,17 @@ def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
 
 
 def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "loro.memory.iceberg.IcebergSharedMemoryStore.check",
+        lambda self: SharedMemoryBackendCheck(
+            backend="iceberg",
+            ok=False,
+            messages=[
+                f"Iceberg memory table: {self.memory_table}",
+                "pyiceberg is not installed. Install the data extra.",
+            ],
+        ),
+    )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         '[memory.shared]\nbackend = "iceberg"\niceberg_table = "agent_facts"\n',
@@ -581,6 +593,13 @@ def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
     tmp_path,
     monkeypatch,
 ) -> None:
+    def missing_catalog(_self):
+        raise RuntimeError("pyiceberg is required for Iceberg shared memory access.")
+
+    monkeypatch.setattr(
+        "loro.memory.iceberg.IcebergSharedMemoryStore._load_catalog",
+        missing_catalog,
+    )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         f'[memory.local]\npath = "{tmp_path / "memory"}"\n'

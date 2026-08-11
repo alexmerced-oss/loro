@@ -38,6 +38,7 @@ jobs:
           python scripts/check_data_support_matrix.py
           python scripts/check_interoperability_matrix.py
           python scripts/check_reference_deployment.py
+          python scripts/generate_release_contract.py --check
 
       - name: Test with coverage
         run: python -m pytest --cov --cov-report=term-missing --cov-report=xml

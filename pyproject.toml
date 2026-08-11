@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loro-agent"
-version = "0.8.0"
+version = "0.9.0"
 description = "Enterprise memory-sharing CLI agent harness for coding, governed data, and productivity work."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -94,6 +94,7 @@ packages = ["src/loro"]
 [tool.hatch.build.targets.wheel.force-include]
 "skills/agentic-graph" = "loro/bundled_skills/agentic-graph"
 "docs/interoperability-matrix.json" = "loro/contracts/interoperability-matrix.json"
+"docs/release-contract.json" = "loro/contracts/release-contract.json"
 "tests/fixtures/providers" = "loro/contracts/providers"
 
 [tool.hatch.build.targets.sdist]

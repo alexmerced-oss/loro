@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.8",
-  "stability": "enterprise-beta",
+  "release_line": "0.9",
+  "stability": "release-candidate",
   "operating_system": "ubuntu-24.04",
   "python": "3.12",
   "components": {

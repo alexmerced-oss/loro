@@ -101,10 +101,15 @@ Release `0.8.0` adds the versioned enterprise-beta reference bundle, content-fre
 role-based operational documentation, and beta support contract. See
 [Loro 0.8.0](releases/0.8.0.md).
 
+Release `0.9.0` freezes the machine-readable release contract, adds installed-environment
+readiness evidence, and publishes pilot/assurance/consumer-verification procedures. See
+[Loro 0.9.0](releases/0.9.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
 - Confirm `docs/roadmap-1.0.md` statuses and remaining gates are current.
+- Confirm `scripts/generate_release_contract.py --check` passes without unreviewed drift.
 - Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
 - Confirm the MCP support matrix matches green conformance workflow artifacts for the release

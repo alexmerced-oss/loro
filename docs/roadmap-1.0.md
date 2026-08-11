@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.8.0`. It covers the
-`0.9` release candidate and the first stable `1.0` release. Completed milestones belong in
-release notes; implementation proof belongs in the
+This is the single authoritative roadmap for work remaining after Loro `0.9.0`. It covers the
+first stable `1.0` release. Completed milestones belong in release notes; implementation proof
+belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
 
 No calendar date is promised. A milestone ships when its repository-owned work is complete and
@@ -13,19 +13,20 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.8.0` was released on August 11, 2026. In addition to the agent, memory, governance,
-provider, MCP, Skill, graph, gateway, artifact, and release controls delivered through `0.7`,
-the repository now provides:
+Loro `0.9.0` was released on August 11, 2026. In addition to the agent, memory, governance,
+provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark, and release controls
+delivered through `0.8`, the repository now provides:
 
-- a pinned machine-readable reference deployment and restrictive managed-policy example;
-- a synthetic Postgres and authenticated audit-collector compose stack;
-- a content-free local benchmark contract with scheduled and release-artifact evidence;
-- administrator, operator, security/privacy, pilot, support, upgrade, rollback, uninstall,
-  incident, and offboarding guidance;
-- automated checks keeping package, deployment, support, data, and interoperability versions and
-  safety invariants aligned.
+- a frozen machine-readable snapshot of the CLI, schemas, protocols, support classifications,
+  matrices, managed policy, compose stack, and reference deployment;
+- a content-free installed-environment readiness report with strict warning enforcement;
+- CI rejection of unreviewed candidate-contract drift;
+- pilot defect severity/disposition, independent assurance, consumer verification, support,
+  vulnerability, upgrade, rollback, incident, and offboarding procedures;
+- a truly fail-closed managed identity requirement that cannot be satisfied by local fallbacks.
 
-The [0.8 release notes](releases/0.8.0.md), [support matrix](support-matrix.json),
+The [0.9 release notes](releases/0.9.0.md), [release contract](release-contract.json),
+[support matrix](support-matrix.json),
 [interoperability matrix](interoperability-matrix.json), and
 [data support matrix](data-support-matrix.json) describe the exact shipped boundary.
 
@@ -70,58 +71,8 @@ proof remain experimental or are excluded rather than weakening the release gate
 | Release | Status | Outcome |
 | --- | --- | --- |
 | `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
-| `0.9` | Next | The stable boundary is frozen and exercised through a controlled pilot and independent assurance. |
-| `1.0` | Planned | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
-
-## 0.9: Release Candidate
-
-**Goal:** freeze the stable product boundary and collect the assurance required for general
-availability.
-
-### Batch 1: Feature And Compatibility Freeze
-
-- Freeze the supported CLI, configuration, records, schemas, providers, MCP revisions, Skill
-  subset, AGS behavior, gateways, Python versions, and deployment components.
-- Allow only release-blocking fixes, documentation corrections, dependency/security updates,
-  and evidence work after the freeze.
-- Publish complete compatibility, deprecation, upgrade, rollback, support, vulnerability, and
-  known-limitations policies.
-
-### Batch 2: Controlled Pilot
-
-- Complete the restricted pilot for the approved duration and load.
-- Triage every pilot defect and resolve or formally disposition all severity 1 and severity 2
-  findings.
-- Validate support intake, operator handoff, privacy behavior, tenant offboarding, and data
-  correction/deletion in the real pilot environment.
-- Confirm that content-free metrics answer the approved success measures without collecting
-  prompts, model responses, tool output, or memory content.
-
-### Batch 3: Independent Assurance
-
-- Complete independent penetration testing and resolve or formally accept every finding.
-- Conduct incident-response, credential-compromise, provider-outage, audit-outage, database
-  recovery, policy rollback, offboarding, and disaster-recovery exercises.
-- Obtain security, privacy, legal, data-governance, operations, product, and release review of the
-  final supported boundary.
-
-### Batch 4: Release Administration
-
-- Verify protected branches/tags, required reviews, ownership rules, trusted PyPI publishing,
-  artifact provenance, SBOM, checksums, attestations, and consumer-side verification.
-- Run the complete unit, branch, integration, conformance, adversarial, migration, load,
-  recovery, and clean-install matrix from protected systems.
-- Reproduce the release candidate from a clean checkout and verify public-install instructions in
-  an isolated environment.
-
-### 0.9 Exit Gate
-
-- No unresolved critical/high security finding or release-blocking correctness/data-loss defect.
-- Every stable matrix cell has green evidence; unsupported cells are removed or clearly marked.
-- Evidence `E4-02`, `E4-05` through `E4-10`, and `E5-01` through `E5-08` is complete, or an
-  external gate has a controlled reference and explicit approval.
-- Product, engineering, security, privacy, legal, data, operations, and release owners approve
-  the candidate for GA.
+| `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
+| `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 1.0: General Availability
 

@@ -1,6 +1,6 @@
-# Loro Enterprise-Beta Reference Bundle
+# Loro Release-Candidate Reference Bundle
 
-This bundle pins the repository-owned portion of Loro's `0.8` reference deployment. It is for
+This bundle pins the repository-owned portion of Loro's `0.9` reference deployment. It is for
 synthetic non-production validation. It does not provide corporate identity, TLS termination,
 immutable retention, production database controls, or provider governance.
 
@@ -13,7 +13,7 @@ immutable retention, production database controls, or provider governance.
 5. Pin and distribute `managed.toml` using `LORO_MANAGED_CONFIG` and its documented aggregate
    digest.
 6. Run `loro config check --strict`, `loro doctor`, the Postgres migrations, and
-   `loro operations benchmark --strict`.
+   `loro operations benchmark --strict` and `loro operations release-readiness`.
 
 Use the administrator and operator guides in `docs/` for rollout, evidence capture, rollback,
 and cleanup. Never use the compose credentials or data for production.

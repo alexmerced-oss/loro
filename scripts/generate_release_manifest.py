@@ -37,6 +37,9 @@ def main() -> int:
     interoperability_matrix = json.loads(
         (ROOT / "docs" / "interoperability-matrix.json").read_text(encoding="utf-8")
     )
+    release_contract = json.loads(
+        (ROOT / "docs" / "release-contract.json").read_text(encoding="utf-8")
+    )
     commit = args.commit or subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
@@ -56,10 +59,12 @@ def main() -> int:
         "support_matrix": support_matrix,
         "data_support_matrix": data_support_matrix,
         "interoperability_matrix": interoperability_matrix,
+        "release_contract": release_contract,
         "evidence": {
             "enterprise_register": "docs/enterprise-evidence.md",
             "external_requirements": "docs/external-enterprise-requirements.md",
             "roadmap": "docs/roadmap-1.0.md",
+            "release_contract": "docs/release-contract.json",
         },
     }
     output = args.output or args.dist / "release-manifest.json"
