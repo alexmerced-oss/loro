@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
 from loro.config import SharedMemoryConfig
@@ -173,7 +174,7 @@ def _run(
         if (value := os.environ.get(key)) is not None
     }
     if dsn is not None:
-        environment["PGDATABASE"] = dsn
+        environment.update(_postgres_environment(dsn))
     try:
         # Executable is resolved by _executable, arguments are a list, and no shell is used.
         return subprocess.run(  # nosec B603
@@ -195,6 +196,68 @@ def _executable(name: str) -> str:
     if resolved is None:
         raise RuntimeError(f"Required recovery executable is not available: {name}")
     return resolved
+
+
+def _postgres_environment(dsn: str) -> dict[str, str]:
+    # This is a libpq environment variable name, not a credential value.
+    password_environment = "PGPASSWORD"  # nosec B105
+    mapping = {
+        "host": "PGHOST",
+        "hostaddr": "PGHOSTADDR",
+        "port": "PGPORT",
+        "dbname": "PGDATABASE",
+        "user": "PGUSER",
+        "password": password_environment,
+        "passfile": "PGPASSFILE",
+        "sslmode": "PGSSLMODE",
+        "sslcert": "PGSSLCERT",
+        "sslkey": "PGSSLKEY",
+        "sslrootcert": "PGSSLROOTCERT",
+        "sslcrl": "PGSSLCRL",
+        "connect_timeout": "PGCONNECT_TIMEOUT",
+        "target_session_attrs": "PGTARGETSESSIONATTRS",
+        "application_name": "PGAPPNAME",
+    }
+    if dsn.startswith(("postgresql://", "postgres://")):
+        parsed = urlsplit(dsn)
+        values: dict[str, str] = {}
+        if parsed.hostname:
+            values["host"] = unquote(parsed.hostname)
+        if parsed.port is not None:
+            values["port"] = str(parsed.port)
+        if parsed.username:
+            values["user"] = unquote(parsed.username)
+        if parsed.password:
+            values["password"] = unquote(parsed.password)
+        if parsed.path and parsed.path != "/":
+            values["dbname"] = unquote(parsed.path.lstrip("/"))
+        values.update(
+            {
+                key: entries[-1]
+                for key, entries in parse_qs(parsed.query, keep_blank_values=False).items()
+                if key in mapping and entries
+            }
+        )
+    else:
+        try:
+            from psycopg.conninfo import conninfo_to_dict
+        except ModuleNotFoundError as error:
+            raise RuntimeError(
+                "Keyword Postgres DSNs require the data extra; URI DSNs work without it."
+            ) from error
+        values = {
+            key: str(value)
+            for key, value in conninfo_to_dict(dsn).items()
+            if value is not None
+        }
+    environment = {
+        target: values[source]
+        for source, target in mapping.items()
+        if source in values and values[source]
+    }
+    if "PGDATABASE" not in environment:
+        raise RuntimeError("Postgres DSN must name a database.")
+    return environment
 
 
 def _manifest_path(backup: Path) -> Path:

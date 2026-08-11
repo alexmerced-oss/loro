@@ -9,10 +9,27 @@ import pytest
 
 from loro.config import SharedMemoryConfig
 from loro.recovery import (
+    _postgres_environment,
     create_postgres_backup,
     restore_postgres_backup,
     verify_postgres_backup,
 )
+
+
+def test_postgres_uri_becomes_minimized_libpq_environment() -> None:
+    environment = _postgres_environment(
+        "postgresql://user:p%40ss@db.example:5433/loro?sslmode=verify-full&application_name=loro"
+    )
+
+    assert environment == {
+        "PGHOST": "db.example",
+        "PGPORT": "5433",
+        "PGDATABASE": "loro",
+        "PGUSER": "user",
+        "PGPASSWORD": "p@ss",
+        "PGSSLMODE": "verify-full",
+        "PGAPPNAME": "loro",
+    }
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Fixture uses executable shebang scripts.")
