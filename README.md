@@ -308,6 +308,7 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Agent Skills](docs/skills.md)
 - [Cross-Session Messaging](docs/session-messaging.md)
 - [Development Roadmap](docs/roadmap.md)
+- [Roadmap To Loro 1.0](docs/roadmap-1.0.md)
 - [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
 - [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)

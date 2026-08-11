@@ -1136,6 +1136,10 @@ def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
             "60",
             "--session-ttl",
             "300",
+            "--store",
+            "json",
+            "--store-path",
+            str(tmp_path / "approvals.json"),
             "--output",
             str(output),
         ],
@@ -1147,6 +1151,8 @@ def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
     assert "interactive = true" in text
     assert "allow_non_interactive = false" in text
     assert "once_ttl_seconds = 60" in text
+    assert 'store = "json"' in text
+    assert f'store_path = "{tmp_path / "approvals.json"}"' in text
 
 
 def test_setup_audit_writes_external_sink_configuration(tmp_path, monkeypatch) -> None:

@@ -41,9 +41,11 @@ flowchart LR
 - `loro.cli`: Typer command surface and command-specific orchestration.
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.budgets`: model byte/token/cost and tool-call accounting with fail-closed limits.
-- `loro.config`: layered configuration model and environment overrides.
+- `loro.config`: versioned layered configuration, legacy migration, managed overlays, and writers.
 - `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
-- `loro.approvals`: identity-bound approval requests/records, expiration, and replay protection.
+- `loro.approvals`: identity-bound approval requests/records, pluggable stores, expiration, and
+  atomic replay protection.
+- `loro.compatibility`: the warning contract for scheduled incompatible changes.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
 - `loro.resources`: canonical resource scopes for paths, commands, Git, memory, Polaris, and providers.
 - `loro.provider_profiles`: built-in AI provider profile registry.
@@ -90,7 +92,8 @@ boundaries. See [Model Context Protocol](docs/mcp.md) and the
 2. Loro resolves identity from configuration/environment, validates managed required fields,
    and fails before runtime construction when they are missing.
 3. The runtime loads local memory and, when enabled, searches the identity tenant's shared
-   memory for relevant cited records.
+   memory for relevant cited records. All recalled memory is labeled untrusted and carries no
+   approval or user authority.
 4. A resumed session receives queued messages as non-authoritative context, and validated Agent
    Skills are activated under the configured context budget.
 5. The runtime creates one trace id and emits `runtime.task_started` with identity attribution.
@@ -116,6 +119,8 @@ delivery retries with exponential backoff, then writes the complete event to
 a bounded JSONL buffer. Warning mode continues visibly; fail mode raises after buffering.
 `loro audit flush` retries buffered events in order. See
 [Audit Events And Delivery](docs/audit.md).
+Literal event types are assigned to a typed family registry and checked from the source AST in
+CI; see [Audit Event Inventory](docs/audit-event-inventory.md).
 
 The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
@@ -140,6 +145,11 @@ Loro config is loaded in increasing precedence:
 Managed overlays use the same TOML schema as normal config but are re-applied after runtime
 overrides, making them suitable for enterprise permission denies, audit defaults, shared
 memory policy, required identity fields, and governed data configuration.
+
+The root configuration schema is `1.0`. The loader migrates the legacy unversioned shape emitted
+before Loro 0.5.0 and rejects unknown future versions. Every Loro writer stamps the root schema;
+subsystems with persisted records retain their own schema/protocol versions. Compatibility and
+experimental status are published in `docs/support-matrix.json`.
 
 ## Identity
 
@@ -178,6 +188,11 @@ policy version/source, and expiration. One-time approvals are consumed once; exa
 approvals can be reused until expiry. Filesystem roots resolve symlinks and traversal before
 policy or approval, while shell policy receives invoked and resolved executable fields plus the
 exact argument array. See [Normalized Resource Policy](docs/policy.md).
+
+Approval storage is a protocol. The default in-memory implementation is process-local. The
+optional JSON implementation persists metadata and digests with owner-only permissions,
+cross-process locking, atomic replacement, bounded/schema-validated input, and compare-and-set
+updates. It is a single-host durability boundary rather than a distributed approval service.
 
 ## AI Providers
 

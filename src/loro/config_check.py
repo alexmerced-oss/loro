@@ -51,6 +51,7 @@ def check_config(config: LoroConfig) -> list[ConfigFinding]:
     findings.extend(_check_gateway(config))
     findings.extend(_check_identity(config))
     findings.extend(_check_audit(config))
+    findings.extend(_check_approvals(config))
     order = {"error": 0, "warning": 1, "info": 2}
     return sorted(findings, key=lambda item: (order[item.severity], item.code))
 
@@ -261,3 +262,17 @@ def _check_audit(config: LoroConfig) -> list[ConfigFinding]:
             )
         )
     return findings
+
+
+def _check_approvals(config: LoroConfig) -> list[ConfigFinding]:
+    if config.approvals.store == "json":
+        return []
+    return [
+        ConfigFinding(
+            "LC060",
+            "info",
+            "Approval records use the process-local memory store; configure the JSON store "
+            "when durable single-host replay protection is required.",
+            "/approvals/store",
+        )
+    ]

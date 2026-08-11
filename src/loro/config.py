@@ -16,6 +16,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 PermissionDecision = Literal["allow", "ask", "deny"]
+CONFIG_SCHEMA_VERSION = "1.0"
 IdentityField = Literal[
     "subject",
     "display_name",
@@ -31,6 +32,10 @@ IdentityField = Literal[
 
 class ManagedConfigIntegrityError(ValueError):
     """Raised when a required or digest-pinned managed policy cannot be verified."""
+
+
+class ConfigSchemaError(ValueError):
+    """Raised when configuration cannot be migrated to the supported schema."""
 
 
 class ModelTierConfig(BaseModel):
@@ -300,6 +305,9 @@ class ApprovalsConfig(BaseModel):
     allow_session_scope: bool = True
     once_ttl_seconds: int = Field(default=300, ge=1)
     session_ttl_seconds: int = Field(default=900, ge=1)
+    store: Literal["memory", "json"] = "memory"
+    store_path: str = "~/.local/state/loro/approvals.json"
+    max_store_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
 
 
 class PermissionRuleConfig(BaseModel):
@@ -863,6 +871,7 @@ def _default_data_protection_surfaces() -> dict[str, DataProtectionSurfaceConfig
 
 
 class LoroConfig(BaseModel):
+    schema_version: Literal["1.0"] = CONFIG_SCHEMA_VERSION
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
@@ -896,6 +905,25 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def migrate_config_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Return configuration normalized to the current root schema.
+
+    Releases before 0.5.0 emitted unversioned TOML. That exact shape is the only
+    legacy format supported by the first migration contract.
+    """
+    migrated = dict(data)
+    version = migrated.get("schema_version")
+    if version is None:
+        migrated["schema_version"] = CONFIG_SCHEMA_VERSION
+        return migrated
+    if version != CONFIG_SCHEMA_VERSION:
+        raise ConfigSchemaError(
+            f"Unsupported configuration schema version: {version!r} "
+            f"(supported: {CONFIG_SCHEMA_VERSION!r})."
+        )
+    return migrated
 
 
 def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
@@ -955,6 +983,7 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
 def write_config_sections(path: Path, config: LoroConfig, sections: list[str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _read_toml(path)
+    data = migrate_config_data(data)
     for section in sections:
         data = _merge(data, _config_section_data(config, section))
     path.write_text(tomli_w.dumps(data), encoding="utf-8")
@@ -968,6 +997,7 @@ def replace_config_section(path: Path, config: LoroConfig, section: str) -> Path
         raise ValueError(f"Section is not top-level and cannot be replaced: {section}")
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _read_toml(path)
+    data = migrate_config_data(data)
     data[section] = section_data[section]
     path.write_text(tomli_w.dumps(data), encoding="utf-8")
     return path
@@ -1021,7 +1051,7 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
             raise ManagedConfigIntegrityError(f"Invalid managed config: {label}") from error
         managed_data = _merge(managed_data, parsed)
     data = _merge(data, managed_data)
-    return LoroConfig.model_validate(data)
+    return LoroConfig.model_validate(migrate_config_data(data))
 
 
 def managed_config_digest(sources: list[tuple[str, bytes]]) -> str:

@@ -55,6 +55,10 @@ audit/session propagation, and shared-memory defaults are also implemented and d
 The remaining hardening program is tracked in the
 [Enterprise Readiness Roadmap](enterprise-readiness-roadmap.md).
 
+The release sequence from the current alpha through the first stable release is defined in
+[Roadmap To Loro 1.0](roadmap-1.0.md). That roadmap is the canonical milestone order; this
+document remains the implementation history and capability inventory.
+
 ## Prioritized Work Batches
 
 ### Batch 1: Agent Loop Core

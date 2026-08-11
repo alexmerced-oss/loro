@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from loro.config import ManagedConfigIntegrityError, load_config, managed_config_digest
+from loro.config import (
+    CONFIG_SCHEMA_VERSION,
+    ConfigSchemaError,
+    LoroConfig,
+    ManagedConfigIntegrityError,
+    load_config,
+    managed_config_digest,
+    migrate_config_data,
+    write_config_sections,
+)
 from loro.identity import IdentityConfigurationError, resolve_identity
 
 
@@ -14,6 +23,31 @@ def test_load_project_config() -> None:
     assert config.mcp.enabled is False
     assert config.memory.shared.write_policy == "explicit_user_dictation_only"
     assert config.safety.enabled is True
+    assert config.schema_version == CONFIG_SCHEMA_VERSION
+
+
+def test_unversioned_configuration_migrates_to_current_schema() -> None:
+    migrated = migrate_config_data({"model": {"provider": "mock"}})
+
+    assert migrated == {
+        "schema_version": CONFIG_SCHEMA_VERSION,
+        "model": {"provider": "mock"},
+    }
+
+
+def test_unknown_future_configuration_schema_fails_closed(monkeypatch) -> None:
+    monkeypatch.setenv("LORO_CONFIG_CONTENT", 'schema_version = "99.0"\n')
+
+    with pytest.raises(ConfigSchemaError, match="Unsupported configuration schema"):
+        load_config(Path.cwd())
+
+
+def test_loro_config_writer_stamps_schema_version(tmp_path) -> None:
+    path = tmp_path / "config.toml"
+
+    write_config_sections(path, LoroConfig(), ["model"])
+
+    assert path.read_text(encoding="utf-8").startswith('schema_version = "1.0"\n')
 
 
 def test_loro_config_content_override(monkeypatch) -> None:

@@ -25,7 +25,9 @@ jobs:
           cache: "pip"
 
       - name: Install pinned build tools
-        run: python -m pip install build==1.3.0 twine==6.2.0
+        run: |
+          python -m pip install pip==26.2.1 setuptools==84.0.0
+          python -m pip install build==1.3.0 twine==6.2.0 cyclonedx-bom==7.3.1
 
       - name: Verify tag matches package version
         if: github.ref_type == 'tag'
@@ -60,9 +62,24 @@ jobs:
           /tmp/loro-release-smoke/bin/loro skills validate "$skill_path"
           test -f "$skill_path/references/schema/agentic-graph-1.0.schema.json"
 
-      - name: Generate checksums
-        working-directory: dist
-        run: sha256sum loro_agent-* > SHA256SUMS
+      - name: Generate release SBOM
+        run: |
+          python -m venv /tmp/loro-release-sbom
+          /tmp/loro-release-sbom/bin/python -m pip install pip==26.2.1
+          /tmp/loro-release-sbom/bin/python -m pip install dist/loro_agent-*.whl cyclonedx-bom==7.3.1
+          /tmp/loro-release-sbom/bin/cyclonedx-py environment \
+            --pyproject pyproject.toml --output-reproducible \
+            --output-format JSON --output-file dist/release-sbom.cdx.json \
+            /tmp/loro-release-sbom/bin/python
+
+      - name: Generate release manifest and checksums
+        run: |
+          cp docs/support-matrix.json dist/support-matrix.json
+          python scripts/generate_release_manifest.py \
+            --dist dist --commit "${GITHUB_SHA}" --workflow-run "${GITHUB_RUN_ID}"
+          cd dist
+          sha256sum loro_agent-* release-sbom.cdx.json support-matrix.json \
+            release-manifest.json > SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest@v4

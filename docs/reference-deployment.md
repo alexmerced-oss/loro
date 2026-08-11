@@ -28,7 +28,7 @@ flowchart TB
     BUF --> SIEM["Authenticated immutable audit destination"]
 ```
 
-Loro 0.4.1 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
+Loro 0.5.0 provides typed identity context, external HTTP audit delivery, and enforceable sandbox
 profiles. Corporate identity verification, a production audit destination, and supported-platform
 sandbox evidence are deployment responsibilities; a pilot must not claim those controls until its
 evidence items are closed.

@@ -1298,6 +1298,14 @@ def setup_approvals(
         int | None,
         typer.Option("--session-ttl", help="Session approval lifetime in seconds."),
     ] = None,
+    store: Annotated[
+        str | None,
+        typer.Option("--store", help="Approval store: memory or json."),
+    ] = None,
+    store_path: Annotated[
+        str | None,
+        typer.Option("--store-path", help="Path for the durable JSON approval store."),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1310,6 +1318,8 @@ def setup_approvals(
         allow_session_scope,
         once_ttl_seconds,
         session_ttl_seconds,
+        store,
+        store_path,
     ]
     wizard = all(value is None for value in values)
     config = load_config()
@@ -1337,6 +1347,15 @@ def setup_approvals(
             default=approvals.session_ttl_seconds,
             type=int,
         )
+        store = typer.prompt(
+            "Approval store (memory/json)",
+            default=approvals.store,
+        )
+        if store == "json":
+            store_path = typer.prompt(
+                "Durable approval store path",
+                default=approvals.store_path,
+            )
     if interactive is not None:
         approvals.interactive = interactive
     if allow_non_interactive is not None:
@@ -1351,6 +1370,15 @@ def setup_approvals(
         if session_ttl_seconds < 1:
             raise typer.BadParameter("Session approval TTL must be positive.")
         approvals.session_ttl_seconds = session_ttl_seconds
+    if store is not None:
+        normalized_store = store.strip().casefold()
+        if normalized_store not in {"memory", "json"}:
+            raise typer.BadParameter("Approval store must be memory or json.")
+        approvals.store = normalized_store  # type: ignore[assignment]
+    if store_path is not None:
+        if not store_path.strip():
+            raise typer.BadParameter("Approval store path cannot be empty.")
+        approvals.store_path = store_path.strip()
     written = write_config_sections(output, config, ["approvals"])
     _audit().write(
         "config.approvals_written",
@@ -1358,6 +1386,7 @@ def setup_approvals(
         interactive=approvals.interactive,
         allow_non_interactive=approvals.allow_non_interactive,
         allow_session_scope=approvals.allow_session_scope,
+        store=approvals.store,
     )
     console.print(f"Wrote approval config: {written}")
 
@@ -2529,6 +2558,7 @@ def config_summary() -> None:
         "non-interactive="
         f"{'allowed' if config.approvals.allow_non_interactive else 'denied'}"
     )
+    console.print(f"Approval store: {config.approvals.store}")
     if not identity_diagnostic.ok:
         console.print(f"Missing identity fields: {', '.join(identity_diagnostic.missing_fields)}")
         raise typer.Exit(code=1)

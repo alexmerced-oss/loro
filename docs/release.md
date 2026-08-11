@@ -7,6 +7,8 @@ Use this checklist before tagging or publishing Loro.
 ```bash
 python -m pip install -e ".[dev]"
 python -m ruff check .
+PYTHONPATH=src python scripts/check_audit_inventory.py
+PYTHONPATH=src python scripts/check_enterprise_evidence.py
 python -m pytest --cov --cov-report=term-missing --cov-report=json:security-coverage.json
 python scripts/check_security_coverage.py security-coverage.json
 python -m compileall src tests
@@ -75,6 +77,10 @@ See [Loro 0.4.0](releases/0.4.0.md) for the complete release notes and external 
 Release `0.4.1` is the recommended patch and provider-profile update. See
 [Loro 0.4.1](releases/0.4.1.md).
 
+Release `0.5.0` adds versioned control contracts, durable single-host approval storage, executable
+audit/evidence inventories, poisoned-memory labeling, and artifact-bound release evidence. See
+[Loro 0.5.0](releases/0.5.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
@@ -102,6 +108,9 @@ python -m twine check dist/*
 Tags and manual dispatches run `Release Evidence`, which verifies tag/version agreement, builds
 distributions in protected CI, smoke-tests the wheel and bundled Agent Skill, generates SHA-256
 checksums, creates GitHub/Sigstore build-provenance attestations, and retains the artifact bundle.
+The bundle also contains the machine-readable support matrix, CycloneDX release SBOM, and a
+release manifest binding the commit, workflow run, artifact digests, evidence documents, and
+known limitations.
 Verify an attested artifact with:
 
 ```bash

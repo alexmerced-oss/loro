@@ -1,5 +1,16 @@
 # Configuration
 
+The root configuration schema is `1.0`:
+
+```toml
+schema_version = "1.0"
+```
+
+Configuration written before Loro `0.5.0` was unversioned. The loader treats that exact legacy
+shape as schema `1.0`, while every file written by current setup commands receives the root
+version. Unknown future versions fail closed instead of being partially interpreted. Back up a
+configuration before rewriting it with a newer Loro release.
+
 Loro uses TOML configuration and merges layers in increasing precedence:
 
 1. `/etc/loro/config.toml`
@@ -16,6 +27,8 @@ project, local, or runtime config.
 ## Example
 
 ```toml
+schema_version = "1.0"
+
 [model]
 provider = "mock"
 model = "mock-agent"
@@ -68,6 +81,9 @@ allow_non_interactive = true
 allow_session_scope = true
 once_ttl_seconds = 300
 session_ttl_seconds = 900
+store = "memory"
+store_path = "~/.local/state/loro/approvals.json"
+max_store_bytes = 10000000
 
 [permissions]
 version = "local-v1"
