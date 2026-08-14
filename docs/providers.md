@@ -27,6 +27,7 @@ loro providers request "hello" --provider openai --model gpt-5.6-luna
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute
 loro providers smoke "hello" --provider openai --model gpt-5.6-luna --execute --stream
+loro providers conformance
 loro configure
 loro setup provider
 loro setup quickstart
@@ -68,6 +69,8 @@ Cloud and gateway profiles:
 - xAI
 - Perplexity
 - OpenRouter
+- TrustedRouter
+- Prime Intellect Inference
 - Nous Portal / Nous Research
 - OpenCode Zen
 - OpenCode Go
@@ -92,10 +95,15 @@ The MVP stores provider configuration, exposes provider metadata, and includes r
 - Mock local provider
 - AWS Bedrock through optional `boto3` / `botocore` dependencies
 
-OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, DeepSeek, xAI, Perplexity, OpenRouter, Nous Portal, OpenCode Zen, OpenCode Go, Azure OpenAI, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
+OpenAI-compatible profiles include OpenAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI,
+DeepSeek, xAI, Perplexity, OpenRouter, TrustedRouter, Prime Intellect, Nous Portal, OpenCode
+Zen, OpenCode Go, Azure OpenAI, LM Studio, vLLM, and generic OpenAI-compatible endpoints.
 
-Model clients expose both `complete()` and `stream()`. Providers that do not yet have native
-streaming support use a safe fallback that yields the completed response as one chunk.
+Model clients expose `complete()`, `stream_complete()`, and the compatibility `stream()` iterator.
+OpenAI-compatible and Anthropic streams retain native tool calls as well as text, and honor the
+same proxy, custom CA, timeout, and retry configuration as non-streaming requests. Providers that
+do not yet have native streaming support use a safe fallback that yields the completed response as
+one chunk.
 
 Provider clients also normalize native tool-call response payloads into Loro's internal
 tool-call shape. The runtime can execute tool calls returned through OpenAI-compatible
@@ -107,6 +115,27 @@ not expose native tool calling.
 Provider/network errors are normalized into Loro provider errors so CLI and runtime output can
 show clear messages for timeouts, HTTP status failures, malformed JSON, missing response
 content, malformed tool calls, and optional SDK issues.
+
+## Governed Routing And Conformance
+
+Set `allowed_base_url_hosts` to prevent a local or managed configuration layer from routing a
+provider request to an unapproved gateway or region. Every HTTP provider request includes a fresh
+`X-Loro-Request-ID`; deployments may rename that header for an enterprise gateway.
+
+```toml
+[model]
+provider = "openai"
+base_url = "https://us.models.example.com/v1"
+allowed_base_url_hosts = ["us.models.example.com"]
+request_id_header = "X-Enterprise-Request-ID"
+```
+
+`loro providers conformance` validates the bundled sanitized contract fixtures and verifies that
+every built-in profile still maps to the reviewed protocol family. The fixtures cover completion,
+streaming or documented stream fallback, native tools, usage, malformed responses, and retryable
+errors. This command is hermetic; use `loro providers smoke --execute` for a credentialed call.
+Loro never performs implicit cross-provider fallback. Graph tier routing occurs only through
+explicitly configured tiers and remains subject to normal provider policy.
 
 ## Live-Tested Provider Examples
 
@@ -148,6 +177,54 @@ Model ID details matter across gateways:
 - OpenAI `gpt-5*` models such as `gpt-5.6-luna` only support the default sampling temperature, so Loro omits `temperature` for OpenAI `gpt-5*` requests.
 - Anthropic `claude-sonnet-5*` models deprecate `temperature`, so Loro omits it for that model family.
 - Gemini `gemini-3.6-flash` and `gemini-3.5-flash-lite` deprecate sampling parameters, so Loro omits `generationConfig.temperature` for those models.
+
+## TrustedRouter
+
+[TrustedRouter](https://trustedrouter.com/private-llm-api) exposes an OpenAI-compatible gateway at
+`https://api.trustedrouter.com/v1`. It accepts provider-qualified model IDs such as
+`anthropic/claude-sonnet-4.6` and routing aliases such as `trustedrouter/cheap`. The Loro profile
+defaults to `trustedrouter/cheap`, uses `trustedrouter/fast` as its small model, and reads
+`TRUSTEDROUTER_API_KEY`.
+
+```bash
+export TRUSTEDROUTER_API_KEY="<your-key>"
+loro configure --provider trustedrouter
+loro providers check trustedrouter
+loro providers smoke "Reply with exactly: ok" \
+  --provider trustedrouter --model trustedrouter/cheap --execute --stream
+```
+
+TrustedRouter states that its prompt gateway runs in GCP Confidential Space, does not retain
+prompt/output content, publishes the gateway source and measured image digests, and fails closed
+when attestation is unavailable. Those are provider claims with a public verification surface;
+ordinary Loro requests do **not** yet verify the attestation JWT or pin an accepted image digest.
+Enterprises that require cryptographic verification should follow the provider's
+[live attestation procedure](https://trust.trustedrouter.com/) before enabling the route.
+Upstream model providers may still have their own retention policies, so select an appropriate
+privacy route instead of assuming every model ID is zero-retention.
+
+## Prime Intellect
+
+[Prime Intellect Inference](https://docs.primeintellect.ai/inference/overview) exposes an
+OpenAI-compatible API at `https://api.pinference.ai/api/v1`. Create an API key with the
+**Inference** permission and export it as `PRIME_API_KEY`. Models are dynamic; inspect the current
+catalog with `prime inference models` or `GET /models`. Loro defaults to `openai/gpt-oss-120b`
+with `openai/gpt-oss-20b` as the small model, but users should choose from their account's current
+catalog.
+
+```bash
+export PRIME_API_KEY="<your-key>"
+loro configure --provider prime-intellect
+loro providers check prime
+loro providers smoke "Reply with exactly: ok" \
+  --provider prime --model openai/gpt-oss-20b --execute --stream
+```
+
+For team billing, set `PRIME_TEAM_ID`. Loro then adds the required `X-Prime-Team-ID` header; when
+the variable is absent, requests use personal credits. Prime supports standard chat completions,
+streaming, standard OpenAI generation parameters, and exposes token/cost usage when requested.
+Native tool behavior still depends on the selected model, so use a tool-capable model for Loro's
+agent loop.
 
 AWS Bedrock requires optional dependencies:
 

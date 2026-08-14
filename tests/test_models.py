@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from loro.config import ModelConfig
+from loro.model_tools import ModelToolCall, ModelToolResult
 from loro.models import (
     AnthropicClient,
     BedrockClient,
@@ -46,6 +47,37 @@ class FakeHttpClient:
             {"method": method, "url": url, "headers": headers, "json": json}
         )
         return FakeResponse(self.__class__.payload)
+
+
+class FakeStreamResponse:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_lines(self):
+        yield from self.lines
+
+
+class FakeStreamHttpClient(FakeHttpClient):
+    lines = []
+    options = {}
+
+    def __init__(self, **options):
+        self.__class__.options = options
+
+    def stream(self, method, url, headers, json):
+        self.__class__.calls.append(
+            {"method": method, "url": url, "headers": headers, "json": json}
+        )
+        return FakeStreamResponse(self.__class__.lines)
 
 
 class FakeStatusResponse:
@@ -114,6 +146,7 @@ def test_openai_compatible_complete_with_native_tool_call(
                     "content": None,
                     "tool_calls": [
                         {
+                            "id": "call-read-1",
                             "type": "function",
                             "function": {
                                 "name": "file.read",
@@ -233,7 +266,12 @@ def test_anthropic_complete_with_native_tool_call(monkeypatch: pytest.MonkeyPatc
     FakeHttpClient.payload = {
         "content": [
             {"type": "text", "text": "checking"},
-            {"type": "tool_use", "name": "memory.search", "input": {"query": "launch"}},
+            {
+                "type": "tool_use",
+                "id": "toolu-search-1",
+                "name": "memory.search",
+                "input": {"query": "launch"},
+            },
         ]
     }
     FakeHttpClient.calls = []
@@ -301,7 +339,70 @@ def test_openai_compatible_request(monkeypatch: pytest.MonkeyPatch) -> None:
     request = client.build_request([ModelMessage(role="user", content="hello")])
     assert request.url == "https://example.com/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer test-key"
+    assert request.headers["X-Loro-Request-ID"]
     assert request.json["model"] == "gpt-test"
+
+
+def test_provider_base_url_host_allowlist_prevents_route_drift() -> None:
+    allowed = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="fixture",
+            base_url="https://us.models.example.test/v1",
+            allowed_base_url_hosts=["us.models.example.test"],
+        )
+    )
+    assert allowed.build_request([]).url.startswith("https://us.models.example.test/")
+
+    blocked = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="fixture",
+            base_url="https://other-region.example.test/v1",
+            allowed_base_url_hosts=["us.models.example.test"],
+        )
+    )
+    with pytest.raises(ModelProviderError, match="outside the managed allowlist"):
+        blocked.build_request([])
+
+
+def test_provider_request_id_header_is_configurable() -> None:
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="openai", model="fixture", request_id_header="X-Trace-ID")
+    )
+    request = client.build_request([])
+    assert request.headers["X-Trace-ID"]
+    assert "X-Loro-Request-ID" not in request.headers
+
+
+def test_prime_intellect_request_adds_optional_team_header(monkeypatch) -> None:
+    monkeypatch.setenv("PRIME_API_KEY", "test-key")
+    monkeypatch.setenv("PRIME_TEAM_ID", "team-123")
+    client = OpenAICompatibleClient(
+        ModelConfig(
+            provider="prime-intellect",
+            model="openai/gpt-oss-20b",
+            api_key_env="PRIME_API_KEY",
+            base_url="https://api.pinference.ai/api/v1",
+        )
+    )
+
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+
+    assert request.url == "https://api.pinference.ai/api/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer test-key"
+    assert request.headers["X-Prime-Team-ID"] == "team-123"
+
+
+def test_prime_intellect_team_header_is_optional(monkeypatch) -> None:
+    monkeypatch.delenv("PRIME_TEAM_ID", raising=False)
+    client = OpenAICompatibleClient(
+        ModelConfig(provider="prime-intellect", model="openai/gpt-oss-20b")
+    )
+
+    request = client.build_request([ModelMessage(role="user", content="hello")])
+
+    assert "X-Prime-Team-ID" not in request.headers
 
 
 def test_openai_gpt5_request_omits_temperature() -> None:
@@ -335,6 +436,139 @@ def test_gemini_request(monkeypatch: pytest.MonkeyPatch) -> None:
     request = client.build_request([ModelMessage(role="assistant", content="hello")])
     assert "gemini-test:generateContent?key=test-key" in request.url
     assert request.json["contents"][0]["role"] == "model"
+
+
+@pytest.mark.parametrize(
+    ("client", "expected"),
+    [
+        (
+            OpenAICompatibleClient(ModelConfig(provider="openai", model="gpt-test")),
+            {"role": "tool", "tool_call_id": "call-1", "content": "result"},
+        ),
+        (
+            AnthropicClient(ModelConfig(provider="anthropic", model="claude-test")),
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call-1",
+                        "content": "result",
+                        "is_error": False,
+                    }
+                ],
+            },
+        ),
+    ],
+)
+def test_native_tool_results_use_provider_protocol(client, expected) -> None:
+    messages = [
+        ModelMessage(
+            role="assistant",
+            tool_calls=[ModelToolCall("file.read", {"path": "README.md"}, "call-1")],
+        ),
+        ModelMessage(
+            role="tool",
+            tool_results=[ModelToolResult("file.read", "result", "call-1")],
+        ),
+    ]
+
+    request = client.build_request(messages)
+
+    assert request.json["messages"][1] == expected
+
+
+def test_gemini_native_tool_result_uses_function_response() -> None:
+    client = GeminiClient(ModelConfig(provider="gemini", model="gemini-test"))
+    request = client.build_request(
+        [
+            ModelMessage(
+                role="tool",
+                tool_results=[ModelToolResult("file.search", "found", "call-1")],
+            )
+        ]
+    )
+
+    response = request.json["contents"][0]["parts"][0]["functionResponse"]
+    assert response["name"] == "file_search"
+    assert response["response"] == {"output": "found", "is_error": False}
+
+
+def test_bedrock_native_tool_result_uses_tool_result() -> None:
+    client = BedrockClient(ModelConfig(provider="bedrock", model="bedrock-test"))
+    message = client._message_payload(
+        [
+            ModelMessage(
+                role="tool",
+                tool_results=[ModelToolResult("file.read", "denied", "call-1", is_error=True)],
+            )
+        ]
+    )[0]
+
+    assert message["content"][0]["toolResult"] == {
+        "toolUseId": "call-1",
+        "content": [{"text": "denied"}],
+        "status": "error",
+    }
+
+
+def test_openai_stream_preserves_native_tool_calls_and_transport(monkeypatch) -> None:
+    FakeStreamHttpClient.calls = []
+    FakeStreamHttpClient.lines = [
+        'data: {"choices":[{"delta":{"content":"Checking "}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-7",'
+        '"function":{"name":"file_","arguments":"{\\"path\\":"}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+        '"function":{"name":"read","arguments":"\\"README.md\\"}"}}]}}]}',
+        "data: [DONE]",
+    ]
+    monkeypatch.setenv("LORO_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("LORO_CA", "/tmp/enterprise-ca.pem")
+    monkeypatch.setattr("loro.models.httpx.Client", FakeStreamHttpClient)
+    client = OpenAICompatibleClient(
+        ModelConfig(
+            provider="openai",
+            model="gpt-test",
+            proxy_env="LORO_PROXY",
+            ca_bundle_env="LORO_CA",
+        )
+    )
+    chunks = []
+
+    response = client.stream_complete([ModelMessage(role="user", content="read")], chunks.append)
+
+    assert chunks == ["Checking "]
+    assert response.tool_calls == [
+        ModelToolCall(
+            "file_read",
+            {"path": "README.md"},
+            "call-7",
+            {
+                "id": "call-7",
+                "type": "function",
+                "function": {"name": "file_read", "arguments": '{"path":"README.md"}'},
+            },
+        )
+    ]
+    assert FakeStreamHttpClient.options["proxy"] == "http://proxy.example:8080"
+    assert FakeStreamHttpClient.options["verify"] == "/tmp/enterprise-ca.pem"
+
+
+def test_anthropic_stream_preserves_native_tool_call(monkeypatch) -> None:
+    FakeStreamHttpClient.lines = [
+        'data: {"type":"content_block_start","index":0,"content_block":'
+        '{"type":"tool_use","id":"toolu-8","name":"memory_search","input":{}}}',
+        'data: {"type":"content_block_delta","index":0,"delta":'
+        '{"type":"input_json_delta","partial_json":"{\\"query\\":\\"launch\\"}"}}',
+        "data: [DONE]",
+    ]
+    monkeypatch.setattr("loro.models.httpx.Client", FakeStreamHttpClient)
+    client = AnthropicClient(ModelConfig(provider="anthropic", model="claude-test"))
+
+    response = client.stream_complete([ModelMessage(role="user", content="search")])
+
+    assert response.tool_calls[0].call_id == "toolu-8"
+    assert response.tool_calls[0].args == {"query": "launch"}
 
 
 def test_gemini_36_flash_request_omits_temperature() -> None:

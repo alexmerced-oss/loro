@@ -1,5 +1,16 @@
 # Configuration
 
+The root configuration schema is `1.0`:
+
+```toml
+schema_version = "1.0"
+```
+
+Configuration written before Loro `0.5.0` was unversioned. The loader treats that exact legacy
+shape as schema `1.0`, while every file written by current setup commands receives the root
+version. Unknown future versions fail closed instead of being partially interpreted. Back up a
+configuration before rewriting it with a newer Loro release.
+
 Loro uses TOML configuration and merges layers in increasing precedence:
 
 1. `/etc/loro/config.toml`
@@ -16,6 +27,8 @@ project, local, or runtime config.
 ## Example
 
 ```toml
+schema_version = "1.0"
+
 [model]
 provider = "mock"
 model = "mock-agent"
@@ -26,6 +39,8 @@ backoff_seconds = 0.25
 verify_tls = true
 # ca_bundle_env = "LORO_CA_BUNDLE"
 # proxy_env = "LORO_HTTPS_PROXY"
+# allowed_base_url_hosts = ["models.example.com"]
+# request_id_header = "X-Enterprise-Request-ID"
 temperature = 0.2
 input_cost_per_million = 0
 output_cost_per_million = 0
@@ -51,7 +66,7 @@ skill_profile = "skill-script"
 backend = "process"
 require_os_enforcement = false
 network = "inherit"
-allowed_executables = ["*"]
+allowed_executables = ["bash", "git", "node", "npm", "npx", "python", "python3", "pytest", "rg", "ruff", "sh", "uv"]
 environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
 writable_roots = []
 max_seconds = 120
@@ -68,6 +83,9 @@ allow_non_interactive = true
 allow_session_scope = true
 once_ttl_seconds = 300
 session_ttl_seconds = 900
+store = "memory"
+store_path = "~/.local/state/loro/approvals.json"
+max_store_bytes = 10000000
 
 [permissions]
 version = "local-v1"
@@ -80,7 +98,7 @@ mcp = "ask"
 skills = "ask"
 session_message = "ask"
 web = "deny"
-workspace_roots = []
+workspace_roots = ["/workspace"]
 
 [[permissions.rules]]
 tool = "edit"
@@ -157,6 +175,8 @@ include_prompt_preview = true
 failure_mode = "warn"
 buffer_path = ".loro/audit-buffer.jsonl"
 max_buffer_events = 1000
+metrics_enabled = true
+metrics_path = "/var/lib/loro/operational-metrics.json"
 max_retries = 2
 backoff_seconds = 0.25
 timeout_seconds = 10
@@ -302,6 +322,9 @@ Provider calls retry timeouts, connection failures, HTTP 429, and HTTP 5xx respo
 bounded exponential backoff. Other HTTP 4xx responses and malformed payloads fail immediately.
 `ca_bundle_env` and `proxy_env` name environment variables; they never store the CA path or proxy
 credential in TOML. Keep `verify_tls = true` in managed deployments.
+`allowed_base_url_hosts` pins the resolved request URL to reviewed provider/gateway hosts, and
+`request_id_header` controls the fresh correlation header sent with every HTTP provider request.
+Loro does not implicitly retry a request through another provider.
 
 Runtime usage records provider-reported token counts where available and otherwise uses a
 conservative character estimate. Cost enforcement is active only when the configured model has
@@ -376,6 +399,32 @@ All setup commands preserve existing sections in the target config file. Secret 
 environment variables or the [Credential Vault](credentials.md); local TOML stores only vault
 references. `loro setup gateway` configures one signed endpoint and trusted identity mapping.
 
+## Open Agent Profiles
+
+Loro `0.12.0` provides an optional additive `[agent_profiles]` section for named OAP v1 agents:
+
+```toml
+[agent_profiles]
+enabled = true
+managed_paths = ["/etc/loro/agents"]
+user_paths = ["~/.config/loro/agents"]
+project_paths = [".agents", ".loro/agents"]
+allow_user = true
+allow_project = true
+writeback = "propose"
+max_bytes = 1000000
+max_state_bytes = 200000
+max_profiles = 200
+max_reference_depth = 8
+max_subagent_depth = 3
+proposal_path = ".loro/agent-proposals"
+```
+
+`writeback` is a managed ceiling ordered `off < propose < auto`; a profile cannot raise it.
+Profile trust comes from its discovery root. Composition, permissions, tools, paths, models,
+budgets, MCP servers, Skills, memory stores/scopes, and subagents can only narrow the resolved
+Loro configuration. See [Open Agent Profiles](agent-profiles.md).
+
 ## Credential Vault And Named Provider Accounts
 
 ```toml
@@ -430,6 +479,8 @@ limits. See [Model Context Protocol](mcp.md) for the Tasks configuration and com
 ```bash
 export LORO_POSTGRES_DSN="postgresql://user:pass@host:5432/loro"
 loro memory backend-check
+loro memory migration-status
+loro memory reconcile
 ```
 
 The command validates local client readiness only. It does not create tables or commit

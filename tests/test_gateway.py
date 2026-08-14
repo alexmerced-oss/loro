@@ -155,6 +155,7 @@ def test_teams_and_generic_bridge_signatures() -> None:
     body = json.dumps(
         {
             "id": "message-1",
+            "type": "message",
             "text": "status",
             "timestamp": 1000,
             "from": {"id": "user-1"},
@@ -203,6 +204,65 @@ def test_gateway_replay_state_corruption_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="replay state is invalid"):
         GatewayDispatcher(config)
+
+
+def test_gateway_replay_write_failure_restores_queue_and_allows_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    endpoint = _endpoint("telegram").model_copy(
+        update={
+            "credentials": {
+                "webhook-secret": "vault://gateway/tg/webhook"  # pragma: allowlist secret
+            }
+        }
+    )
+    config = LoroConfig.model_validate(
+        {
+            "gateway": {
+                "enabled": True,
+                "max_workers": 1,
+                "max_pending_tasks": 1,
+                "state_path": str(tmp_path / "gateway-state.json"),
+                "endpoints": {"telegram": endpoint.model_dump()},
+            },
+            "audit": {"enabled": False},
+        }
+    )
+
+    class Vault:
+        def get(self, _ref: str) -> str:
+            return "webhook-value"
+
+    completed = Event()
+    dispatcher = GatewayDispatcher(
+        config,
+        vault=Vault(),  # type: ignore[arg-type]
+        runner=lambda _config, _prompt: "done",
+        deliverer=lambda *_args: completed.set(),
+    )
+    original_save = dispatcher._save_seen
+    monkeypatch.setattr(
+        dispatcher,
+        "_save_seen",
+        lambda: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    body = json.dumps(
+        {
+            "update_id": 7,
+            "message": {
+                "text": "status",
+                "from": {"id": "user-1"},
+                "chat": {"id": "channel-1"},
+            },
+        }
+    ).encode()
+    headers = {"X-Telegram-Bot-Api-Secret-Token": "webhook-value"}
+
+    assert dispatcher.handle("/telegram", headers, body).status == 500
+    monkeypatch.setattr(dispatcher, "_save_seen", original_save)
+    assert dispatcher.handle("/telegram", headers, body).status == 200
+    assert completed.wait(2)
+    dispatcher.close()
 
 
 @pytest.mark.parametrize(

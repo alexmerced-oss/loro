@@ -1,6 +1,8 @@
 name: MCP Conformance
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
   schedule:
     - cron: "17 5 * * 1"

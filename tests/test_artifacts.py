@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 
 from openpyxl import load_workbook
 
 from loro.artifacts.briefs import create_brief_artifact
-from loro.artifacts.common import write_provenance
+from loro.artifacts.common import verify_provenance, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
@@ -41,4 +42,33 @@ def test_artifact_provenance(tmp_path: Path) -> None:
     result = create_brief_artifact("Prepare for roadmap sync", tmp_path, brief_type="meeting")
     provenance = write_provenance(result=result, prompt_preview="Prepare for roadmap sync")
     assert provenance.exists()
-    assert "loro.mvp.artifacts" in provenance.read_text(encoding="utf-8")
+    payload = json.loads(provenance.read_text(encoding="utf-8"))
+    assert payload["generator"] == "loro.artifacts"
+    assert payload["schema_version"] == "1.0"
+    assert payload["artifacts"][0]["sha256"].startswith("sha256:")
+    assert verify_provenance(provenance).ok
+
+
+def test_artifact_provenance_detects_mutation_and_missing_artifact(tmp_path: Path) -> None:
+    result = create_brief_artifact("Prepare for roadmap sync", tmp_path, brief_type="meeting")
+    provenance = write_provenance(result=result, prompt_preview="Prepare for roadmap sync")
+
+    result.paths[0].write_text("mutated", encoding="utf-8")
+    mutated = verify_provenance(provenance)
+    assert not mutated.ok
+    assert "binding mismatch" in mutated.issues[0]
+
+    result.paths[0].unlink()
+    missing = verify_provenance(provenance)
+    assert not missing.ok
+    assert "artifact missing" in missing.issues[0]
+
+
+def test_artifact_provenance_rejects_non_object_root(tmp_path: Path) -> None:
+    provenance = tmp_path / "artifact.provenance.json"
+    provenance.write_text("[]", encoding="utf-8")
+
+    report = verify_provenance(provenance)
+
+    assert not report.ok
+    assert report.issues == ["provenance root must be an object"]

@@ -68,6 +68,18 @@ configuration. Loro passes env-backed REST catalog properties when
 Use [local-polaris-iceberg.md](./local-polaris-iceberg.md) for the current local Docker
 quickstart, Loro configuration, smoke checks, and optional Polaris CLI integration test.
 
+## Tested 0.6 Data Matrix
+
+The machine-readable matrix is [data-support-matrix.json](data-support-matrix.json). The reference
+test stack pins Apache Polaris 1.6.0, Iceberg REST API v1, Apache Iceberg 1.10.1, PyIceberg 0.11.1,
+DuckDB 1.5.5, RustFS 1.0.0-alpha.81, and Postgres 16. CI downloads the tagged Polaris quickstart
+but replaces its floating `apache/polaris:latest` image with `apache/polaris:1.6.0`.
+
+The quickstart proves service startup, a configured REST target, Loro schema/search rendering,
+and DuckDB-readable seeded Parquet. It does not prove protected authorization. Credential expiry,
+namespace/table denial, cross-tenant denial, production object-store behavior, and delegated
+credential policy must be exercised in an organization-owned Polaris realm.
+
 ## Future Typed Operations
 
 - Add server-side predicate pushdown helpers for large Iceberg memory tables.

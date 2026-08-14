@@ -4,11 +4,17 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
+Loro `0.12.0` is the current experimental feature release. The `0.10` deliberately limited stable
+core remains the stabilization baseline, while Open Agent Profile support joins the experimental
+surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
+gates.
+
 ## Install
 
 ```bash
 python -m pip install loro-agent
 loro --version
+loro providers conformance
 ```
 
 Optional extras:
@@ -27,6 +33,7 @@ Loro ships with a provider setup wizard. Run it with no flags for an interactive
 
 ```bash
 loro configure
+loro config check --strict
 loro doctor
 loro plan "Create a release readiness checklist for this project."
 ```
@@ -66,8 +73,9 @@ loro providers check openai
 loro run "Inspect README.md and suggest the next three improvements."
 ```
 
-The wizard stores local settings in `.loro/config.local.toml`. API keys stay in environment
-variables; Loro does not write them into the config file.
+The wizard stores local settings in `.loro/config.local.toml`. API keys can remain in environment
+variables or be addressed through OS-vault credential references; Loro does not write plaintext
+keys into the config file.
 
 Additional setup wizards are available for the enterprise pieces:
 
@@ -83,6 +91,7 @@ loro setup mcp
 loro setup mcp-server
 loro setup gateway
 loro setup skills
+loro setup agents
 loro setup quickstart
 ```
 
@@ -100,7 +109,7 @@ loro setup quickstart
 - PyIceberg execution support for governed Iceberg shared-memory search and draft commits.
 - Polaris client for read-only governed catalog discovery.
 - Artifact generation for Markdown/DOCX documents, PPTX presentations, XLSX/CSV spreadsheets, and Markdown briefs.
-- Artifact provenance sidecars that record prompt previews, generated paths, assumptions, and generator metadata.
+- SHA-256-bound artifact provenance sidecars with `loro artifacts verify` integrity checks.
 - Versioned JSONL/HTTP audit delivery with bounded buffering, retry, diagnostics, and flush.
 - Durable session records and non-authoritative cross-session message delivery.
 - Permission-gated file and shell tools.
@@ -116,6 +125,8 @@ loro setup quickstart
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 - OS-keyring credential vault references with named provider and integration accounts.
 - Signed, identity-mapped Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways.
+- Experimental Open Agent Profile v1 named agents with fail-closed narrowing, untrusted state,
+  digest-bound proposals, and `/state`-only atomic writeback.
 
 ## Configure A Provider
 
@@ -164,11 +175,31 @@ loro audit verify
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain
 explicit-only and draft-gated.
 
+The 0.6 data operations add checksummed Postgres migrations, idempotent operation IDs,
+state/event reconciliation, verified backup manifests, an authenticated audit collector, and
+content-free operational metrics:
+
+```bash
+loro memory migration-status
+loro memory migrate --target 2 --execute
+loro memory reconcile
+loro operations backup --output /secure/loro-memory.dump --execute
+loro operations verify-backup /secure/loro-memory.dump
+loro audit collector-verify --path /var/lib/loro/audit.sqlite3
+```
+
+These are reference controls. Production TLS, immutable audit retention, protected Polaris
+authorization, object-store behavior, and organization-approved RPO/RTO evidence remain
+deployment-owned.
+
 ## Run Agentic Tasks
 
 ```bash
 loro plan "Create a release readiness checklist"
 loro run "Inspect README.md and suggest the next three improvements."
+loro agents create reviewer --instructions "Review changes and cite concrete evidence."
+loro agents explain reviewer
+loro run --agent reviewer "Review README.md"
 ```
 
 Loro can use typed tools for file reads/searches, approved edits, approved shell commands,
@@ -217,6 +248,8 @@ loro providers request "hello" --provider nous --model deepseek/deepseek-v4-flas
 loro providers smoke "hello" --provider gemini --model gemini-3.6-flash --execute
 loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
 loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
+loro providers request "hello" --provider trustedrouter --model trustedrouter/cheap
+loro providers request "hello" --provider prime --model openai/gpt-oss-20b
 loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro data schema events --catalog prod --namespace analytics
 loro data explain-access events --catalog prod --namespace analytics --catalog-role reader
@@ -291,6 +324,7 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [Project Status](docs/project-status.md)
 - [CLI Guide](docs/cli.md)
 - [Configuration](docs/configuration.md)
 - [Identity Context](docs/identity.md)
@@ -299,15 +333,33 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Managed Data Protection](docs/data-protection.md)
 - [AI Providers](docs/providers.md)
 - [Memory](docs/memory.md)
+- [Reference Audit Collector](docs/audit-collector.md)
+- [Backup, Restore, And Recovery](docs/recovery.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
 - [Model Context Protocol](docs/mcp.md)
 - [MCP Support Matrix](docs/mcp-support-matrix.md)
 - [Agent Skills](docs/skills.md)
+- [Open Agent Profiles](docs/agent-profiles.md)
 - [Cross-Session Messaging](docs/session-messaging.md)
-- [Development Roadmap](docs/roadmap.md)
-- [MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md)
-- [Enterprise Readiness Roadmap](docs/enterprise-readiness-roadmap.md)
+- [Enterprise Beta Guide](docs/enterprise-beta.md)
+- [Enterprise Operator Runbook](docs/operator-runbook.md)
+- [Stabilization Support Policy](docs/support-policy.md)
+- [0.9 Release Candidate Operations (Historical)](docs/release-candidate.md)
+- [Independent Assurance Playbook](docs/assurance-playbook.md)
+- [Consumer Release Verification](docs/consumer-verification.md)
+- [Frozen Release Contract](docs/release-contract.json)
+- [Roadmap To Loro 1.0](docs/roadmap-1.0.md)
 - [Enterprise Evidence Register](docs/enterprise-evidence.md)
+
+For a restricted enterprise beta, begin with the versioned bundle in `deploy/reference`, assign
+the organization-owned controls, then capture a content-free local baseline:
+
+```bash
+loro config check --strict
+loro doctor
+loro operations benchmark --strict --output loro-benchmark.json
+loro operations release-readiness --output loro-readiness.json
+```
 
 ## License
 

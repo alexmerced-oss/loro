@@ -41,8 +41,13 @@ loro memory commit-draft <draft-id> --execute
 loro memory schema --backend postgres
 loro memory apply-schema
 loro memory apply-schema --execute
+loro memory migration-status
+loro memory migrate --target 2
+loro memory migrate --target 2 --execute
+loro memory reconcile
 loro memory schema --backend iceberg
 loro memory backend-check
+loro memory snapshots
 loro memory shared-search "launch readiness" --tenant-id acme
 loro memory shared-search "launch readiness" --tenant-id acme --dry-run
 loro memory lifecycle <memory-id> --action hold --reason "Litigation hold" --execute
@@ -59,7 +64,9 @@ bound parameters that would be used for the configured backend. `--execute` requ
 configured backend client and never bypasses the explicit draft step. `loro memory
 apply-schema` is also a dry run by default. `--execute` applies the Postgres shared-memory
 schema to the configured DSN; Iceberg schema creation should be handled by the governed
-catalog or query engine after reviewing `loro memory schema --backend iceberg`.
+catalog or query engine after reviewing `loro memory schema --backend iceberg`. Postgres schema
+application now runs the checksummed migration plan through version 2; existing schema-blob
+deployments migrate safely because every baseline DDL statement is idempotent.
 
 `loro memory shared-search` returns active shared memories when the configured backend can
 execute the search. If the backend is not ready, Loro returns the backend-neutral SQL and
@@ -118,6 +125,13 @@ loro memory commit-draft <draft-id>
 loro memory commit-draft <draft-id> --execute
 ```
 
+Draft IDs and lifecycle operation IDs are persisted in `memory_events` under a tenant-scoped
+unique index. An exact retry returns success without duplicating state or events. Reusing an ID
+with changed content, action, target, or actor fails. `loro memory reconcile` compares current
+state with append-only events and exits nonzero for orphan events, missing creation events,
+tenant mismatches, or lifecycle state without its corresponding event. Migration, rollback,
+backup, and restore procedures are in [Backup, Restore, and Recovery](recovery.md).
+
 ## Iceberg Backend
 
 Iceberg shared memory uses the same logical schema and is intended for enterprise-wide
@@ -154,11 +168,29 @@ Iceberg `shared-search` pushes tenant filtering into the PyIceberg scan as a typ
 expression (`EqualTo("tenant_id", ...)`, never an interpolated filter string), then selects the
 newest version per `memory_id` in Python. Status and expiry are deliberately *not* pushed down:
 they are per-version attributes, so filtering them in the scan could resurrect a memory whose
-newest version is deleted or expired. Iceberg `commit-draft --execute`
-appends one memory row and one event
-row to existing governed tables. DDL still renders through `loro memory schema --backend
+newest version is deleted or expired. Iceberg `commit-draft --execute` appends one memory row
+and one event row to existing governed tables. Draft-derived memory and event IDs and lifecycle
+event IDs are stable, so retrying the same object is idempotent.
+
+Iceberg does not provide a transaction spanning both tables. Loro therefore writes the audit
+event first and the state version second. If either append fails, the command fails and the same
+draft or lifecycle request can be retried: Loro detects the completed append and writes only the
+missing row. This prevents an unaudited state mutation and avoids duplicate state or event rows.
+Production operators should still alert on failed writes and retry or reconcile them promptly.
+All offset-aware timestamps are converted to UTC before storage in Iceberg's timezone-naive
+`TIMESTAMP` fields.
+
+For a lifecycle failure, Loro reports the operation UUID. Reuse it on the retry:
+
+```bash
+loro memory lifecycle <memory-id> --action hold --reason "Legal request" --execute \
+  --operation-id <reported-operation-uuid>
+```
+
+DDL still renders through `loro memory schema --backend
 iceberg`; table creation should happen through the governed catalog or enterprise query
-engine.
+engine. `loro memory snapshots` reports only snapshot IDs, parent IDs, sequence numbers,
+timestamps, and counts for state/event tables; it never reads memory content.
 
 ## Logical Shared Memory Fields
 

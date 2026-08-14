@@ -214,6 +214,31 @@ def test_flush_delivers_buffered_events(tmp_path: Path) -> None:
     assert logger.buffer.count() == 0
 
 
+def test_http_audit_batching_is_explicitly_opt_in(tmp_path: Path) -> None:
+    assert AuditConfig().http_batch_size == 1
+    logger = AuditLogger(
+        AuditConfig(
+            sink="http",
+            http_url="https://audit.example/events",
+            buffer_path=str(tmp_path / "buffer.jsonl"),
+            http_batch_size=2,
+        ),
+        sink=FailingSink(),
+    )
+    for event_type in ("first.event", "second.event"):
+        with pytest.warns(RuntimeWarning):
+            logger.write(event_type)
+    batching = RecordingBatchSink()
+    logger.sink = batching
+
+    result = logger.flush()
+
+    assert result.delivered == 2
+    assert [[event["event_type"] for event in batch] for batch in batching.batches] == [
+        ["first.event", "second.event"]
+    ]
+
+
 def test_partial_flush_preserves_failed_and_later_events(tmp_path: Path) -> None:
     logger = AuditLogger(
         AuditConfig(
@@ -315,6 +340,15 @@ class RecordingSink:
 
     def deliver(self, payload) -> None:
         self.events.append(payload)
+
+
+class RecordingBatchSink(RecordingSink):
+    def __init__(self) -> None:
+        super().__init__()
+        self.batches: list[list[dict]] = []
+
+    def deliver_batch(self, payloads) -> None:
+        self.batches.append(payloads)
 
 
 class FailAfterOneSink:

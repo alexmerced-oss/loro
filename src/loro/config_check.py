@@ -51,6 +51,7 @@ def check_config(config: LoroConfig) -> list[ConfigFinding]:
     findings.extend(_check_gateway(config))
     findings.extend(_check_identity(config))
     findings.extend(_check_audit(config))
+    findings.extend(_check_approvals(config))
     order = {"error": 0, "warning": 1, "info": 2}
     return sorted(findings, key=lambda item: (order[item.severity], item.code))
 
@@ -150,11 +151,7 @@ def _check_sandbox(config: LoroConfig) -> list[ConfigFinding]:
                     f"{pointer}/allowed_executables",
                 )
             )
-        bare = [
-            value
-            for value in profile.allowed_executables
-            if value != "*" and "/" not in value
-        ]
+        bare = [value for value in profile.allowed_executables if value != "*" and "/" not in value]
         if bare and not profile.trusted_executable_prefixes:
             findings.append(
                 ConfigFinding(
@@ -223,8 +220,7 @@ def _check_gateway(config: LoroConfig) -> list[ConfigFinding]:
                 ConfigFinding(
                     "LC032",
                     "info",
-                    f"Gateway endpoint {endpoint_id!r} restricts neither channels nor "
-                    "workspaces.",
+                    f"Gateway endpoint {endpoint_id!r} restricts neither channels nor workspaces.",
                     pointer,
                 )
             )
@@ -238,8 +234,7 @@ def _check_identity(config: LoroConfig) -> list[ConfigFinding]:
         ConfigFinding(
             "LC040",
             "info",
-            "identity.required_fields is empty, so runs proceed with an unattested "
-            "identity.",
+            "identity.required_fields is empty, so runs proceed with an unattested identity.",
             "/identity/required_fields",
         )
     ]
@@ -267,3 +262,17 @@ def _check_audit(config: LoroConfig) -> list[ConfigFinding]:
             )
         )
     return findings
+
+
+def _check_approvals(config: LoroConfig) -> list[ConfigFinding]:
+    if config.approvals.store == "json":
+        return []
+    return [
+        ConfigFinding(
+            "LC060",
+            "info",
+            "Approval records use the process-local memory store; configure the JSON store "
+            "when durable single-host replay protection is required.",
+            "/approvals/store",
+        )
+    ]

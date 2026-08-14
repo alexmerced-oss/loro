@@ -7,6 +7,7 @@ from pathlib import Path
 
 THRESHOLDS = {
     "src/loro/approvals.py": 85.0,
+    "src/loro/agent_profiles/": 75.0,
     "src/loro/audit/": 85.0,
     "src/loro/budgets.py": 90.0,
     "src/loro/credentials.py": 75.0,

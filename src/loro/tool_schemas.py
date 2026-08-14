@@ -23,6 +23,7 @@ __all__ = [
     "bedrock_tool_config",
     "gemini_tools",
     "openai_tools",
+    "provider_tool_name",
     "provider_tool_payload",
     "tool_catalog",
 ]
@@ -170,6 +171,14 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
         description="Emit a named output value for the current Agentic Graph node.",
         parameters=_object({"name": _STRING, "value": {}}, ["name", "value"]),
     ),
+    ToolSchema(
+        name="agent.run",
+        description="Run an allowed named agent profile as a bounded subagent.",
+        parameters=_object(
+            {"profile": _STRING, "prompt": _STRING, "mode": _STRING},
+            ["profile", "prompt"],
+        ),
+    ),
 )
 
 
@@ -201,7 +210,7 @@ def openai_tools(schemas: list[ToolSchema]) -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": schema.name,
+                "name": provider_tool_name(schema.name),
                 "description": schema.description,
                 "parameters": schema.parameters,
             },
@@ -213,7 +222,7 @@ def openai_tools(schemas: list[ToolSchema]) -> list[dict[str, Any]]:
 def anthropic_tools(schemas: list[ToolSchema]) -> list[dict[str, Any]]:
     return [
         {
-            "name": schema.name,
+            "name": provider_tool_name(schema.name),
             "description": schema.description,
             "input_schema": schema.parameters,
         }
@@ -226,7 +235,7 @@ def gemini_tools(schemas: list[ToolSchema]) -> list[dict[str, Any]]:
         {
             "functionDeclarations": [
                 {
-                    "name": schema.name.replace(".", "_"),
+                    "name": provider_tool_name(schema.name),
                     "description": schema.description,
                     "parameters": schema.parameters,
                 }
@@ -241,7 +250,7 @@ def bedrock_tool_config(schemas: list[ToolSchema]) -> dict[str, Any]:
         "tools": [
             {
                 "toolSpec": {
-                    "name": schema.name.replace(".", "_"),
+                    "name": provider_tool_name(schema.name),
                     "description": schema.description,
                     "inputSchema": {"json": schema.parameters},
                 }
@@ -270,12 +279,18 @@ def provider_tool_payload(protocol: str, schemas: list[ToolSchema]) -> dict[str,
 def canonical_tool_name(name: str, schemas: list[ToolSchema] | None = None) -> str:
     """Map a provider-sanitized tool name back to its Loro name.
 
-    Gemini and Bedrock reject "." in tool names, so the catalog publishes them with "_".
+    Provider tool-name contracts reject ".", so the catalog publishes names with "_".
     A native tool call therefore comes back as `file_read`, not `file.read`.
     """
 
     candidates = schemas if schemas is not None else list(BUILTIN_TOOL_SCHEMAS)
     for schema in candidates:
-        if name in (schema.name, schema.name.replace(".", "_")):
+        if name in (schema.name, provider_tool_name(schema.name)):
             return schema.name
     return name
+
+
+def provider_tool_name(name: str) -> str:
+    """Render a Loro tool name within provider function-name contracts."""
+
+    return name.replace(".", "_")

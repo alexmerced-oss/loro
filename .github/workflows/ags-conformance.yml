@@ -1,6 +1,8 @@
 name: AGS Conformance
 
 on:
+  push:
+    tags: ["v*"]
   pull_request:
     paths:
       - "src/loro/agraph/**"
@@ -23,13 +25,13 @@ jobs:
       matrix:
         python-version: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: AlexMercedCoder/agentic-graph-spec
           ref: 6bf105f2f7b51176bc1a4b49db0a722a2aa2e774 # pragma: allowlist secret
           path: upstream-ags
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -44,7 +46,7 @@ jobs:
           for graph in docs/examples/agraph/*.agraph.yaml skills/agentic-graph/references/templates/*.agraph.yaml; do
             loro graph validate "$graph" --strict
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ags-conformance-py${{ matrix.python-version }}

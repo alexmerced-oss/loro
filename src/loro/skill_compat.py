@@ -91,9 +91,7 @@ class CompatibilityReport:
     @property
     def importable(self) -> bool:
         return (
-            bool(self.skills)
-            and not self.errors
-            and all(item.compatible for item in self.skills)
+            bool(self.skills) and not self.errors and all(item.compatible for item in self.skills)
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -122,9 +120,7 @@ def inspect_compatibility(
     package = _read_json_file(root / "package.json") if kind == "pi" else {}
     manifest = _read_json_file(root / ".claude-plugin" / "plugin.json") if kind == "claude" else {}
     skill_paths = (
-        _claude_skill_paths(root, manifest)
-        if kind == "claude"
-        else _pi_skill_paths(root, package)
+        _claude_skill_paths(root, manifest) if kind == "claude" else _pi_skill_paths(root, package)
     )
     candidates = tuple(_inspect_skill(root, path, kind) for path in skill_paths)
     duplicate_names = {
@@ -137,9 +133,7 @@ def inspect_compatibility(
         errors.append("Imported skill names collide: " + ", ".join(sorted(duplicate_names)))
     unsupported = _unsupported_components(root, kind, manifest, package)
     mcp_payloads = _claude_mcp_payloads(root, manifest) if kind == "claude" else []
-    mcp_servers = tuple(
-        _translate_mcp_server(name, payload) for name, payload in mcp_payloads
-    )
+    mcp_servers = tuple(_translate_mcp_server(name, payload) for name, payload in mcp_payloads)
     duplicate_mcp_names = {
         item.name
         for item in mcp_servers
@@ -282,8 +276,7 @@ def _inspect_skill(root: Path, package: Path, kind: CompatibilityKind) -> SkillI
     if extra_metadata is not None and (
         not isinstance(extra_metadata, dict)
         or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in extra_metadata.items()
+            isinstance(key, str) and isinstance(value, str) for key, value in extra_metadata.items()
         )
     ):
         errors.append("metadata must map string keys to string values.")
@@ -348,10 +341,7 @@ def _normalize_skill(
     elif isinstance(allowed, str):
         normalized["allowed-tools"] = allowed
     rendered = (
-        "---\n"
-        + yaml.safe_dump(normalized, sort_keys=False).strip()
-        + "\n---\n\n"
-        + body.lstrip()
+        "---\n" + yaml.safe_dump(normalized, sort_keys=False).strip() + "\n---\n\n" + body.lstrip()
     )
     (destination / "SKILL.md").write_text(rendered, encoding="utf-8")
     return destination
@@ -486,8 +476,10 @@ def _translate_mcp_server(raw_name: str, payload: dict[str, Any]) -> MCPImportCa
         else:
             command = payload.get("command")
             args = payload.get("args", [])
-            if not isinstance(command, str) or not isinstance(args, list) or not all(
-                isinstance(item, str) for item in args
+            if (
+                not isinstance(command, str)
+                or not isinstance(args, list)
+                or not all(isinstance(item, str) for item in args)
             ):
                 raise ValueError("Stdio MCP server requires a string command and string args.")
             cwd = str(payload["cwd"]) if payload.get("cwd") else None

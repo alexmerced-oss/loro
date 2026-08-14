@@ -1,0 +1,326 @@
+{
+  "change_policy": "stable-core-preserved-experimental-oap-addition",
+  "cli": {
+    "agents": [
+      "apply",
+      "create",
+      "digest",
+      "explain",
+      "forget",
+      "history",
+      "list",
+      "proposals",
+      "review",
+      "show",
+      "state",
+      "validate"
+    ],
+    "approvals": [
+      "list"
+    ],
+    "artifacts": [
+      "verify"
+    ],
+    "audit": [
+      "collect",
+      "collector-verify",
+      "doctor",
+      "flush",
+      "metrics",
+      "query",
+      "report",
+      "verify"
+    ],
+    "brief": [
+      "executive",
+      "incident",
+      "meeting",
+      "project"
+    ],
+    "config": [
+      "check",
+      "show",
+      "summary"
+    ],
+    "configure": [],
+    "credentials": [
+      "delete",
+      "doctor",
+      "list",
+      "set"
+    ],
+    "data": [
+      "applicable-policies",
+      "catalog",
+      "catalog-role",
+      "catalog-roles",
+      "catalogs",
+      "explain-access",
+      "namespace",
+      "namespaces",
+      "polaris",
+      "policies",
+      "policy",
+      "principal-role",
+      "principal-roles",
+      "privileges",
+      "schema",
+      "table",
+      "tables",
+      "view",
+      "views"
+    ],
+    "docs": [
+      "create"
+    ],
+    "doctor": [],
+    "file": [
+      "read",
+      "search"
+    ],
+    "gateway": [
+      "doctor",
+      "serve",
+      "setup"
+    ],
+    "graph": [
+      "generate",
+      "plan",
+      "policy",
+      "resume",
+      "run",
+      "skill-path",
+      "status",
+      "validate"
+    ],
+    "identity": [
+      "doctor",
+      "show"
+    ],
+    "mcp": [
+      "add",
+      "auth-add",
+      "auth-list",
+      "auth-remove",
+      "call",
+      "doctor",
+      "extension-add",
+      "extensions",
+      "inspect",
+      "list",
+      "listen",
+      "prompt",
+      "prompts",
+      "read",
+      "remove",
+      "resources",
+      "serve",
+      "server-inspect",
+      "task-cancel",
+      "task-get",
+      "task-start",
+      "task-update",
+      "tasks",
+      "test",
+      "tools"
+    ],
+    "memory": [
+      "accept-proposal",
+      "apply-schema",
+      "backend-check",
+      "commit-draft",
+      "drafts",
+      "lifecycle",
+      "list",
+      "migrate",
+      "migration-status",
+      "proposals",
+      "propose",
+      "reconcile",
+      "remember",
+      "schema",
+      "search",
+      "shared-search",
+      "snapshots",
+      "sweep"
+    ],
+    "operations": [
+      "backup",
+      "benchmark",
+      "recovery-targets",
+      "release-readiness",
+      "restore",
+      "verify-backup"
+    ],
+    "plan": [],
+    "policy": [
+      "explain"
+    ],
+    "providers": [
+      "check",
+      "conformance",
+      "list",
+      "request",
+      "show",
+      "smoke"
+    ],
+    "remember": [],
+    "run": [],
+    "safety": [
+      "doctor",
+      "scan"
+    ],
+    "sandbox": [
+      "doctor"
+    ],
+    "sessions": [
+      "ack",
+      "inbox",
+      "list",
+      "send",
+      "show",
+      "wake"
+    ],
+    "setup": [
+      "agents",
+      "approvals",
+      "audit",
+      "gateway",
+      "identity",
+      "mcp",
+      "mcp-server",
+      "memory",
+      "polaris",
+      "provider",
+      "quickstart",
+      "sandbox",
+      "shared-memory",
+      "skills"
+    ],
+    "sheets": [
+      "analyze",
+      "create"
+    ],
+    "shell": [
+      "run"
+    ],
+    "skills": [
+      "disable",
+      "enable",
+      "import-claude",
+      "import-pi",
+      "install",
+      "list",
+      "propose",
+      "quarantine",
+      "remove",
+      "review",
+      "show",
+      "validate"
+    ],
+    "slides": [
+      "create"
+    ]
+  },
+  "digests": {
+    "data_support_matrix": "sha256:48275756776a47f0592f2758075a565b4b8ccdb0ce01a6d97828d933e8065551",
+    "interoperability_matrix": "sha256:b4b231e56cd3f731b1152897ac1e38598e407b3fb6a04d90c44da60d37f017cc",
+    "oap_conformance": "sha256:716429c41d89e4c8ba46a59f22889107a270f34b758a4cb78ef50bfd38ecacf6",
+    "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
+    "reference_deployment": "sha256:8420304195b80b244d6acd45113d5055010405ec544bc9f24a0379775892ecd5",
+    "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
+    "support_matrix": "sha256:e3bee6b876920121f58bcdca3784341e60e5d05d3edf94749020b415eb81fcc6"
+  },
+  "experimental": {
+    "extensions": [
+      "mcp",
+      "agentic-graphs",
+      "open-agent-profile-v1"
+    ],
+    "governed_data": [
+      "polaris-cli",
+      "iceberg-rest"
+    ],
+    "memory_backends": [
+      "iceberg"
+    ],
+    "operating_systems": [
+      "macos",
+      "windows"
+    ],
+    "provider_protocols": [
+      "bedrock"
+    ],
+    "remote_gateways": [
+      "slack",
+      "discord",
+      "telegram",
+      "teams",
+      "signal-bridge",
+      "generic"
+    ]
+  },
+  "external_gates": [
+    "accountable-owner-and-on-call-assignment",
+    "controlled-pilot-completion",
+    "corporate-identity-and-policy-validation",
+    "independent-penetration-test",
+    "legal-privacy-data-and-security-approval",
+    "production-backup-restore-and-disaster-recovery",
+    "production-provider-audit-and-gateway-evidence"
+  ],
+  "package_version": "0.12.0",
+  "protocols": {
+    "agentic_graph": "1.0",
+    "mcp": [
+      "2026-07-28",
+      "2025-11-25",
+      "2024-11-05"
+    ],
+    "open_agent_profile": "1.0-provisional-level-3",
+    "provider": [
+      "anthropic",
+      "bedrock",
+      "gemini",
+      "openai-compatible"
+    ]
+  },
+  "release_line": "0.12",
+  "schema_version": "1.0",
+  "schemas": {
+    "approval": "1.0",
+    "audit": "1.0",
+    "benchmark": "1.0",
+    "configuration": "1.0",
+    "metrics": "1.0",
+    "open_agent_profile": "1.0-provisional",
+    "postgres_memory": 2,
+    "recovery": "1.0"
+  },
+  "stability": "stabilization",
+  "supported": {
+    "extensions": [
+      "agent-skills",
+      "claude-skill-import",
+      "pi-skill-import"
+    ],
+    "memory_backends": [
+      "local",
+      "postgres"
+    ],
+    "operating_systems": [
+      "linux"
+    ],
+    "provider_protocols": [
+      "openai-compatible",
+      "anthropic",
+      "gemini"
+    ],
+    "python": [
+      "3.11",
+      "3.12",
+      "3.13",
+      "3.14"
+    ]
+  }
+}

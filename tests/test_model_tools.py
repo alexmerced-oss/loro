@@ -16,6 +16,7 @@ def test_parse_bedrock_tool_calls() -> None:
                         {"text": "looking"},
                         {
                             "toolUse": {
+                                "toolUseId": "tool-1",
                                 "name": "polaris.readonly",
                                 "input": {"args": ["catalogs", "list"]},
                             }
@@ -40,7 +41,17 @@ def test_parse_bedrock_tool_calls_rejects_non_object_input() -> None:
         parse_bedrock_tool_calls(
             {
                 "output": {
-                    "message": {"content": [{"toolUse": {"name": "file.read", "input": "nope"}}]}
+                    "message": {
+                        "content": [
+                            {
+                                "toolUse": {
+                                    "toolUseId": "tool-1",
+                                    "name": "file.read",
+                                    "input": "nope",
+                                }
+                            }
+                        ]
+                    }
                 }
             }
         )

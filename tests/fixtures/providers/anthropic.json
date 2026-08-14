@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "protocol": "anthropic",
+  "sanitized": true,
+  "source": "synthetic from public protocol documentation; no production content",
+  "cases": {
+    "completion": {"response": {"id": "msg_fixture", "content": [{"type": "text", "text": "fixture-ok"}]}},
+    "native_tools": {"response": {"content": [{"type": "tool_use", "id": "toolu_fixture", "name": "file__read", "input": {"path": "README.md"}}]}},
+    "streaming": {"events": [{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "fixture-"}}, {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}}]},
+    "usage": {"response": {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 7, "output_tokens": 2}}, "expected": {"input_tokens": 7, "output_tokens": 2}},
+    "malformed": {"response": {"content": "not-a-list"}, "error_contains": "content list"},
+    "retryable_error": {"statuses": [429, 500, 529], "terminal_status": 401}
+  }
+}

@@ -3,7 +3,9 @@ import tomllib
 
 from typer.testing import CliRunner
 
+from loro.audit import AuditDeliveryError
 from loro.cli import app
+from loro.memory.base import SharedMemoryBackendCheck
 from loro.sandbox import SandboxResult
 
 
@@ -27,6 +29,15 @@ def test_version() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "loro" in result.stdout
+
+
+def test_provider_conformance_command_reports_advertised_contracts() -> None:
+    result = CliRunner().invoke(app, ["providers", "conformance"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert "openai-compatible" in payload["protocols"]
+    assert "anthropic.json" in payload["fixtures"]
 
 
 def test_gateway_setup_writes_references_and_scope(tmp_path) -> None:
@@ -166,8 +177,7 @@ def test_audit_verify_reports_valid_chain(tmp_path, monkeypatch) -> None:
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
-        f'[audit]\npath = "{audit_path}"\n'
-        f'[sessions]\npath = "{tmp_path / "sessions"}"\n',
+        f'[audit]\npath = "{audit_path}"\n[sessions]\npath = "{tmp_path / "sessions"}"\n',
     )
     assert CliRunner().invoke(app, ["plan", "Prepare a short plan."]).exit_code == 0
 
@@ -520,6 +530,17 @@ def test_shared_memory_backend_check_missing_postgres_dsn(monkeypatch) -> None:
 
 
 def test_shared_memory_backend_check_iceberg(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "loro.memory.iceberg.IcebergSharedMemoryStore.check",
+        lambda self: SharedMemoryBackendCheck(
+            backend="iceberg",
+            ok=False,
+            messages=[
+                f"Iceberg memory table: {self.memory_table}",
+                "pyiceberg is not installed. Install the data extra.",
+            ],
+        ),
+    )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         '[memory.shared]\nbackend = "iceberg"\niceberg_table = "agent_facts"\n',
@@ -573,6 +594,13 @@ def test_shared_memory_commit_draft_reports_iceberg_readiness_error(
     tmp_path,
     monkeypatch,
 ) -> None:
+    def missing_catalog(_self):
+        raise RuntimeError("pyiceberg is required for Iceberg shared memory access.")
+
+    monkeypatch.setattr(
+        "loro.memory.iceberg.IcebergSharedMemoryStore._load_catalog",
+        missing_catalog,
+    )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         f'[memory.local]\npath = "{tmp_path / "memory"}"\n'
@@ -608,6 +636,34 @@ def test_shared_memory_search_dry_run(tmp_path, monkeypatch) -> None:
     assert "FROM public.shared_memories" in result.stdout
 
 
+def test_memory_migrate_renders_versioned_plan(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    result = CliRunner().invoke(app, ["memory", "migrate", "--target", "2"])
+
+    assert result.exit_code == 0
+    assert "1: shared_memory_baseline" in result.stdout
+    assert "2: idempotent_operation_ids" in result.stdout
+    assert "render only" in result.stdout
+
+
+def test_operations_backup_is_dry_run_without_execute(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    result = CliRunner().invoke(
+        app,
+        ["operations", "backup", "--output", str(tmp_path / "memory.dump")],
+    )
+
+    assert result.exit_code == 0
+    assert '"execute": false' in result.stdout
+    assert '"rpo_seconds": 300' in result.stdout
+
+
 def test_shared_memory_lifecycle_accepts_release_hold_alias(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
@@ -625,13 +681,41 @@ def test_shared_memory_lifecycle_accepts_release_hold_alias(tmp_path, monkeypatc
             "approved release",
             "--tenant-id",
             "acme",
+            "--operation-id",
+            "12345678-1234-5678-1234-567812345678",
         ],
     )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["action"] == "release_hold"
+    assert payload["operation_id"] == "12345678-1234-5678-1234-567812345678"
     assert "legal_hold = FALSE" in payload["sql"]
+
+
+def test_shared_memory_lifecycle_rejects_invalid_operation_id(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "lifecycle",
+            "memory-1",
+            "--action",
+            "hold",
+            "--reason",
+            "legal request",
+            "--operation-id",
+            "not-a-uuid",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "operation-id must be a UUID" in result.stderr
 
 
 def test_memory_proposal_accepts_local(tmp_path, monkeypatch) -> None:
@@ -775,6 +859,111 @@ def test_configure_non_interactive(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert output.exists()
     assert 'provider = "ollama"' in output.read_text(encoding="utf-8")
+
+
+def test_configure_new_project_writes_strict_ready_local_profile(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    runner = CliRunner()
+
+    configured = runner.invoke(app, ["configure", "--provider", "mock"])
+    checked = runner.invoke(app, ["config", "check", "--strict", "--json"])
+
+    assert configured.exit_code == 0, configured.stdout
+    assert checked.exit_code == 0, checked.stdout
+    payload = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
+    assert payload["permissions"]["workspace_roots"] == [str(tmp_path)]
+    assert "*" not in payload["sandbox"]["profiles"]["controlled-shell"][
+        "allowed_executables"
+    ]
+    assert "*" not in payload["sandbox"]["profiles"]["mcp-stdio"]["allowed_executables"]
+
+
+def test_configure_existing_file_preserves_policy_sections(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / ".loro/config.local.toml"
+    output.parent.mkdir()
+    output.write_text(
+        '[permissions]\ndefault = "deny"\nworkspace_roots = ["/managed/workspace"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(app, ["configure", "--provider", "mock"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert payload["permissions"] == {
+        "default": "deny",
+        "workspace_roots": ["/managed/workspace"],
+    }
+
+
+def test_configure_rolls_back_when_required_audit_delivery_fails(tmp_path, monkeypatch) -> None:
+    class FailingAudit:
+        def write(self, *args, **kwargs):
+            raise AuditDeliveryError("audit path is unwritable")
+
+    output = tmp_path / "config.local.toml"
+    original = b'[model]\nprovider = "mock"\nmodel = "original"\n'
+    output.write_bytes(original)
+    monkeypatch.setattr("loro.cli._audit", lambda: FailingAudit())
+
+    result = CliRunner().invoke(
+        app,
+        ["configure", "--provider", "ollama", "--output", str(output)],
+    )
+
+    assert result.exit_code == 2
+    assert "rolled back" in result.stderr
+    assert output.read_bytes() == original
+
+
+def test_configure_removes_new_file_when_required_audit_delivery_fails(
+    tmp_path, monkeypatch
+) -> None:
+    class FailingAudit:
+        def write(self, *args, **kwargs):
+            raise AuditDeliveryError("audit path is unwritable")
+
+    output = tmp_path / "config.local.toml"
+    monkeypatch.setattr("loro.cli._audit", lambda: FailingAudit())
+
+    result = CliRunner().invoke(
+        app,
+        ["configure", "--provider", "mock", "--output", str(output)],
+    )
+
+    assert result.exit_code == 2
+    assert "rolled back" in result.stderr
+    assert not output.exists()
+
+
+def test_artifacts_verify_cli_detects_mutation(tmp_path) -> None:
+    artifact = tmp_path / "artifact.txt"
+    artifact.write_text("original", encoding="utf-8")
+    from loro.artifacts.common import ArtifactResult, write_provenance
+
+    provenance = write_provenance(
+        result=ArtifactResult("Artifact", "document", [artifact], "created"),
+        prompt_preview="artifact",
+    )
+    runner = CliRunner()
+
+    valid = runner.invoke(app, ["artifacts", "verify", str(provenance)])
+    artifact.write_text("changed", encoding="utf-8")
+    invalid = runner.invoke(app, ["artifacts", "verify", str(provenance)])
+
+    assert valid.exit_code == 0, valid.stdout
+    assert json.loads(valid.stdout)["ok"] is True
+    assert invalid.exit_code == 1
+    assert json.loads(invalid.stdout)["ok"] is False
 
 
 def test_configure_with_provider_alias(tmp_path, monkeypatch) -> None:
@@ -1109,6 +1298,10 @@ def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
             "60",
             "--session-ttl",
             "300",
+            "--store",
+            "json",
+            "--store-path",
+            str(tmp_path / "approvals.json"),
             "--output",
             str(output),
         ],
@@ -1120,6 +1313,8 @@ def test_setup_approvals_writes_configuration(tmp_path, monkeypatch) -> None:
     assert "interactive = true" in text
     assert "allow_non_interactive = false" in text
     assert "once_ttl_seconds = 60" in text
+    assert 'store = "json"' in text
+    assert f'store_path = "{tmp_path / "approvals.json"}"' in text
 
 
 def test_setup_audit_writes_external_sink_configuration(tmp_path, monkeypatch) -> None:

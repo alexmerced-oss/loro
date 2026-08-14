@@ -96,8 +96,11 @@ Enterprise administrators can require fields in the non-overridable managed over
 required_fields = ["subject", "organization", "tenant", "auth_method", "source"]
 ```
 
-Because managed overlays load last, project/user configuration cannot remove that list. Agent
-runtime construction and audited consequential commands fail when required fields are absent.
+Because managed overlays load last, project/user configuration cannot remove that list. A
+required field must be explicitly supplied by resolved configuration or the enabled identity
+environment; local username, `default` tenant, inferred authentication/source labels, and random
+session fallbacks do not satisfy the requirement. Agent runtime construction and audited
+consequential commands fail when required fields are absent.
 Diagnostic commands remain available so operators can see what is missing.
 
 ## Propagation

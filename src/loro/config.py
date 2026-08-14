@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 import tomli_w
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from loro.fileio import atomic_write_text
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -16,6 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 PermissionDecision = Literal["allow", "ask", "deny"]
+CONFIG_SCHEMA_VERSION = "1.0"
 IdentityField = Literal[
     "subject",
     "display_name",
@@ -31,6 +34,10 @@ IdentityField = Literal[
 
 class ManagedConfigIntegrityError(ValueError):
     """Raised when a required or digest-pinned managed policy cannot be verified."""
+
+
+class ConfigSchemaError(ValueError):
+    """Raised when configuration cannot be migrated to the supported schema."""
 
 
 class ModelTierConfig(BaseModel):
@@ -55,6 +62,8 @@ class ModelConfig(BaseModel):
     verify_tls: bool = True
     ca_bundle_env: str | None = None
     proxy_env: str | None = None
+    allowed_base_url_hosts: list[str] = Field(default_factory=list)
+    request_id_header: str = Field(default="X-Loro-Request-ID", pattern=r"^[A-Za-z0-9-]{1,64}$")
     temperature: float = 0.2
     max_tokens: int | None = None
     input_cost_per_million: float = Field(default=0, ge=0)
@@ -113,9 +122,7 @@ def _validate_child_environment_names(values: list[str]) -> list[str]:
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
             raise ValueError(f"Invalid environment variable name: {value!r}")
         if name.upper() in FORBIDDEN_CHILD_ENVIRONMENT:
-            raise ValueError(
-                f"Environment variable cannot be forwarded to a child process: {name}"
-            )
+            raise ValueError(f"Environment variable cannot be forwarded to a child process: {name}")
         if name not in normalized:
             normalized.append(name)
     return normalized
@@ -302,6 +309,9 @@ class ApprovalsConfig(BaseModel):
     allow_session_scope: bool = True
     once_ttl_seconds: int = Field(default=300, ge=1)
     session_ttl_seconds: int = Field(default=900, ge=1)
+    store: Literal["memory", "json"] = "memory"
+    store_path: str = "~/.local/state/loro/approvals.json"
+    max_store_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
 
 
 class PermissionRuleConfig(BaseModel):
@@ -650,10 +660,12 @@ class AuditConfig(BaseModel):
     max_buffer_events: int = Field(default=1000, ge=1)
     # Events delivered per HTTP request when flushing the buffer. 1 preserves the
     # one-request-per-event wire format for collectors that cannot accept a batch.
-    http_batch_size: int = Field(default=50, ge=1, le=1000)
+    http_batch_size: int = Field(default=1, ge=1, le=1000)
     max_retries: int = Field(default=2, ge=0, le=10)
     backoff_seconds: float = Field(default=0.25, ge=0, le=60)
     timeout_seconds: float = Field(default=10, gt=0, le=300)
+    metrics_enabled: bool = False
+    metrics_path: str = "~/.local/state/loro/operational-metrics.json"
 
 
 class SessionConfig(BaseModel):
@@ -778,6 +790,23 @@ class SkillsConfig(BaseModel):
     max_active: int = Field(default=3, ge=1, le=20)
 
 
+class AgentProfilesConfig(BaseModel):
+    enabled: bool = True
+    managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/agents"])
+    user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/agents"])
+    project_paths: list[str] = Field(default_factory=lambda: [".agents", ".loro/agents"])
+    allow_user: bool = True
+    allow_project: bool = True
+    writeback: Literal["off", "propose", "auto"] = "propose"
+    max_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    max_state_bytes: int = Field(default=200_000, ge=0, le=5_000_000)
+    max_profiles: int = Field(default=200, ge=1, le=10_000)
+    max_reference_depth: int = Field(default=8, ge=1, le=20)
+    max_subagent_depth: int = Field(default=3, ge=0, le=20)
+    state_path: str = ".loro/agent-state.json"
+    proposal_path: str = ".loro/agent-proposals"
+
+
 class SafetyConfig(BaseModel):
     enabled: bool = True
     block_on_findings: bool = True
@@ -861,10 +890,12 @@ def _default_data_protection_surfaces() -> dict[str, DataProtectionSurfaceConfig
         "session_message": persistence.model_copy(),
         "tool_output": DataProtectionSurfaceConfig(action="redact"),
         "audit": DataProtectionSurfaceConfig(action="redact", maximum_classification="internal"),
+        "agent_profile": DataProtectionSurfaceConfig(action="redact"),
     }
 
 
 class LoroConfig(BaseModel):
+    schema_version: Literal["1.0"] = CONFIG_SCHEMA_VERSION
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
@@ -880,6 +911,7 @@ class LoroConfig(BaseModel):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    agent_profiles: AgentProfilesConfig = Field(default_factory=AgentProfilesConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
 
@@ -898,6 +930,25 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def migrate_config_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Return configuration normalized to the current root schema.
+
+    Releases before 0.5.0 emitted unversioned TOML. That exact shape is the only
+    legacy format supported by the first migration contract.
+    """
+    migrated = dict(data)
+    version = migrated.get("schema_version")
+    if version is None:
+        migrated["schema_version"] = CONFIG_SCHEMA_VERSION
+        return migrated
+    if version != CONFIG_SCHEMA_VERSION:
+        raise ConfigSchemaError(
+            f"Unsupported configuration schema version: {version!r} "
+            f"(supported: {CONFIG_SCHEMA_VERSION!r})."
+        )
+    return migrated
 
 
 def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
@@ -922,6 +973,10 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
             data["ca_bundle_env"] = config.model.ca_bundle_env
         if config.model.proxy_env:
             data["proxy_env"] = config.model.proxy_env
+        if config.model.allowed_base_url_hosts:
+            data["allowed_base_url_hosts"] = config.model.allowed_base_url_hosts
+        if config.model.request_id_header != "X-Loro-Request-ID":
+            data["request_id_header"] = config.model.request_id_header
         if config.model.max_tokens:
             data["max_tokens"] = config.model.max_tokens
         if config.model.input_cost_per_million:
@@ -931,6 +986,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"model": data}
     if section == "identity":
         return {"identity": config.identity.model_dump(exclude_none=True)}
+    if section == "permissions":
+        return {"permissions": config.permissions.model_dump(exclude_none=True)}
     if section == "approvals":
         return {"approvals": config.approvals.model_dump(exclude_none=True)}
     if section == "sandbox":
@@ -957,9 +1014,10 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
 def write_config_sections(path: Path, config: LoroConfig, sections: list[str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _read_toml(path)
+    data = migrate_config_data(data)
     for section in sections:
         data = _merge(data, _config_section_data(config, section))
-    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    atomic_write_text(path, tomli_w.dumps(data))
     return path
 
 
@@ -970,8 +1028,9 @@ def replace_config_section(path: Path, config: LoroConfig, section: str) -> Path
         raise ValueError(f"Section is not top-level and cannot be replaced: {section}")
     path.parent.mkdir(parents=True, exist_ok=True)
     data = _read_toml(path)
+    data = migrate_config_data(data)
     data[section] = section_data[section]
-    path.write_text(tomli_w.dumps(data), encoding="utf-8")
+    atomic_write_text(path, tomli_w.dumps(data))
     return path
 
 
@@ -1023,7 +1082,7 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
             raise ManagedConfigIntegrityError(f"Invalid managed config: {label}") from error
         managed_data = _merge(managed_data, parsed)
     data = _merge(data, managed_data)
-    return LoroConfig.model_validate(data)
+    return LoroConfig.model_validate(migrate_config_data(data))
 
 
 def managed_config_digest(sources: list[tuple[str, bytes]]) -> str:

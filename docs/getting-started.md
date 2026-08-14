@@ -32,6 +32,7 @@ For the fastest path, run the interactive provider wizard:
 
 ```bash
 loro configure
+loro config check --strict
 loro doctor
 ```
 
@@ -65,6 +66,14 @@ loro providers smoke "hello" --provider openrouter --model deepseek/deepseek-v4-
 export OPENCODE_ZEN_API_KEY="<your-opencode-key>"
 loro providers smoke "hello" --provider opencode-zen --model deepseek-v4-flash --execute
 
+export TRUSTEDROUTER_API_KEY="<your-trustedrouter-key>"
+loro providers smoke "hello" --provider trustedrouter --model trustedrouter/cheap --execute
+
+export PRIME_API_KEY="<your-prime-key>"
+# Optional: charge requests to a Prime team instead of the personal account.
+export PRIME_TEAM_ID="<your-team-id>"
+loro providers smoke "hello" --provider prime --model openai/gpt-oss-20b --execute
+
 export ANTHROPIC_API_KEY="<your-anthropic-key>"
 loro providers smoke "hello" --provider anthropic --model claude-sonnet-5 --execute
 
@@ -79,8 +88,10 @@ loro configure --provider ollama --model llama3.2 --small-model llama3.2
 loro providers check ollama
 ```
 
-`loro configure` writes `.loro/config.local.toml` by default. Keep API keys in environment
-variables, not in config files.
+For a new project, `loro configure` writes a strict-ready `.loro/config.local.toml` with the
+current workspace and explicit local executable allowlists. Rerunning it preserves existing
+policy sections and updates only the model section. Keep API keys in environment variables or
+the OS credential vault, not in config files.
 
 Additional setup wizards configure the rest of the local quick-start surface:
 

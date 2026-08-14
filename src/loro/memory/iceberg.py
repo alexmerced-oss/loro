@@ -1,9 +1,10 @@
 import json
 import os
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from loro.config import SharedMemoryConfig
 from loro.memory.base import (
@@ -16,6 +17,29 @@ from loro.memory.base import (
 )
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class IcebergTableSnapshotStatus:
+    table: str
+    snapshot_count: int
+    current_snapshot_id: int | None
+    parent_snapshot_id: int | None
+    sequence_number: int | None
+    timestamp_ms: int | None
+
+
+@dataclass(frozen=True)
+class IcebergSnapshotReport:
+    memory: IcebergTableSnapshotStatus
+    events: IcebergTableSnapshotStatus
+
+    @property
+    def aligned(self) -> bool:
+        return (
+            self.memory.current_snapshot_id is not None
+            and self.events.current_snapshot_id is not None
+        )
 
 
 class IcebergSharedMemoryStore:
@@ -90,9 +114,28 @@ PARTITIONED BY (tenant_id, event_type);
 
     def render_insert(self, draft: SharedMemoryDraft) -> SharedMemoryStatement:
         self._authorize_tenant(draft.tenant_id)
-        memory_id = str(uuid4())
-        event_id = str(uuid4())
+        memory_id = _draft_memory_id(draft.draft_id)
+        event_id = _draft_event_id(draft.draft_id)
         sql = f"""
+INSERT INTO {self.events_table} (
+  event_id,
+  memory_id,
+  tenant_id,
+  event_type,
+  actor,
+  event_at,
+  payload
+)
+VALUES (
+  :event_id,
+  :memory_id,
+  :tenant_id,
+  'memory.created',
+  :created_by,
+  :created_at,
+  :event_payload
+);
+
 INSERT INTO {self.memory_table} (
   memory_id,
   tenant_id,
@@ -138,25 +181,6 @@ VALUES (
   :expires_at,
   FALSE,
   NULL
-);
-
-INSERT INTO {self.events_table} (
-  event_id,
-  memory_id,
-  tenant_id,
-  event_type,
-  actor,
-  event_at,
-  payload
-)
-VALUES (
-  :event_id,
-  :memory_id,
-  :tenant_id,
-  'memory.created',
-  :created_by,
-  :created_at,
-  :event_payload
 );
 """.strip()
         return SharedMemoryStatement(
@@ -221,9 +245,7 @@ LIMIT :limit;
             params={"tenant_id": tenant_id, "query": like_term(query), "limit": limit},
         )
 
-    def render_lifecycle(
-        self, request: SharedMemoryLifecycleRequest
-    ) -> SharedMemoryStatement:
+    def render_lifecycle(self, request: SharedMemoryLifecycleRequest) -> SharedMemoryStatement:
         self._authorize_tenant(request.tenant_id)
         status = "'deleted'" if request.action == "delete" else "status"
         content = ":content" if request.action == "correct" else "content"
@@ -236,6 +258,13 @@ LIMIT :limit;
         deleted_at = ":requested_at" if request.action == "delete" else "deleted_at"
         hold_guard = "AND legal_hold = FALSE" if request.action in {"delete", "expire"} else ""
         sql = f"""
+INSERT INTO {self.events_table} (
+  event_id, memory_id, tenant_id, event_type, actor, event_at, payload
+)
+VALUES (
+  :event_id, :memory_id, :tenant_id, :event_type, :actor, :requested_at, :event_payload
+);
+
 INSERT INTO {self.memory_table}
 SELECT
   memory_id, tenant_id, scope_type, scope_key, memory_type,
@@ -247,13 +276,6 @@ WHERE memory_id = :memory_id AND tenant_id = :tenant_id
   {hold_guard}
 ORDER BY COALESCE(updated_at, created_at) DESC
 LIMIT 1;
-
-INSERT INTO {self.events_table} (
-  event_id, memory_id, tenant_id, event_type, actor, event_at, payload
-)
-VALUES (
-  :event_id, :memory_id, :tenant_id, :event_type, :actor, :requested_at, :event_payload
-);
 """.strip()
         return SharedMemoryStatement(
             sql=sql,
@@ -311,6 +333,14 @@ VALUES (
             messages=messages,
         )
 
+    def snapshot_report(self) -> IcebergSnapshotReport:
+        """Return content-free snapshot metadata for lifecycle/recovery diagnostics."""
+        catalog = self._load_catalog()
+        return IcebergSnapshotReport(
+            memory=_snapshot_status(catalog.load_table(self.memory_table), self.memory_table),
+            events=_snapshot_status(catalog.load_table(self.events_table), self.events_table),
+        )
+
     def commit_draft(self, draft: SharedMemoryDraft) -> None:
         self._authorize_tenant(draft.tenant_id)
         try:
@@ -353,12 +383,18 @@ VALUES (
         catalog = self._load_catalog()
         memory_table = catalog.load_table(self.memory_table)
         events_table = catalog.load_table(self.events_table)
-        memory_table.append(
-            pa.Table.from_pylist([memory_row], schema=memory_table.schema().as_arrow())
-        )
-        events_table.append(
-            pa.Table.from_pylist([event_row], schema=events_table.schema().as_arrow())
-        )
+        memory_exists = _table_contains(memory_table, "memory_id", memory_row["memory_id"])
+        event_exists = _table_contains(events_table, "event_id", event_row["event_id"])
+        # Iceberg has no cross-table transaction. Commit provenance first and use stable
+        # operation IDs so a retry can complete either missing append without duplication.
+        if not event_exists:
+            events_table.append(
+                pa.Table.from_pylist([event_row], schema=events_table.schema().as_arrow())
+            )
+        if not memory_exists:
+            memory_table.append(
+                pa.Table.from_pylist([memory_row], schema=memory_table.schema().as_arrow())
+            )
 
     def apply_lifecycle(self, request: SharedMemoryLifecycleRequest) -> None:
         self._authorize_tenant(request.tenant_id)
@@ -385,23 +421,29 @@ VALUES (
         current = max(candidates, key=_memory_version_time)
         if request.action in {"delete", "expire"} and current.get("legal_hold") is True:
             raise RuntimeError("Memory lifecycle target is protected by legal hold.")
+        existing_event = _table_row(events_table, "event_id", request.event_id)
+        if existing_event is not None:
+            _validate_lifecycle_event(existing_event, request)
+        operation_time = (
+            existing_event.get("event_at")
+            if existing_event is not None
+            and isinstance(existing_event.get("event_at"), datetime)
+            else request.requested_at
+        )
         updated = dict(current)
-        updated["updated_at"] = _iceberg_value(request.requested_at)
+        updated["updated_at"] = _iceberg_value(operation_time)
         if request.action == "correct":
             updated["content"] = request.content
             updated["summary"] = request.summary
         elif request.action == "delete":
             updated["status"] = "deleted"
-            updated["deleted_at"] = _iceberg_value(request.requested_at)
+            updated["deleted_at"] = _iceberg_value(operation_time)
         elif request.action == "expire":
             updated["expires_at"] = _iceberg_value(request.expires_at)
         elif request.action == "hold":
             updated["legal_hold"] = True
         elif request.action == "release_hold":
             updated["legal_hold"] = False
-        memory_table.append(
-            pa.Table.from_pylist([updated], schema=memory_table.schema().as_arrow())
-        )
         event = {
             "event_id": request.event_id,
             "memory_id": request.memory_id,
@@ -411,9 +453,17 @@ VALUES (
             "event_at": _iceberg_value(request.requested_at),
             "payload": json.dumps({"reason": request.reason}),
         }
-        events_table.append(
-            pa.Table.from_pylist([event], schema=events_table.schema().as_arrow())
+        version_exists = any(
+            _lifecycle_version_matches(row, request, operation_time) for row in candidates
         )
+        if existing_event is None:
+            events_table.append(
+                pa.Table.from_pylist([event], schema=events_table.schema().as_arrow())
+            )
+        if not version_exists:
+            memory_table.append(
+                pa.Table.from_pylist([updated], schema=memory_table.schema().as_arrow())
+            )
 
     def search(
         self,
@@ -590,8 +640,88 @@ def _memory_filter(*, tenant_id: str, memory_id: str | None = None) -> Any:
 
 def _iceberg_value(value: Any) -> Any:
     if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
         return value.replace(tzinfo=None)
     return value
+
+
+def _draft_memory_id(draft_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"loro:shared-memory:{draft_id}"))
+
+
+def _draft_event_id(draft_id: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"loro:shared-memory-event:{draft_id}"))
+
+
+def _table_contains(table: Any, field: str, value: str) -> bool:
+    return _table_row(table, field, value, selected_fields=(field,)) is not None
+
+
+def _table_row(
+    table: Any,
+    field: str,
+    value: str,
+    *,
+    selected_fields: tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    try:
+        from pyiceberg.expressions import EqualTo
+    except ModuleNotFoundError as error:
+        raise RuntimeError("pyiceberg is required for Iceberg shared memory access.") from error
+    options: dict[str, Any] = {"row_filter": EqualTo(field, value)}
+    if selected_fields is not None:
+        options["selected_fields"] = selected_fields
+    rows = table.scan(**options).to_arrow()
+    return next(
+        (
+            row
+            for row in rows.to_pylist()
+            if isinstance(row, dict) and str(row.get(field) or "") == value
+        ),
+        None,
+    )
+
+
+def _same_instant(left: Any, right: datetime) -> bool:
+    if not isinstance(left, datetime):
+        return False
+    left_utc = left.replace(tzinfo=UTC) if left.tzinfo is None else left.astimezone(UTC)
+    right_utc = right.replace(tzinfo=UTC) if right.tzinfo is None else right.astimezone(UTC)
+    return left_utc == right_utc
+
+
+def _lifecycle_version_matches(
+    row: dict[str, Any],
+    request: SharedMemoryLifecycleRequest,
+    operation_time: datetime,
+) -> bool:
+    if not _same_instant(row.get("updated_at"), operation_time):
+        return False
+    if request.action == "correct":
+        return row.get("content") == request.content and row.get("summary") == request.summary
+    if request.action == "delete":
+        return row.get("status") == "deleted" and _same_instant(
+            row.get("deleted_at"), operation_time
+        )
+    if request.action == "expire" and request.expires_at is not None:
+        return _same_instant(row.get("expires_at"), request.expires_at)
+    if request.action == "hold":
+        return row.get("legal_hold") is True
+    return row.get("legal_hold") is False
+
+
+def _validate_lifecycle_event(
+    event: dict[str, Any],
+    request: SharedMemoryLifecycleRequest,
+) -> None:
+    expected = {
+        "memory_id": request.memory_id,
+        "tenant_id": request.tenant_id,
+        "event_type": f"memory.{request.action}",
+    }
+    if any(str(event.get(field) or "") != value for field, value in expected.items()):
+        raise RuntimeError("Iceberg lifecycle operation ID is already bound to another action.")
 
 
 def _created_at_text(value: Any) -> str:
@@ -611,3 +741,17 @@ def _memory_version_time(row: dict[str, Any]) -> datetime:
         except ValueError:
             pass
     return datetime.min.replace(tzinfo=UTC)
+
+
+def _snapshot_status(table: Any, name: str) -> IcebergTableSnapshotStatus:
+    metadata = getattr(table, "metadata", None)
+    snapshots = getattr(metadata, "snapshots", ()) if metadata is not None else ()
+    current = table.current_snapshot() if hasattr(table, "current_snapshot") else None
+    return IcebergTableSnapshotStatus(
+        table=name,
+        snapshot_count=len(snapshots or ()),
+        current_snapshot_id=getattr(current, "snapshot_id", None),
+        parent_snapshot_id=getattr(current, "parent_snapshot_id", None),
+        sequence_number=getattr(current, "sequence_number", None),
+        timestamp_ms=getattr(current, "timestamp_ms", None),
+    )

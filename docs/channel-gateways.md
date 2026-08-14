@@ -99,3 +99,8 @@ subject = "alex"
 tenant = "acme"
 roles = ["developer"]
 ```
+The 0.7 conformance claim covers Slack URL verification and messages, Discord pings and
+application commands, Telegram messages and edited messages, and the signed message envelope for
+Teams, Signal, and generic bridges. Other event types are unsupported and must not be treated as
+approval or authority. The machine-readable claim lives in
+[`interoperability-matrix.json`](interoperability-matrix.json).

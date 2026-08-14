@@ -3,6 +3,7 @@ import os
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -15,9 +16,39 @@ from loro.memory.base import (
     SharedMemoryStatement,
     like_term,
 )
-from loro.memory.schemas import POSTGRES_SHARED_MEMORY_SCHEMA
+from loro.memory.migrations import (
+    LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    migration_table,
+    postgres_memory_migrations,
+    record_migration_sql,
+    render_postgres_memory_schema,
+)
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class PostgresMigrationResult:
+    previous_version: int
+    current_version: int
+    applied: tuple[int, ...] = ()
+    rolled_back: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class MemoryReconciliationReport:
+    memories: int
+    events: int
+    orphan_events: int
+    memories_without_created_event: int
+    tenant_mismatches: int
+    lifecycle_state_mismatches: int
+    schema_version: int
+    issues: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def ok(self) -> bool:
+        return not self.issues
 
 
 @contextmanager
@@ -56,55 +87,10 @@ class PostgresSharedMemoryStore:
         return f"{self.config.postgres_schema}.{name}"
 
     def render_schema(self) -> str:
-        schema = self.config.postgres_schema
-        schema_sql = POSTGRES_SHARED_MEMORY_SCHEMA
-        if schema != "public":
-            schema_sql = (
-                schema_sql.replace(
-                    "idx_shared_memories_scope",
-                    f"idx_{schema}_shared_memories_scope",
-                )
-                .replace(
-                    "idx_shared_memories_type",
-                    f"idx_{schema}_shared_memories_type",
-                )
-                .replace(
-                    "CREATE TABLE IF NOT EXISTS shared_memories",
-                    f"CREATE TABLE IF NOT EXISTS {self._table('shared_memories')}",
-                )
-                .replace(
-                    "CREATE TABLE IF NOT EXISTS memory_events",
-                    f"CREATE TABLE IF NOT EXISTS {self._table('memory_events')}",
-                )
-                .replace(
-                    "ALTER TABLE shared_memories",
-                    f"ALTER TABLE {self._table('shared_memories')}",
-                )
-                .replace("ON shared_memories", f"ON {self._table('shared_memories')}")
-            )
-        prefix = f"CREATE SCHEMA IF NOT EXISTS {schema};\n\n" if schema != "public" else ""
-        if self.config.tenant_isolation == "identity":
-            schema_sql += "\n\n" + self._tenant_policy_sql()
-        return prefix + schema_sql
-
-    def _tenant_policy_sql(self) -> str:
-        memory_table = self._table("shared_memories")
-        events_table = self._table("memory_events")
-        return f"""
-ALTER TABLE {memory_table} ENABLE ROW LEVEL SECURITY;
-ALTER TABLE {memory_table} FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS loro_tenant_isolation ON {memory_table};
-CREATE POLICY loro_tenant_isolation ON {memory_table}
-  USING (tenant_id = current_setting('loro.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('loro.tenant_id', true));
-
-ALTER TABLE {events_table} ENABLE ROW LEVEL SECURITY;
-ALTER TABLE {events_table} FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS loro_tenant_isolation ON {events_table};
-CREATE POLICY loro_tenant_isolation ON {events_table}
-  USING (tenant_id = current_setting('loro.tenant_id', true))
-  WITH CHECK (tenant_id = current_setting('loro.tenant_id', true));
-""".strip()
+        return render_postgres_memory_schema(
+            self.config.postgres_schema,
+            tenant_isolation=self.config.tenant_isolation == "identity",
+        )
 
     def check(self) -> SharedMemoryBackendCheck:
         messages = [f"Tenant isolation: {self.config.tenant_isolation}"]
@@ -131,8 +117,21 @@ CREATE POLICY loro_tenant_isolation ON {events_table}
         self._authorize_tenant(draft.tenant_id)
         memory_id = str(uuid4())
         event_id = str(uuid4())
+        content_digest = _content_digest(draft.content)
         sql = f"""
-WITH inserted_memory AS (
+WITH existing_operation AS (
+  SELECT memory_id, event_type, actor, payload
+  FROM {self._table("memory_events")}
+  WHERE tenant_id = %(tenant_id)s AND operation_id = %(operation_id)s
+),
+matching_operation AS (
+  SELECT memory_id
+  FROM existing_operation
+  WHERE event_type = 'memory.created'
+    AND actor = %(created_by)s
+    AND payload->>'content_digest' = %(content_digest)s
+),
+inserted_memory AS (
   INSERT INTO {self._table("shared_memories")} (
     memory_id,
     tenant_id,
@@ -148,7 +147,7 @@ WITH inserted_memory AS (
     status,
     expires_at
   )
-  VALUES (
+  SELECT
     %(memory_id)s,
     %(tenant_id)s,
     %(scope_type)s,
@@ -162,13 +161,15 @@ WITH inserted_memory AS (
     %(created_at)s,
     'active',
     %(expires_at)s
-  )
+  WHERE NOT EXISTS (SELECT 1 FROM existing_operation)
   RETURNING memory_id
-)
+),
+inserted_event AS (
 INSERT INTO {self._table("memory_events")} (
   event_id,
   memory_id,
   tenant_id,
+  operation_id,
   event_type,
   actor,
   payload
@@ -177,16 +178,29 @@ SELECT
   %(event_id)s,
   inserted_memory.memory_id,
   %(tenant_id)s,
+  %(operation_id)s,
   'memory.created',
   %(created_by)s,
   %(event_payload)s::jsonb
-FROM inserted_memory;
+FROM inserted_memory
+ON CONFLICT (tenant_id, operation_id) WHERE operation_id IS NOT NULL DO NOTHING
+RETURNING event_id
+),
+result AS (
+  SELECT
+    EXISTS (SELECT 1 FROM existing_operation) AS operation_exists,
+    EXISTS (SELECT 1 FROM matching_operation) AS operation_matches,
+    EXISTS (SELECT 1 FROM inserted_memory) AS memory_inserted,
+    EXISTS (SELECT 1 FROM inserted_event) AS event_inserted
+)
+SELECT operation_exists, operation_matches, memory_inserted, event_inserted FROM result;
 """.strip()
         return SharedMemoryStatement(
             sql=sql,
             params={
                 "memory_id": memory_id,
                 "event_id": event_id,
+                "operation_id": draft.draft_id,
                 "tenant_id": draft.tenant_id,
                 "scope_type": draft.scope_type,
                 "scope_key": draft.scope_key,
@@ -198,7 +212,10 @@ FROM inserted_memory;
                 "created_by": draft.created_by,
                 "created_at": draft.created_at,
                 "expires_at": draft.expires_at,
-                "event_payload": json.dumps({"draft_id": draft.draft_id}),
+                "content_digest": content_digest,
+                "event_payload": json.dumps(
+                    {"draft_id": draft.draft_id, "content_digest": content_digest}
+                ),
             },
         )
 
@@ -271,17 +288,14 @@ LIMIT %(limit)s;
                     rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
-    def render_lifecycle(
-        self, request: SharedMemoryLifecycleRequest
-    ) -> SharedMemoryStatement:
+    def render_lifecycle(self, request: SharedMemoryLifecycleRequest) -> SharedMemoryStatement:
         self._authorize_tenant(request.tenant_id)
         assignments = {
             "correct": (
                 "content = %(content)s, summary = %(summary)s, updated_at = %(requested_at)s"
             ),
             "delete": (
-                "status = 'deleted', deleted_at = %(requested_at)s, "
-                "updated_at = %(requested_at)s"
+                "status = 'deleted', deleted_at = %(requested_at)s, updated_at = %(requested_at)s"
             ),
             "expire": "expires_at = %(expires_at)s, updated_at = %(requested_at)s",
             "hold": "legal_hold = TRUE, updated_at = %(requested_at)s",
@@ -289,22 +303,46 @@ LIMIT %(limit)s;
         }
         assignment = assignments[request.action]
         hold_guard = "AND legal_hold = FALSE" if request.action in {"delete", "expire"} else ""
+        replacement_digest = _content_digest(request.content)
         sql = f"""
-WITH updated_memory AS (
+WITH existing_operation AS (
+  SELECT memory_id, event_type, actor, payload
+  FROM {self._table("memory_events")}
+  WHERE tenant_id = %(tenant_id)s AND operation_id = %(operation_id)s
+),
+matching_operation AS (
+  SELECT memory_id
+  FROM existing_operation
+  WHERE memory_id = %(memory_id)s
+    AND event_type = %(event_type)s
+    AND actor = %(actor)s
+    AND payload->>'replacement_digest' IS NOT DISTINCT FROM %(replacement_digest)s
+),
+updated_memory AS (
   UPDATE {self._table("shared_memories")}
   SET {assignment}
   WHERE memory_id = %(memory_id)s
     AND tenant_id = %(tenant_id)s
     {hold_guard}
+    AND NOT EXISTS (SELECT 1 FROM existing_operation)
   RETURNING memory_id
-)
+),
+inserted_event AS (
 INSERT INTO {self._table("memory_events")} (
-  event_id, memory_id, tenant_id, event_type, actor, event_at, payload
+  event_id, memory_id, tenant_id, operation_id, event_type, actor, event_at, payload
 )
 SELECT
-  %(event_id)s, memory_id, %(tenant_id)s, %(event_type)s,
+  %(event_id)s, memory_id, %(tenant_id)s, %(operation_id)s, %(event_type)s,
   %(actor)s, %(requested_at)s, %(event_payload)s::jsonb
-FROM updated_memory;
+FROM updated_memory
+ON CONFLICT (tenant_id, operation_id) WHERE operation_id IS NOT NULL DO NOTHING
+RETURNING event_id
+)
+SELECT
+  EXISTS (SELECT 1 FROM existing_operation),
+  EXISTS (SELECT 1 FROM matching_operation),
+  EXISTS (SELECT 1 FROM updated_memory),
+  EXISTS (SELECT 1 FROM inserted_event);
 """.strip()
         return SharedMemoryStatement(
             sql=sql,
@@ -312,17 +350,16 @@ FROM updated_memory;
                 "memory_id": request.memory_id,
                 "tenant_id": request.tenant_id,
                 "event_id": request.event_id,
+                "operation_id": request.event_id,
                 "event_type": f"memory.{request.action}",
                 "actor": request.actor,
                 "requested_at": request.requested_at,
                 "content": request.content,
                 "summary": request.summary,
                 "expires_at": request.expires_at,
+                "replacement_digest": replacement_digest,
                 "event_payload": json.dumps(
-                    {
-                        "reason": request.reason,
-                        "replacement_digest": _content_digest(request.content),
-                    }
+                    {"reason": request.reason, "replacement_digest": replacement_digest}
                 ),
             },
         )
@@ -340,8 +377,14 @@ FROM updated_memory;
             with psycopg.connect(dsn) as connection:
                 with connection.cursor() as cursor:
                     self._set_tenant_context(cursor)
+                    self._lock_operation(cursor, request.tenant_id, request.event_id)
                     cursor.execute(statement.sql, statement.params)
-                    if cursor.rowcount != 1:
+                    operation_exists, operation_matches, updated, event_inserted = cursor.fetchone()
+                    if operation_exists and not operation_matches:
+                        raise RuntimeError("Memory lifecycle operation ID is already bound.")
+                    if operation_matches:
+                        return
+                    if not updated or not event_inserted:
                         raise RuntimeError(
                             "Memory lifecycle target was not found or is protected by legal hold."
                         )
@@ -360,7 +403,20 @@ FROM updated_memory;
             with psycopg.connect(dsn) as connection:
                 with connection.cursor() as cursor:
                     self._set_tenant_context(cursor)
+                    self._lock_operation(cursor, draft.tenant_id, draft.draft_id)
                     cursor.execute(statement.sql, statement.params)
+                    (
+                        operation_exists,
+                        operation_matches,
+                        inserted,
+                        event_inserted,
+                    ) = cursor.fetchone()
+                    if operation_exists and not operation_matches:
+                        raise RuntimeError("Shared-memory draft ID is already bound.")
+                    if not operation_matches and (not inserted or not event_inserted):
+                        raise RuntimeError(
+                            "Shared-memory draft commit did not complete atomically."
+                        )
                 connection.commit()
 
     def search(
@@ -404,18 +460,171 @@ FROM updated_memory;
         ]
 
     def apply_schema(self) -> None:
+        self.migrate()
+
+    def schema_version(self) -> int:
         dsn = os.environ.get(self.config.postgres_dsn_env)
         if not dsn:
             raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
         try:
             import psycopg
         except ModuleNotFoundError as error:
-            raise RuntimeError("psycopg is required for Postgres schema application.") from error
-        with _driver_errors("schema application"):
+            raise RuntimeError("psycopg is required for Postgres schema inspection.") from error
+        with _driver_errors("schema inspection"):
             with psycopg.connect(dsn) as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(self.render_schema())
+                    cursor.execute(
+                        "SELECT to_regclass(%s)",
+                        (migration_table(self.config.postgres_schema),),
+                    )
+                    if cursor.fetchone()[0] is None:
+                        return 0
+                    cursor.execute(
+                        "SELECT COALESCE(MAX(version), 0) FROM "
+                        f"{migration_table(self.config.postgres_schema)}"  # nosec B608
+                    )
+                    return int(cursor.fetchone()[0])
+
+    def migrate(
+        self,
+        *,
+        target_version: int = LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+        allow_destructive: bool = False,
+    ) -> PostgresMigrationResult:
+        if target_version < 0 or target_version > LATEST_POSTGRES_MEMORY_SCHEMA_VERSION:
+            raise ValueError(f"Unsupported Postgres memory schema target: {target_version}")
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for Postgres schema migration.") from error
+        migrations = postgres_memory_migrations(
+            self.config.postgres_schema,
+            tenant_isolation=self.config.tenant_isolation == "identity",
+        )
+        with _driver_errors("schema migration"):
+            with psycopg.connect(dsn) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                        ("loro.memory.migrations",),
+                    )
+                    cursor.execute(
+                        "SELECT to_regclass(%s)",
+                        (migration_table(self.config.postgres_schema),),
+                    )
+                    current = 0
+                    if cursor.fetchone()[0] is not None:
+                        cursor.execute(
+                            "SELECT version, checksum FROM "
+                            f"{migration_table(self.config.postgres_schema)} ORDER BY version"  # nosec B608
+                        )
+                        applied_rows = dict(cursor.fetchall())
+                        current = max(applied_rows, default=0)
+                        for migration in migrations:
+                            if (
+                                migration.version in applied_rows
+                                and applied_rows[migration.version] != migration.checksum
+                            ):
+                                raise RuntimeError(
+                                    "Postgres memory migration checksum mismatch at "
+                                    f"version {migration.version}."
+                                )
+                    previous = current
+                    applied: list[int] = []
+                    rolled_back: list[int] = []
+                    if target_version > current:
+                        for migration in migrations:
+                            if current < migration.version <= target_version:
+                                cursor.execute(migration.up)
+                                cursor.execute(
+                                    record_migration_sql(
+                                        self.config.postgres_schema,
+                                        migration,
+                                    )
+                                )
+                                applied.append(migration.version)
+                    elif target_version < current:
+                        for migration in reversed(migrations):
+                            if target_version < migration.version <= current:
+                                if migration.rollback == "destructive" and not allow_destructive:
+                                    raise RuntimeError(
+                                        "Refusing destructive Postgres memory rollback "
+                                        "without explicit authorization."
+                                    )
+                                cursor.execute(migration.down)
+                                cursor.execute(
+                                    "DELETE FROM "
+                                    f"{migration_table(self.config.postgres_schema)} "  # nosec B608
+                                    "WHERE version = %s",
+                                    (migration.version,),
+                                )
+                                rolled_back.append(migration.version)
                 connection.commit()
+        return PostgresMigrationResult(
+            previous_version=previous,
+            current_version=target_version,
+            applied=tuple(applied),
+            rolled_back=tuple(rolled_back),
+        )
+
+    def reconcile(self) -> MemoryReconciliationReport:
+        dsn = os.environ.get(self.config.postgres_dsn_env)
+        if not dsn:
+            raise RuntimeError(f"Missing DSN env var: {self.config.postgres_dsn_env}")
+        try:
+            import psycopg
+        except ModuleNotFoundError as error:
+            raise RuntimeError("psycopg is required for Postgres reconciliation.") from error
+        memory = self._table("shared_memories")
+        events = self._table("memory_events")
+        sql = f"""
+SELECT
+  (SELECT count(*) FROM {memory}) AS memories,
+  (SELECT count(*) FROM {events}) AS events,
+  (SELECT count(*) FROM {events} e LEFT JOIN {memory} m ON m.memory_id = e.memory_id
+    WHERE e.memory_id IS NOT NULL AND m.memory_id IS NULL) AS orphan_events,
+  (SELECT count(*) FROM {memory} m WHERE NOT EXISTS (
+    SELECT 1 FROM {events} e WHERE e.memory_id = m.memory_id AND e.event_type = 'memory.created'
+  )) AS memories_without_created_event,
+  (SELECT count(*) FROM {events} e JOIN {memory} m ON m.memory_id = e.memory_id
+    WHERE e.tenant_id <> m.tenant_id) AS tenant_mismatches,
+  (SELECT count(*) FROM {memory} m WHERE
+    (m.status = 'deleted' AND NOT EXISTS (
+      SELECT 1 FROM {events} e WHERE e.memory_id = m.memory_id AND e.event_type = 'memory.delete'
+    )) OR (m.legal_hold AND NOT EXISTS (
+      SELECT 1 FROM {events} e WHERE e.memory_id = m.memory_id AND e.event_type = 'memory.hold'
+    ))) AS lifecycle_state_mismatches;
+""".strip()
+        with _driver_errors("reconciliation"):
+            with psycopg.connect(dsn) as connection:
+                with connection.cursor() as cursor:
+                    self._set_tenant_context(cursor)
+                    cursor.execute(sql)
+                    values = tuple(int(value) for value in cursor.fetchone())
+        labels = (
+            "orphan events",
+            "memories without creation events",
+            "cross-tenant event mismatches",
+            "lifecycle state mismatches",
+        )
+        issues = tuple(
+            f"{count} {label}"
+            for label, count in zip(labels, values[2:], strict=True)
+            if count
+        )
+        return MemoryReconciliationReport(
+            memories=values[0],
+            events=values[1],
+            orphan_events=values[2],
+            memories_without_created_event=values[3],
+            tenant_mismatches=values[4],
+            lifecycle_state_mismatches=values[5],
+            schema_version=self.schema_version(),
+            issues=issues,
+        )
 
     def _authorize_tenant(self, tenant_id: str) -> None:
         if self.config.tenant_isolation != "identity":
@@ -433,6 +642,12 @@ FROM updated_memory;
         cursor.execute(  # type: ignore[attr-defined]
             "SELECT set_config('loro.tenant_id', %s, true)",
             (self.authorized_tenant_id,),
+        )
+
+    def _lock_operation(self, cursor: object, tenant_id: str, operation_id: str) -> None:
+        cursor.execute(  # type: ignore[attr-defined]
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"loro-memory:{tenant_id}:{operation_id}",),
         )
 
 

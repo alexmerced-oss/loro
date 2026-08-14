@@ -1,0 +1,113 @@
+name: Interoperability Conformance
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+    paths:
+      - "src/loro/models.py"
+      - "src/loro/provider_contracts.py"
+      - "src/loro/provider_profiles.py"
+      - "src/loro/mcp/**"
+      - "src/loro/agraph/**"
+      - "src/loro/gateway/**"
+      - "tests/fixtures/providers/**"
+      - "tests/test_provider_contracts.py"
+      - "tests/test_mcp_hostile.py"
+      - "tests/test_agraph_failures.py"
+      - "tests/test_gateway_interop.py"
+      - "docs/interoperability-matrix.json"
+      - ".github/workflows/interoperability.yml"
+  pull_request:
+    paths:
+      - "src/loro/models.py"
+      - "src/loro/provider_contracts.py"
+      - "src/loro/provider_profiles.py"
+      - "src/loro/mcp/**"
+      - "src/loro/agraph/**"
+      - "src/loro/gateway/**"
+      - "tests/fixtures/providers/**"
+      - "tests/test_provider_contracts.py"
+      - "tests/test_mcp_hostile.py"
+      - "tests/test_agraph_failures.py"
+      - "tests/test_gateway_interop.py"
+      - "docs/interoperability-matrix.json"
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Run protected provider calls for configured repository secrets
+        type: boolean
+        default: false
+  schedule:
+    - cron: "41 6 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  hermetic-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Validate governed matrix and hostile fixtures
+        run: |
+          python scripts/check_interoperability_matrix.py
+          python -m pytest \
+            tests/test_provider_contracts.py tests/test_mcp_hostile.py \
+            tests/test_agraph_failures.py tests/test_gateway_interop.py \
+            --junitxml=interoperability-junit.xml -q
+          loro providers conformance > provider-contract-report.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: interoperability-${{ github.sha }}
+          path: |
+            interoperability-junit.xml
+            provider-contract-report.json
+            docs/interoperability-matrix.json
+          if-no-files-found: error
+
+  protected-live-providers:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live }}
+    runs-on: ubuntu-latest
+    environment: provider-conformance
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NOUS_API_KEY: ${{ secrets.NOUS_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {provider: openai, model: gpt-5.6-luna}
+          - {provider: anthropic, model: claude-haiku-4-5}
+          - {provider: gemini, model: gemini-3.6-flash}
+          - {provider: nous, model: deepseek/deepseek-v4-flash}
+          - {provider: openrouter, model: deepseek/deepseek-v4-flash}
+          - {provider: opencode-zen, model: deepseek-v4-flash}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e .
+      - name: Execute one explicitly selected provider with no fallback
+        run: |
+          python scripts/provider_live_smoke.py \
+            --provider "${{ matrix.provider }}" --model "${{ matrix.model }}" --stream \
+            > "provider-${{ matrix.provider }}.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: provider-live-${{ matrix.provider }}-${{ github.sha }}
+          path: provider-${{ matrix.provider }}.json
+          if-no-files-found: error

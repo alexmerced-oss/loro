@@ -89,10 +89,16 @@ the bounded local buffer:
 
 `loro audit flush` drains the buffer under a single lock across load, delivery, and rewrite, so a
 concurrent writer cannot lose an event in the gap. When the sink supports it, buffered events are
-delivered in batches of `http_batch_size` (default 50) rather than one request per event.
+delivered in batches of `http_batch_size`. The default is `1`, which preserves the one-event HTTP
+collector contract. Set a larger value only after confirming that the collector accepts the
+`{"events": [...]}` batch envelope.
 
 Delivery is at least once. A collector should deduplicate by `event_id`, because a timeout after
 server acceptance can cause a buffered retry.
+
+Loro 0.6 includes a reference collector that implements this contract, transactional batch
+acceptance, replay deduplication, and hash-chain verification. See
+[Reference Audit Collector](audit-collector.md).
 
 ## Setup And Operations
 
@@ -105,6 +111,7 @@ loro setup audit \
   --http-url https://audit.example.internal/v1/loro/events \
   --http-token-env LORO_AUDIT_TOKEN \
   --failure-mode fail
+loro setup audit --metrics --metrics-path .loro/operational-metrics.json
 ```
 
 Inspect local configuration and backlog state:
@@ -120,6 +127,7 @@ Retry buffered delivery:
 
 ```bash
 loro audit flush
+loro audit metrics
 ```
 
 Flush preserves order and stops at the first failed event. It rewrites the buffer with that
@@ -139,11 +147,10 @@ events remain.
 
 ## Current Limitations
 
-- HTTP delivery is one event per request; batching and collector-specific signing are not yet
-  implemented.
+- Live HTTP writes are one event per request; recovery flushing supports an explicit bounded
+  batch envelope.
 - Loro provides local tamper evidence, not destination immutability or independent timestamping.
-- Bearer-token authentication is the reference method; mTLS and custom signing are future sink
-  extensions.
+- Bearer-token authentication is the reference method; TLS/mTLS termination, credential rotation,
+  immutable retention, replication, and independent anchoring remain deployment controls.
 - Schema completeness depends on call sites supplying action, normalized target, policy, approval,
-  and result metadata. Batch 5 establishes the envelope; later audit review will tighten
-  event-family-specific requirements.
+  and result metadata. The governed event-family inventory checks literal event families in CI.

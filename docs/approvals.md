@@ -83,6 +83,9 @@ allow_non_interactive = true
 allow_session_scope = true
 once_ttl_seconds = 300
 session_ttl_seconds = 900
+store = "json"
+store_path = "~/.local/state/loro/approvals.json"
+max_store_bytes = 10000000
 ```
 
 Use the wizard for local configuration:
@@ -101,6 +104,8 @@ allow_non_interactive = false
 allow_session_scope = true
 once_ttl_seconds = 120
 session_ttl_seconds = 600
+store = "json"
+store_path = "/var/lib/loro/approvals.json"
 ```
 
 Managed overlays load last, so project and user configuration cannot re-enable a disabled
@@ -115,10 +120,12 @@ to approval audit events.
 
 ## Current Limitations
 
-- Approval records are in-memory and scoped to the current CLI/runtime process. Durable approval
-  storage is not implemented.
-- Session reuse is useful inside one agent runtime. Separate CLI invocations create separate
-  sessions and do not share grants.
+- The default `memory` store is process-local. The optional `json` store persists metadata with
+  owner-only permissions, process and file locking, atomic replacement, schema validation, size
+  limits, and compare-and-set consumption so separate processes cannot consume one one-time
+  approval twice. Raw approval arguments are never stored.
+- The JSON implementation is a single-host store, not a distributed approval service. Session
+  grants still require the exact identity session id, so a new CLI session cannot inherit them.
 - Targets use typed normalized resources. Configured policy versions are fingerprint-bound, but
   policy artifacts are not yet signed or integrity-verified.
 - Corporate identity assertion verification remains separate work; approval strength depends on

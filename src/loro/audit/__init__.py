@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from loro.audit.metrics import OperationalMetrics
 from loro.audit.schema import AUDIT_SCHEMA_VERSION, AuditEvent
 from loro.audit.sinks import (
     AuditBuffer,
@@ -46,6 +47,9 @@ class AuditLogger:
         self.buffer = AuditBuffer(config.buffer_path, config.max_buffer_events)
         self.sink = sink or self._configured_sink()
         self.protection = DataProtectionEngine(safety_config) if safety_config else None
+        self.metrics = (
+            OperationalMetrics(config.metrics_path) if config.metrics_enabled else None
+        )
         self.context: dict[str, Any] = {}
 
     def bind_context(self, **context: Any) -> None:
@@ -75,11 +79,13 @@ class AuditLogger:
         )
         if not self.config.enabled:
             event.delivery_status = "disabled"
+            self._observe_metrics(event_type, details, event.delivery_status)
             return event
         payload = event.to_payload()
         try:
             self.sink.deliver(payload)
             event.delivery_status = "delivered"
+            self._observe_metrics(event_type, details, event.delivery_status)
             return event
         except AuditSinkError as error:
             if self.config.sink != "http":
@@ -99,8 +105,10 @@ class AuditLogger:
                 )
             message = f"Audit delivery failed; event buffered at {self.buffer.path}: {error}"
             if self.config.failure_mode == "fail":
+                self._observe_metrics(event_type, details, event.delivery_status)
                 raise AuditDeliveryError(message) from error
             warnings.warn(message, RuntimeWarning, stacklevel=2)
+            self._observe_metrics(event_type, details, event.delivery_status)
             return event
 
     def flush(self) -> AuditFlushResult:
@@ -159,8 +167,27 @@ class AuditLogger:
             "buffered_events": buffered_events,
             "evicted_events": evicted_events,
             "max_buffer_events": self.config.max_buffer_events,
+            "metrics_enabled": self.config.metrics_enabled,
+            "metrics_path": self.config.metrics_path,
             "issues": issues,
         }
+
+    def _observe_metrics(
+        self,
+        event_type: str,
+        details: dict[str, Any],
+        delivery_status: str,
+    ) -> None:
+        if self.metrics is None:
+            return
+        try:
+            self.metrics.observe(event_type, details, delivery_status=delivery_status)
+        except RuntimeError as error:
+            warnings.warn(
+                f"Operational metrics update failed: {error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     def _configured_sink(self) -> AuditSink:
         if self.config.sink == "jsonl":

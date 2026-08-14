@@ -1,5 +1,9 @@
 # Loro Architecture
 
+> Architecture baseline: Loro `0.12.0`. This document describes implemented components and their
+> intended boundaries; the [Project Status](docs/project-status.md) and machine-readable
+> [support matrix](docs/support-matrix.json) determine which components are stable or experimental.
+
 Loro is a Python CLI agent harness for enterprise coding, governed data access, and productivity artifact generation. Its architecture is intentionally layered so the terminal UX, runtime loop, tools, memory, governance integrations, and artifacts can evolve independently.
 
 ## System Context
@@ -41,9 +45,11 @@ flowchart LR
 - `loro.cli`: Typer command surface and command-specific orchestration.
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.budgets`: model byte/token/cost and tool-call accounting with fail-closed limits.
-- `loro.config`: layered configuration model and environment overrides.
+- `loro.config`: versioned layered configuration, legacy migration, managed overlays, and writers.
 - `loro.identity`: typed identity resolution, diagnostics, and required-field validation.
-- `loro.approvals`: identity-bound approval requests/records, expiration, and replay protection.
+- `loro.approvals`: identity-bound approval requests/records, pluggable stores, expiration, and
+  atomic replay protection.
+- `loro.compatibility`: the warning contract for scheduled incompatible changes.
 - `loro.permissions`: `allow` / `ask` / `deny` policy evaluation.
 - `loro.resources`: canonical resource scopes for paths, commands, Git, memory, Polaris, and providers.
 - `loro.provider_profiles`: built-in AI provider profile registry.
@@ -65,6 +71,9 @@ flowchart LR
 - `loro.credentials`: strict vault references, OS-keyring access, and non-secret metadata indexing.
 - `loro.gateway`: signed Slack, Discord, Telegram, Teams, Signal-bridge, and generic adapters plus
   identity mapping, durable replay suppression, bounded dispatch, and asynchronous replies.
+- `loro.agent_profiles`: provisional OAP v1 profile models, safe loading, discovery trust,
+  deterministic digests, effective-policy narrowing, untrusted state rendering, proposals, and
+  locked `/state`-only durable writeback.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,
@@ -80,8 +89,8 @@ share the client facade but are never left open without time and event ceilings.
 through the existing permission, approval, normalized-resource, session, and audit boundaries.
 `loro.mcp.server` exposes a hard-coded ceiling of explicitly configured read-only Loro tools,
 resources, and prompts. Server mode, Skills, and client calls share the same policy and audit
-boundaries. See [Model Context Protocol](docs/mcp.md) and the
-[MCP And Agent Skills Roadmap](docs/mcp-skills-roadmap.md).
+boundaries. See [Model Context Protocol](docs/mcp.md), the
+[MCP Support Matrix](docs/mcp-support-matrix.md), and [Agent Skills](docs/skills.md).
 
 ## Runtime Flow
 
@@ -90,7 +99,8 @@ boundaries. See [Model Context Protocol](docs/mcp.md) and the
 2. Loro resolves identity from configuration/environment, validates managed required fields,
    and fails before runtime construction when they are missing.
 3. The runtime loads local memory and, when enabled, searches the identity tenant's shared
-   memory for relevant cited records.
+   memory for relevant cited records. All recalled memory is labeled untrusted and carries no
+   approval or user authority.
 4. A resumed session receives queued messages as non-authoritative context, and validated Agent
    Skills are activated under the configured context budget.
 5. The runtime creates one trace id and emits `runtime.task_started` with identity attribution.
@@ -116,6 +126,8 @@ delivery retries with exponential backoff, then writes the complete event to
 a bounded JSONL buffer. Warning mode continues visibly; fail mode raises after buffering.
 `loro audit flush` retries buffered events in order. See
 [Audit Events And Delivery](docs/audit.md).
+Literal event types are assigned to a typed family registry and checked from the source AST in
+CI; see [Audit Event Inventory](docs/audit-event-inventory.md).
 
 The current model-directed loop uses text directives such as
 `@tool {"name": "file.read", "args": {"path": "README.md"}}`. Native provider tool-calling
@@ -140,6 +152,11 @@ Loro config is loaded in increasing precedence:
 Managed overlays use the same TOML schema as normal config but are re-applied after runtime
 overrides, making them suitable for enterprise permission denies, audit defaults, shared
 memory policy, required identity fields, and governed data configuration.
+
+The root configuration schema is `1.0`. The loader migrates the legacy unversioned shape emitted
+before Loro 0.5.0 and rejects unknown future versions. Every Loro writer stamps the root schema;
+subsystems with persisted records retain their own schema/protocol versions. Compatibility and
+experimental status are published in `docs/support-matrix.json`.
 
 ## Identity
 
@@ -178,6 +195,42 @@ policy version/source, and expiration. One-time approvals are consumed once; exa
 approvals can be reused until expiry. Filesystem roots resolve symlinks and traversal before
 policy or approval, while shell policy receives invoked and resolved executable fields plus the
 exact argument array. See [Normalized Resource Policy](docs/policy.md).
+
+Approval storage is a protocol. The default in-memory implementation is process-local. The
+optional JSON implementation persists metadata and digests with owner-only permissions,
+cross-process locking, atomic replacement, bounded/schema-validated input, and compare-and-set
+updates. It is a single-host durability boundary rather than a distributed approval service.
+
+## Data Operations
+
+Postgres shared memory is governed by ordered, checksummed migrations recorded in
+`loro_memory_schema_migrations`. Migration execution takes a transaction-scoped advisory lock,
+verifies previously applied checksums, and labels rollback steps as safe or destructive. Schema
+version 2 adds tenant-scoped operation IDs to the append-only event table. Draft and lifecycle
+statements bind these IDs to content/action metadata, making exact retries idempotent while
+rejecting conflicting reuse.
+
+Reconciliation treats state and lifecycle events as two views of one contract. It detects orphan
+events, state without creation provenance, tenant disagreement, and deleted/held state without
+the corresponding event. Iceberg retains append-only state versions and exposes content-free
+snapshot metadata for operational comparison.
+
+The recovery boundary uses PostgreSQL custom-format backups plus a JSON manifest containing the
+source schema version, digest, size, format, and declared RPO/RTO. Restore requires explicit
+execution authorization and reconciliation before service resumes.
+
+## Audit Operations
+
+The reference HTTP collector is a separate trust boundary. It validates bearer authentication
+and event schema, accepts batches in a SQLite `BEGIN IMMEDIATE` transaction, deduplicates by
+`event_id`, and advances a canonical SHA-256 chain only when the transaction commits. Its success
+response therefore means the event is durably owned by the collector. Exact retry is safe;
+conflicting replay fails the whole batch.
+
+Operational metrics are derived from event family and bounded numeric metadata after data
+protection. The metrics store has no fields for prompt, response, tool, memory, artifact, gateway
+message, identity, or tenant content. Production TLS, replicated storage, retention immutability,
+and independent anchoring remain outside the single-node reference collector.
 
 ## AI Providers
 

@@ -1,10 +1,12 @@
 import asyncio
 import json
+import os
 import shutil
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 import click
 import typer
@@ -15,11 +17,20 @@ from rich.text import Text
 from loro import __version__
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
-from loro.artifacts.common import ArtifactResult, write_provenance
+from loro.artifacts.common import ArtifactResult, verify_provenance, write_provenance
 from loro.artifacts.documents import create_document_artifact
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
-from loro.audit import AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.audit import AuditDeliveryError, AuditLogger, prompt_preview, verify_jsonl_audit
+from loro.audit.collector import (
+    AuditCollector,
+    AuditCollectorError,
+    serve_audit_collector,
+    token_from_environment,
+)
+from loro.audit.metrics import OperationalMetrics
+from loro.benchmarks import run_reference_benchmarks, write_benchmark_report
+from loro.cli_agents import agents_app, setup_agents
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
@@ -51,6 +62,7 @@ from loro.config import (
     write_config_sections,
 )
 from loro.data_protection import DataProtectionEngine, DataSurface
+from loro.fileio import atomic_write_bytes
 from loro.governed_data import explain_access, inspect_table_schema
 from loro.identity import (
     IdentityConfigurationError,
@@ -71,7 +83,12 @@ from loro.mcp.extensions import TASKS_EXTENSION_ID
 from loro.mcp.registry import server_endpoint_for_display
 from loro.memory.base import SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
+from loro.memory.iceberg import IcebergSharedMemoryStore
 from loro.memory.local import LocalMemoryStore
+from loro.memory.migrations import (
+    LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    postgres_memory_migrations,
+)
 from loro.memory.operations import (
     apply_shared_memory_lifecycle,
     check_shared_memory_backend,
@@ -85,13 +102,25 @@ from loro.memory.schemas import shared_memory_schema
 from loro.models import ModelMessage, create_model_client, redact_model_request, smoke_model_client
 from loro.permissions import PermissionEngine, PermissionRequest
 from loro.polaris import PolarisClient, PolarisResult
+from loro.provider_contracts import (
+    ProviderContractError,
+    default_contract_paths,
+    validate_provider_contracts,
+)
 from loro.providers import (
     check_provider_config,
     get_provider_profile,
     model_config_from_profile,
     provider_names,
-    write_local_model_config,
 )
+from loro.recovery import (
+    DEFAULT_RPO_SECONDS,
+    DEFAULT_RTO_SECONDS,
+    create_postgres_backup,
+    restore_postgres_backup,
+    verify_postgres_backup,
+)
+from loro.release_readiness import assess_release_readiness
 from loro.resources import (
     NormalizedResource,
     filesystem_resource,
@@ -144,6 +173,8 @@ mcp_app = typer.Typer(help="Configure and use Model Context Protocol servers.")
 skills_app = typer.Typer(help="Discover and govern portable Agent Skills packages.")
 sandbox_app = typer.Typer(help="Inspect subprocess isolation profiles.")
 config_app = typer.Typer(help="Show and lint resolved configuration.")
+operations_app = typer.Typer(help="Run data protection, backup, and recovery operations.")
+artifacts_app = typer.Typer(help="Verify generated artifact provenance and integrity.")
 
 app.add_typer(memory_app, name="memory")
 app.add_typer(docs_app, name="docs")
@@ -169,6 +200,10 @@ setup_app.command("gateway")(gateway_setup)
 app.add_typer(graph_app, name="graph")
 app.add_typer(config_app, name="config")
 app.add_typer(approvals_app, name="approvals")
+app.add_typer(operations_app, name="operations")
+app.add_typer(artifacts_app, name="artifacts")
+app.add_typer(agents_app, name="agents")
+setup_app.command("agents")(setup_agents)
 app.command("doctor")(ops_doctor)
 config_app.command("check")(ops_config_check)
 audit_app.command("query")(ops_audit_query)
@@ -179,8 +214,19 @@ console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
-def _runtime() -> AgentRuntime:
+def _runtime(agent_name: str | None = None) -> AgentRuntime:
     config = load_config()
+    profile = None
+    if agent_name is not None:
+        from loro.agent_profiles import AgentProfileRegistry, ProfileError, build_effective_profile
+
+        try:
+            profile = build_effective_profile(
+                AgentProfileRegistry(config.agent_profiles, safety=config.safety).load(agent_name),
+                config,
+            )
+        except ProfileError as error:
+            raise typer.BadParameter(str(error)) from error
     try:
         return AgentRuntime(
             config,
@@ -192,6 +238,7 @@ def _runtime() -> AgentRuntime:
             )
             if config.approvals.interactive
             else None,
+            profile=profile,
         )
     except IdentityConfigurationError as error:
         raise typer.BadParameter(str(error)) from error
@@ -619,19 +666,27 @@ def run(
     stream: Annotated[
         bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
     ] = False,
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="Run from a named Open Agent Profile.")
+    ] = None,
 ) -> None:
     """Run an agent task, optionally resuming a durable session."""
     try:
-        result = _run_task(prompt, mode="run", session_id=resume_session, stream=stream)
+        result = _run_task(
+            prompt, mode="run", session_id=resume_session, stream=stream, agent_name=agent
+        )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
 
 
-def _run_task(prompt: str, *, mode: str, session_id: str | None, stream: bool):
+def _run_task(
+    prompt: str, *, mode: str, session_id: str | None, stream: bool,
+    agent_name: str | None = None,
+):
     """Run one agent task, live-rendering tokens when streaming is requested."""
 
-    runtime = _runtime()
+    runtime = _runtime(agent_name)
     if not stream:
         return runtime.run(prompt, mode=mode, session_id=session_id)
     with Live(Text(""), console=console, refresh_per_second=12, transient=True) as live:
@@ -661,9 +716,14 @@ def plan(
     stream: Annotated[
         bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
     ] = False,
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="Plan from a named Open Agent Profile.")
+    ] = None,
 ) -> None:
     """Run a read-only planning task."""
     if format == "agraph":
+        if agent is not None:
+            raise typer.BadParameter("--agent is supported only with --format text.")
         from loro.agraph.generate import write_generated_graph
 
         try:
@@ -674,7 +734,9 @@ def plan(
     if format != "text":
         raise typer.BadParameter("--format must be text or agraph")
     try:
-        result = _run_task(prompt, mode="plan", session_id=resume_session, stream=stream)
+        result = _run_task(
+            prompt, mode="plan", session_id=resume_session, stream=stream, agent_name=agent
+        )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
@@ -821,14 +883,78 @@ def configure(
         credential_ref=credential_ref,
         base_url=chosen_base_url,
     )
-    written = write_local_model_config(output, config)
-    _audit().write(
-        "config.provider_written",
-        provider=config.model.provider,
-        model=config.model.model,
-        path=str(written),
+    new_local_profile = not output.exists()
+    profile_config = _strict_local_profile(config) if new_local_profile else config
+    written = _write_audited_provider_config(
+        output,
+        profile_config,
+        include_local_profile=new_local_profile,
     )
     console.print(f"Wrote provider config: {written}")
+
+
+def _strict_local_profile(config: LoroConfig) -> LoroConfig:
+    local = LoroConfig()
+    local.model = config.model.model_copy(deep=True)
+    local.permissions.workspace_roots = [str(Path.cwd().resolve())]
+    local.sandbox.profiles["controlled-shell"].allowed_executables = [
+        "bash",
+        "git",
+        "node",
+        "npm",
+        "npx",
+        "python",
+        "python3",
+        "pytest",
+        "rg",
+        "ruff",
+        "sh",
+        "uv",
+    ]
+    local.sandbox.profiles["mcp-stdio"].allowed_executables = [
+        "node",
+        "npx",
+        "python",
+        "python3",
+        "uvx",
+    ]
+    return local
+
+
+def _write_audited_provider_config(
+    output: Path,
+    config: LoroConfig,
+    *,
+    include_local_profile: bool,
+) -> Path:
+    existed = output.exists()
+    previous = output.read_bytes() if existed else None
+    sections = ["model", "permissions", "sandbox"] if include_local_profile else ["model"]
+    try:
+        written = write_config_sections(output, config, sections)
+        _audit().write(
+            "config.provider_written",
+            provider=config.model.provider,
+            model=config.model.model,
+            path=str(written),
+            local_profile_initialized=include_local_profile,
+        )
+    except AuditDeliveryError as error:
+        try:
+            if previous is None:
+                output.unlink(missing_ok=True)
+            else:
+                atomic_write_bytes(output, previous)
+        except OSError as rollback_error:
+            raise typer.BadParameter(
+                "Required audit delivery failed and provider configuration rollback also "
+                f"failed; inspect {output}: {rollback_error}"
+            ) from error
+        raise typer.BadParameter(
+            "Provider configuration was rolled back because required audit delivery failed: "
+            f"{error}"
+        ) from error
+    return written
 
 
 @setup_app.command("provider")
@@ -1297,6 +1423,14 @@ def setup_approvals(
         int | None,
         typer.Option("--session-ttl", help="Session approval lifetime in seconds."),
     ] = None,
+    store: Annotated[
+        str | None,
+        typer.Option("--store", help="Approval store: memory or json."),
+    ] = None,
+    store_path: Annotated[
+        str | None,
+        typer.Option("--store-path", help="Path for the durable JSON approval store."),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1309,6 +1443,8 @@ def setup_approvals(
         allow_session_scope,
         once_ttl_seconds,
         session_ttl_seconds,
+        store,
+        store_path,
     ]
     wizard = all(value is None for value in values)
     config = load_config()
@@ -1336,6 +1472,15 @@ def setup_approvals(
             default=approvals.session_ttl_seconds,
             type=int,
         )
+        store = typer.prompt(
+            "Approval store (memory/json)",
+            default=approvals.store,
+        )
+        if store == "json":
+            store_path = typer.prompt(
+                "Durable approval store path",
+                default=approvals.store_path,
+            )
     if interactive is not None:
         approvals.interactive = interactive
     if allow_non_interactive is not None:
@@ -1350,6 +1495,15 @@ def setup_approvals(
         if session_ttl_seconds < 1:
             raise typer.BadParameter("Session approval TTL must be positive.")
         approvals.session_ttl_seconds = session_ttl_seconds
+    if store is not None:
+        normalized_store = store.strip().casefold()
+        if normalized_store not in {"memory", "json"}:
+            raise typer.BadParameter("Approval store must be memory or json.")
+        approvals.store = normalized_store  # type: ignore[assignment]
+    if store_path is not None:
+        if not store_path.strip():
+            raise typer.BadParameter("Approval store path cannot be empty.")
+        approvals.store_path = store_path.strip()
     written = write_config_sections(output, config, ["approvals"])
     _audit().write(
         "config.approvals_written",
@@ -1357,6 +1511,7 @@ def setup_approvals(
         interactive=approvals.interactive,
         allow_non_interactive=approvals.allow_non_interactive,
         allow_session_scope=approvals.allow_session_scope,
+        store=approvals.store,
     )
     console.print(f"Wrote approval config: {written}")
 
@@ -1531,6 +1686,13 @@ def setup_audit(
     timeout_seconds: Annotated[
         float | None, typer.Option("--timeout-seconds", help="HTTP request timeout.")
     ] = None,
+    metrics_enabled: Annotated[
+        bool | None,
+        typer.Option("--metrics/--no-metrics", help="Enable content-free operational metrics."),
+    ] = None,
+    metrics_path: Annotated[
+        str | None, typer.Option("--metrics-path", help="Operational metrics state path.")
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1548,6 +1710,8 @@ def setup_audit(
         max_retries,
         backoff_seconds,
         timeout_seconds,
+        metrics_enabled,
+        metrics_path,
     ]
     wizard = all(value is None for value in values)
     config = load_config()
@@ -1577,6 +1741,14 @@ def setup_audit(
             )
             timeout_seconds = typer.prompt(
                 "HTTP timeout (seconds)", default=audit.timeout_seconds, type=float
+            )
+        metrics_enabled = typer.confirm(
+            "Enable content-free operational metrics?",
+            default=audit.metrics_enabled,
+        )
+        if metrics_enabled:
+            metrics_path = typer.prompt(
+                "Operational metrics state path", default=audit.metrics_path
             )
     if sink is not None:
         normalized_sink = sink.strip().casefold()
@@ -1612,6 +1784,10 @@ def setup_audit(
         if not 0 < timeout_seconds <= 300:
             raise typer.BadParameter("HTTP timeout must be between 0 and 300 seconds.")
         audit.timeout_seconds = timeout_seconds
+    if metrics_enabled is not None:
+        audit.metrics_enabled = metrics_enabled
+    if metrics_path is not None:
+        audit.metrics_path = metrics_path
     if audit.sink == "http" and not audit.http_url:
         raise typer.BadParameter("HTTP audit sink requires --http-url.")
     written = write_config_sections(output, config, ["audit"])
@@ -1834,6 +2010,237 @@ def audit_verify(
     result = verify_jsonl_audit(config.path, expected_final_hash=anchor)
     console.print_json(data=result.__dict__)
     raise typer.Exit(code=0 if result.ok else 1)
+
+
+@audit_app.command("metrics")
+def audit_metrics() -> None:
+    """Render content-free operational metrics in Prometheus text format."""
+    config = load_config().audit
+    if not config.metrics_enabled:
+        raise typer.BadParameter("Operational metrics are disabled in audit configuration.")
+    try:
+        console.print(OperationalMetrics(config.metrics_path).prometheus(), end="")
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@audit_app.command("collect")
+def audit_collect(
+    path: Annotated[
+        Path,
+        typer.Option("--path", help="SQLite collector database path."),
+    ] = Path("~/.local/state/loro/audit-collector.sqlite3"),
+    token_env: Annotated[
+        str,
+        typer.Option("--token-env", help="Environment variable containing the bearer token."),
+    # This is an environment variable name, not a credential.
+    ] = "LORO_AUDIT_COLLECTOR_TOKEN",  # nosec B107
+    host: Annotated[str, typer.Option("--host", help="Collector bind host.")] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", min=1, max=65535, help="Collector bind port."),
+    ] = 8788,
+    max_body_bytes: Annotated[
+        int,
+        typer.Option("--max-body-bytes", min=1024, help="Maximum accepted request body."),
+    ] = 5_000_000,
+) -> None:
+    """Run the reference authenticated, deduplicating audit collector."""
+    try:
+        collector = AuditCollector(
+            path,
+            token_from_environment(token_env),
+            max_body_bytes=max_body_bytes,
+        )
+    except (AuditCollectorError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print(f"Audit collector listening on http://{host}:{port}")
+    serve_audit_collector(collector, host=host, port=port)
+
+
+@audit_app.command("collector-verify")
+def audit_collector_verify(
+    path: Annotated[
+        Path,
+        typer.Option("--path", help="SQLite collector database path."),
+    ] = Path("~/.local/state/loro/audit-collector.sqlite3"),
+) -> None:
+    """Verify the reference collector's durable hash chain."""
+    expanded = path.expanduser()
+    if not expanded.exists():
+        raise typer.BadParameter(f"Audit collector database does not exist: {expanded}")
+    try:
+        result = AuditCollector(expanded, "verification-only").verify()
+    except (AuditCollectorError, ValueError, OSError) as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(data=result.__dict__)
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@operations_app.command("recovery-targets")
+def operations_recovery_targets() -> None:
+    """Show the declared reference-deployment recovery objectives."""
+    console.print_json(
+        data={
+            "rpo_seconds": DEFAULT_RPO_SECONDS,
+            "rto_seconds": DEFAULT_RTO_SECONDS,
+            "scope": "Postgres shared-memory state and lifecycle events",
+        }
+    )
+
+
+@operations_app.command("benchmark")
+def operations_benchmark(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Content-free JSON evidence output path.")
+    ] = Path("loro-benchmark.json"),
+    iterations: Annotated[
+        int, typer.Option("--iterations", min=1, help="Measured iterations per scenario.")
+    ] = 25,
+    warmup: Annotated[
+        int, typer.Option("--warmup", min=0, help="Unmeasured warmup iterations.")
+    ] = 3,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Exit non-zero when a candidate target is missed.")
+    ] = False,
+) -> None:
+    """Record reproducible local release-candidate performance baselines."""
+    report = run_reference_benchmarks(iterations=iterations, warmup=warmup)
+    destination = write_benchmark_report(report, output)
+    console.print_json(data=report.to_payload())
+    console.print(f"Wrote benchmark evidence: {destination}")
+    if strict and not report.passed:
+        raise typer.Exit(code=1)
+
+
+@operations_app.command("release-readiness")
+def operations_release_readiness(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write the content-free JSON report to this path."),
+    ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Exit non-zero on warnings as well as failed checks."),
+    ] = False,
+) -> None:
+    """Evaluate this installation against the frozen stabilization contract."""
+    report = assess_release_readiness(load_config())
+    payload = report.to_payload()
+    console.print_json(data=payload)
+    if output is not None:
+        destination = output.expanduser()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        console.print(f"Wrote readiness evidence: {destination}")
+    blocked = not report.ready or (
+        strict and any(check.status == "warn" for check in report.checks)
+    )
+    if blocked:
+        raise typer.Exit(code=1)
+
+
+@operations_app.command("backup")
+def operations_backup(
+    output: Annotated[Path, typer.Option("--output", "-o", help="Backup output path")],
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Run pg_dump. Without this flag, show the plan."),
+    ] = False,
+) -> None:
+    """Create a checksummed Postgres shared-memory backup and manifest."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reference backup currently supports Postgres memory only.")
+    if not execute:
+        console.print_json(
+            data={
+                "execute": False,
+                "backend": "postgres",
+                "schema": config.memory.shared.postgres_schema,
+                "output": str(output.expanduser()),
+                "rpo_seconds": DEFAULT_RPO_SECONDS,
+                "rto_seconds": DEFAULT_RTO_SECONDS,
+            }
+        )
+        return
+    try:
+        backup = create_postgres_backup(config.memory.shared, output)
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write("memory.backup_created", backend="postgres", target=str(backup))
+    console.print(f"Created backup and manifest: {backup}")
+
+
+@operations_app.command("verify-backup")
+def operations_verify_backup(
+    backup: Annotated[Path, typer.Argument(help="Postgres custom-format backup path.")],
+) -> None:
+    """Verify a backup checksum, manifest, and pg_restore catalog."""
+    result = verify_postgres_backup(backup)
+    console.print_json(data=result.__dict__)
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@operations_app.command("restore")
+def operations_restore(
+    backup: Annotated[Path, typer.Argument(help="Postgres custom-format backup path.")],
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Run pg_restore against the configured database."),
+    ] = False,
+    clean: Annotated[
+        bool,
+        typer.Option("--clean", help="Remove conflicting target objects before restore."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Authorize an executed restore and destructive clean."),
+    ] = False,
+) -> None:
+    """Restore a verified shared-memory backup with explicit authorization."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reference restore currently supports Postgres memory only.")
+    verification = verify_postgres_backup(backup)
+    if not verification.ok:
+        raise typer.BadParameter(verification.issue or "Backup verification failed.")
+    if not execute:
+        console.print_json(
+            data={
+                "execute": False,
+                "verified": True,
+                "backup": str(backup.expanduser()),
+                "clean": clean,
+                "target_env": config.memory.shared.postgres_dsn_env,
+            }
+        )
+        return
+    if not yes:
+        raise typer.BadParameter("Executed restore requires --yes explicit authorization.")
+    dsn = os.environ.get(config.memory.shared.postgres_dsn_env)
+    if not dsn:
+        raise typer.BadParameter(
+            f"Missing DSN env var: {config.memory.shared.postgres_dsn_env}"
+        )
+    try:
+        restore_postgres_backup(
+            backup,
+            dsn,
+            clean=clean,
+            allow_destructive=yes,
+        )
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.backup_restored",
+        backend="postgres",
+        target=config.memory.shared.postgres_schema,
+        clean=clean,
+    )
+    console.print("Restore completed. Run `loro memory reconcile` before returning to service.")
 
 
 @mcp_app.command("list")
@@ -2528,6 +2935,7 @@ def config_summary() -> None:
         "non-interactive="
         f"{'allowed' if config.approvals.allow_non_interactive else 'denied'}"
     )
+    console.print(f"Approval store: {config.approvals.store}")
     if not identity_diagnostic.ok:
         console.print(f"Missing identity fields: {', '.join(identity_diagnostic.missing_fields)}")
         raise typer.Exit(code=1)
@@ -2809,6 +3217,110 @@ def memory_apply_schema(
     console.print(shared_memory_schema(backend, config.memory.shared))
 
 
+@memory_app.command("migration-status")
+def memory_migration_status() -> None:
+    """Show the applied Postgres shared-memory schema version."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Migration status is available only for Postgres memory.")
+    store = PostgresSharedMemoryStore(config.memory.shared)
+    try:
+        current = store.schema_version()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    console.print_json(
+        data={
+            "backend": "postgres",
+            "current_version": current,
+            "latest_version": LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+            "up_to_date": current == LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+        }
+    )
+
+
+@memory_app.command("migrate")
+def memory_migrate(
+    target: Annotated[
+        int,
+        typer.Option("--target", min=0, help="Target Postgres memory schema version."),
+    ] = LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Apply the migration plan to the configured database."),
+    ] = False,
+    allow_destructive: Annotated[
+        bool,
+        typer.Option(
+            "--allow-destructive",
+            help="Authorize rollback below the durable baseline. This can delete memory data.",
+        ),
+    ] = False,
+) -> None:
+    """Render or apply versioned Postgres shared-memory migrations."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Migrations are available only for Postgres memory.")
+    if target > LATEST_POSTGRES_MEMORY_SCHEMA_VERSION:
+        raise typer.BadParameter(
+            f"Latest supported schema is version {LATEST_POSTGRES_MEMORY_SCHEMA_VERSION}."
+        )
+    store = PostgresSharedMemoryStore(config.memory.shared)
+    if not execute:
+        migrations = postgres_memory_migrations(
+            config.memory.shared.postgres_schema,
+            tenant_isolation=config.memory.shared.tenant_isolation == "identity",
+        )
+        console.print(
+            f"Postgres memory migration plan to version {target} "
+            "(render only; pass --execute to apply):"
+        )
+        for migration in migrations:
+            if migration.version <= target:
+                console.print(f"\n-- {migration.version}: {migration.name}\n{migration.up}")
+        return
+    try:
+        result = store.migrate(target_version=target, allow_destructive=allow_destructive)
+    except (RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.schema_migrated",
+        backend="postgres",
+        previous_version=result.previous_version,
+        current_version=result.current_version,
+        applied=list(result.applied),
+        rolled_back=list(result.rolled_back),
+    )
+    console.print_json(data=jsonable_mapping(result.__dict__))
+
+
+@memory_app.command("reconcile")
+def memory_reconcile() -> None:
+    """Compare Postgres memory state rows with append-only lifecycle events."""
+    config = load_config()
+    if config.memory.shared.backend != "postgres":
+        raise typer.BadParameter("Reconciliation is available only for Postgres memory.")
+    identity = resolve_identity(config.identity)
+    store = PostgresSharedMemoryStore(
+        config.memory.shared,
+        authorized_tenant_id=(
+            identity.tenant if config.memory.shared.tenant_isolation == "identity" else None
+        ),
+    )
+    try:
+        report = store.reconcile()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    _audit().write(
+        "memory.reconciled",
+        backend="postgres",
+        tenant=identity.tenant,
+        ok=report.ok,
+        issues=list(report.issues),
+    )
+    console.print_json(data=jsonable_mapping(report.__dict__ | {"ok": report.ok}))
+    raise typer.Exit(code=0 if report.ok else 1)
+
+
 @memory_app.command("backend-check")
 def memory_backend_check() -> None:
     """Check whether the configured shared memory backend is ready."""
@@ -2816,6 +3328,32 @@ def memory_backend_check() -> None:
     check = check_shared_memory_backend(config.memory.shared)
     console.print_json(data=check.__dict__)
     raise typer.Exit(code=0 if check.ok else 1)
+
+
+@memory_app.command("snapshots")
+def memory_snapshots() -> None:
+    """Show content-free Iceberg memory and event snapshot state."""
+    config = load_config()
+    if config.memory.shared.backend != "iceberg":
+        raise typer.BadParameter("Snapshot diagnostics are available only for Iceberg memory.")
+    identity = resolve_identity(config.identity)
+    store = IcebergSharedMemoryStore(
+        config.memory.shared,
+        authorized_tenant_id=(
+            identity.tenant if config.memory.shared.tenant_isolation == "identity" else None
+        ),
+    )
+    try:
+        report = store.snapshot_report()
+    except RuntimeError as error:
+        raise typer.BadParameter(str(error)) from error
+    payload = {
+        "memory": report.memory.__dict__,
+        "events": report.events.__dict__,
+        "aligned": report.aligned,
+    }
+    _audit().write("memory.iceberg_snapshots_inspected", **payload)
+    console.print_json(data=jsonable_mapping(payload))
 
 
 @memory_app.command("commit-draft")
@@ -2930,6 +3468,13 @@ def memory_lifecycle(
         str | None,
         typer.Option("--expires-at", help="ISO-8601 expiration time for expire."),
     ] = None,
+    operation_id: Annotated[
+        str | None,
+        typer.Option(
+            "--operation-id",
+            help="UUID to reuse when retrying a partial lifecycle operation.",
+        ),
+    ] = None,
     execute: Annotated[
         bool,
         typer.Option("--execute", help="Execute instead of rendering the backend operation."),
@@ -2957,6 +3502,15 @@ def memory_lifecycle(
             raise typer.BadParameter("expires-at must be ISO-8601.") from error
         if expiration.tzinfo is None:
             expiration = expiration.replace(tzinfo=UTC)
+    normalized_operation_id: str | None = None
+    if operation_id:
+        try:
+            normalized_operation_id = str(UUID(operation_id))
+        except ValueError as error:
+            raise typer.BadParameter("operation-id must be a UUID.") from error
+    request_values: dict[str, Any] = {}
+    if normalized_operation_id is not None:
+        request_values["event_id"] = normalized_operation_id
     request = SharedMemoryLifecycleRequest(
         memory_id=memory_id,
         tenant_id=resolved_tenant,
@@ -2966,6 +3520,7 @@ def memory_lifecycle(
         content=content,
         summary=prompt_preview(content, limit=120) if content else None,
         expires_at=expiration,
+        **request_values,
     )
     if execute:
         resource = memory_resource(
@@ -2994,7 +3549,12 @@ def memory_lifecycle(
     try:
         result = apply_shared_memory_lifecycle(config, request, execute=execute)
     except (PermissionError, RuntimeError, ValueError) as error:
-        raise typer.BadParameter(str(error)) from error
+        retry = (
+            f" Retry the same operation with --operation-id {request.event_id}."
+            if execute and config.memory.shared.backend == "iceberg"
+            else ""
+        )
+        raise typer.BadParameter(f"{error}{retry}") from error
     _audit().write(
         "memory.shared_lifecycle",
         action=action,
@@ -3003,6 +3563,7 @@ def memory_lifecycle(
         backend=result.backend,
         executed=result.executed,
         reason=reason,
+        operation_id=request.event_id,
     )
     if result.executed:
         console.print(f"Applied shared-memory lifecycle action: {action}")
@@ -3012,6 +3573,7 @@ def memory_lifecycle(
             "backend": result.backend,
             "execute": False,
             "action": action,
+            "operation_id": request.event_id,
             "sql": result.statement.sql,
             "params": jsonable_mapping(result.statement.params),
         }
@@ -3112,6 +3674,17 @@ def docs_create(
         context="artifact.document",
         factory=create_document_artifact,
     )
+
+
+@artifacts_app.command("verify")
+def artifacts_verify(
+    provenance: Annotated[Path, typer.Argument(help="Artifact provenance JSON path.")],
+) -> None:
+    """Verify every file digest and byte count in an artifact provenance record."""
+
+    report = verify_provenance(provenance)
+    console.print_json(data=report.to_payload())
+    raise typer.Exit(code=0 if report.ok else 1)
 
 
 @slides_app.command("create")
@@ -3696,6 +4269,7 @@ def providers_show(provider: Annotated[str, typer.Argument(help="Provider name."
             "api_key_env": profile.api_key_env,
             "base_url": profile.base_url,
             "protocol": profile.protocol,
+            "optional_header_env": dict(profile.optional_header_env),
             "notes": profile.notes,
         }
     )
@@ -3811,6 +4385,18 @@ def providers_smoke(
     console.print_json(data=result)
     if execute and not result.get("ok", False):
         raise typer.Exit(code=1)
+
+
+@providers_app.command("conformance")
+def providers_conformance() -> None:
+    """Validate sanitized provider contracts and the advertised profile matrix."""
+    matrix, fixtures = default_contract_paths()
+    try:
+        report = validate_provider_contracts(matrix, fixtures)
+    except ProviderContractError as error:
+        console.print_json(data={"ok": False, "error": str(error)})
+        raise typer.Exit(code=1) from error
+    console.print_json(data=report.as_dict())
 
 
 @sessions_app.command("list")

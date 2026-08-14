@@ -17,6 +17,7 @@ loro setup shared-memory
 loro setup polaris
 loro setup mcp
 loro setup gateway
+loro setup agents
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
@@ -33,13 +34,15 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.4.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.12.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: approvals, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: agents, approvals, artifacts, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro agents: apply, create, digest, explain, forget, history, list, proposals, review, show, state, validate
+loro artifacts: verify
 loro approvals: list
-loro audit: doctor, flush, query, report, verify
+loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
 loro brief: executive, incident, meeting, project
 loro credentials: delete, doctor, list, set
 loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views
@@ -50,13 +53,14 @@ loro graph: generate, plan, policy, resume, run, skill-path, status, validate
 loro identity: doctor, show
 loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
 loro config: check, show, summary
-loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, proposals, propose, remember, schema, search, shared-search, sweep
+loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, migrate, migration-status, proposals, propose, reconcile, remember, schema, search, shared-search, snapshots, sweep
+loro operations: backup, benchmark, recovery-targets, release-readiness, restore, verify-backup
 loro policy: explain
-loro providers: check, list, request, show, smoke
+loro providers: check, conformance, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
-loro setup: approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
+loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
 loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate
@@ -259,6 +263,9 @@ loro audit doctor
 loro audit flush
 loro audit verify
 loro audit verify --anchor sha256:EXPECTED_FINAL_HASH
+loro audit metrics
+loro audit collect --path .loro/audit-collector.sqlite3
+loro audit collector-verify --path .loro/audit-collector.sqlite3
 ```
 
 `audit doctor` validates the schema, sink settings, credential environment, and local backlog.
@@ -274,6 +281,10 @@ loro memory list
 loro memory search "status briefs"
 loro memory shared-search "launch readiness" --tenant-id acme
 loro memory shared-search "launch readiness" --tenant-id acme --dry-run
+loro memory migration-status
+loro memory migrate --target 2 --execute
+loro memory reconcile
+loro memory snapshots
 loro memory lifecycle <memory-id> --action correct --content "Corrected text" \
   --reason "Owner-approved correction" --execute
 loro memory lifecycle <memory-id> --action hold --reason "Legal hold" --execute

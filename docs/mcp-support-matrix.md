@@ -37,6 +37,12 @@ both configured client scenarios with `@modelcontextprotocol/conformance@0.1.16`
 workflow must repeat those checks for the release commit before the result becomes release
 evidence.
 
+The frozen 0.7 claim is also recorded in
+[`interoperability-matrix.json`](interoperability-matrix.json). Hostile fixtures prove that an
+unknown or downgraded revision is rejected, a classic peer cannot activate modern Tasks by merely
+advertising the extension, and unknown extension data remains inert even when allowlisted. MCP
+Apps, legacy HTTP+SSE, and undeclared extensions are not silently downgraded or rendered.
+
 ## Sunset Policy
 
 - `2026-07-28` is preferred.

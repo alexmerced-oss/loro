@@ -1,16 +1,21 @@
 import builtins
 import sys
 import types
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
 from loro.config import IdentityConfig, LoroConfig, MemoryConfig, SharedMemoryConfig
 from loro.memory.base import SharedMemoryDraft, SharedMemoryLifecycleRequest
 from loro.memory.drafts import SharedMemoryDraftStore
-from loro.memory.iceberg import IcebergSharedMemoryStore
+from loro.memory.iceberg import IcebergSharedMemoryStore, _snapshot_status
 from loro.memory.local import LocalMemoryStore
+from loro.memory.migrations import (
+    LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
+    postgres_memory_migrations,
+    record_migration_sql,
+)
 from loro.memory.operations import (
     apply_shared_memory_lifecycle,
     create_shared_memory_draft,
@@ -34,6 +39,22 @@ def test_shared_memory_schema_postgres() -> None:
     schema = shared_memory_schema("postgres")
     assert "CREATE TABLE IF NOT EXISTS shared_memories" in schema
     assert "memory_events" in schema
+    assert "loro_memory_schema_migrations" in schema
+    assert "operation_id UUID" in schema
+
+
+def test_postgres_memory_migrations_are_versioned_and_reversible() -> None:
+    migrations = postgres_memory_migrations("enterprise", tenant_isolation=True)
+
+    assert [migration.version for migration in migrations] == list(
+        range(1, LATEST_POSTGRES_MEMORY_SCHEMA_VERSION + 1)
+    )
+    assert all(migration.checksum.startswith("sha256:") for migration in migrations)
+    assert "enterprise.shared_memories" in migrations[0].up
+    assert "FORCE ROW LEVEL SECURITY" in migrations[0].up
+    assert migrations[0].rollback == "destructive"
+    assert "DROP COLUMN IF EXISTS operation_id" in migrations[1].down
+    assert all("#" not in record_migration_sql("enterprise", item) for item in migrations)
 
 
 def test_shared_memory_schema_iceberg_uses_config() -> None:
@@ -46,6 +67,25 @@ def test_shared_memory_schema_iceberg_uses_config() -> None:
     )
     assert "CREATE TABLE IF NOT EXISTS enterprise_memory.agent_facts" in schema
     assert "CREATE TABLE IF NOT EXISTS enterprise_memory.memory_events" in schema
+
+
+def test_iceberg_snapshot_status_is_content_free() -> None:
+    snapshot = types.SimpleNamespace(
+        snapshot_id=42,
+        parent_snapshot_id=41,
+        sequence_number=8,
+        timestamp_ms=1_785_000_000_000,
+    )
+    table = types.SimpleNamespace(
+        metadata=types.SimpleNamespace(snapshots=[object(), object()]),
+        current_snapshot=lambda: snapshot,
+    )
+
+    status = _snapshot_status(table, "agent_memory.shared_memories")
+
+    assert status.snapshot_count == 2
+    assert status.current_snapshot_id == 42
+    assert "content" not in status.__dict__
 
 
 def test_shared_memory_draft_store(tmp_path) -> None:
@@ -104,6 +144,7 @@ def test_postgres_shared_memory_insert_sql() -> None:
     statement = PostgresSharedMemoryStore(SharedMemoryConfig()).render_insert(draft)
     assert "INSERT INTO public.shared_memories" in statement.sql
     assert "INSERT INTO public.memory_events" in statement.sql
+    assert "operation_id" in statement.sql
     assert statement.params["tenant_id"] == "acme"
     assert statement.params["content"] == "Use the launch readiness template"
     assert statement.params["created_by"] == "alex"
@@ -136,6 +177,7 @@ def test_postgres_memory_lifecycle_renders_event_and_guards_hold(action) -> None
     statement = PostgresSharedMemoryStore(SharedMemoryConfig()).render_lifecycle(request)
 
     assert "INSERT INTO public.memory_events" in statement.sql
+    assert "existing_operation" in statement.sql
     assert statement.params["event_type"] == f"memory.{action}"
     if action in {"delete", "expire"}:
         assert "AND legal_hold = FALSE" in statement.sql
@@ -379,9 +421,7 @@ def test_iceberg_lifecycle_appends_version_and_event(monkeypatch) -> None:
         summary="New summary",
     )
     store = IcebergSharedMemoryStore(
-        SharedMemoryConfig(
-            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
-        )
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
     )
     store.apply_lifecycle(request)
 
@@ -412,9 +452,7 @@ def test_iceberg_lifecycle_blocks_delete_under_legal_hold(monkeypatch) -> None:
         reason="Deletion request",
     )
     store = IcebergSharedMemoryStore(
-        SharedMemoryConfig(
-            iceberg_namespace="enterprise_memory", iceberg_table="agent_facts"
-        )
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
     )
 
     with pytest.raises(RuntimeError, match="legal hold"):
@@ -446,6 +484,93 @@ def test_iceberg_commit_draft_appends_memory_and_event(monkeypatch) -> None:
     assert memory_rows[0]["source"] == '{"source": "loro.shared_memory_draft"}'
     assert event_rows[0]["event_type"] == "memory.created"
     assert event_rows[0]["payload"] == f'{{"draft_id": "{draft.draft_id}"}}'
+
+
+def test_iceberg_commit_draft_recovers_without_duplicate_state(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[])
+    memory_table = fake_catalog.tables["enterprise_memory.agent_facts"]
+    events_table = fake_catalog.tables["enterprise_memory.memory_events"]
+    memory_table.failures_remaining = 1
+    draft = SharedMemoryDraft(
+        content="Use the enterprise launch template",
+        summary="Launch template",
+        tenant_id="acme",
+        created_by="alex",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(
+            iceberg_namespace="enterprise_memory",
+            iceberg_table="agent_facts",
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="injected append failure"):
+        store.commit_draft(draft)
+    assert len(events_table.rows) == 1
+    assert memory_table.rows == []
+
+    store.commit_draft(draft)
+    store.commit_draft(draft)
+
+    assert len(events_table.rows) == 1
+    assert len(memory_table.rows) == 1
+
+
+def test_iceberg_lifecycle_retry_is_idempotent(monkeypatch) -> None:
+    created = datetime(2026, 7, 1, tzinfo=UTC)
+    row = {
+        "memory_id": "mem-1",
+        "tenant_id": "acme",
+        "created_at": created,
+        "updated_at": None,
+        "status": "active",
+        "legal_hold": False,
+    }
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[row])
+    memory_table = fake_catalog.tables["enterprise_memory.agent_facts"]
+    events_table = fake_catalog.tables["enterprise_memory.memory_events"]
+    memory_table.failures_remaining = 1
+    request = SharedMemoryLifecycleRequest(
+        memory_id="mem-1",
+        tenant_id="acme",
+        action="hold",
+        actor="reviewer",
+        reason="Litigation hold",
+    )
+    store = IcebergSharedMemoryStore(
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
+    )
+
+    with pytest.raises(RuntimeError, match="injected append failure"):
+        store.apply_lifecycle(request)
+    retry = replace(request, requested_at=request.requested_at + timedelta(hours=1))
+    store.apply_lifecycle(retry)
+    store.apply_lifecycle(retry)
+
+    assert len(events_table.rows) == 1
+    assert len(memory_table.rows) == 2
+    assert memory_table.rows[-1]["legal_hold"] is True
+    assert memory_table.rows[-1]["updated_at"] == request.requested_at.replace(tzinfo=None)
+
+
+def test_iceberg_values_convert_offset_datetimes_to_utc(monkeypatch) -> None:
+    fake_catalog = install_fake_iceberg_modules(monkeypatch, rows=[])
+    draft = SharedMemoryDraft(
+        content="Timezone-aware retention",
+        summary="Timezone retention",
+        tenant_id="acme",
+        created_by="alex",
+        created_at=datetime(2026, 8, 10, 12, tzinfo=timezone(timedelta(hours=-4))),
+        expires_at=datetime(2026, 8, 11, 12, tzinfo=timezone(timedelta(hours=-4))),
+    )
+
+    IcebergSharedMemoryStore(
+        SharedMemoryConfig(iceberg_namespace="enterprise_memory", iceberg_table="agent_facts")
+    ).commit_draft(draft)
+
+    row = fake_catalog.tables["enterprise_memory.agent_facts"].rows[0]
+    assert row["created_at"] == datetime(2026, 8, 10, 16)
+    assert row["expires_at"] == datetime(2026, 8, 11, 16)
 
 
 def test_iceberg_rejects_invalid_identifier() -> None:
@@ -515,12 +640,17 @@ class FakeIcebergTable:
         self.rows = rows
         self.appended = []
         self.scan_options = {}
+        self.failures_remaining = 0
 
     def schema(self):
         return FakeIcebergSchema()
 
     def append(self, table):
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("injected append failure")
         self.appended.append(table)
+        self.rows.extend(table.to_pylist())
 
     def scan(self, selected_fields=None, **options):
         self.scan_options = {"selected_fields": selected_fields, **options}

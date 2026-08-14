@@ -1,0 +1,148 @@
+schema_version = "1.0"
+
+[runtime]
+max_steps = 5
+max_tool_calls = 40
+max_model_input_bytes = 1000000
+max_model_output_bytes = 500000
+max_cost_usd = 5.0
+
+[identity]
+environment_enabled = true
+environment_prefix = "LORO_IDENTITY_"
+required_fields = ["subject", "tenant"]
+
+[approvals]
+interactive = true
+allow_non_interactive = false
+allow_session_scope = false
+once_ttl_seconds = 300
+store = "json"
+store_path = "/var/lib/loro/approvals.json"
+
+[permissions]
+version = "stabilization-v1"
+default = "deny"
+shell = "ask"
+edit = "ask"
+artifact = "ask"
+shared_memory = "ask"
+governed_data = "allow"
+mcp = "ask"
+skills = "ask"
+session_message = "ask"
+web = "deny"
+workspace_roots = ["/work"]
+
+[memory.local]
+enabled = true
+path = "/var/lib/loro/memory"
+auto_propose = true
+
+[memory.shared]
+enabled = true
+backend = "postgres"
+tenant_isolation = "identity"
+write_policy = "explicit_user_dictation_only"
+read_policy = "semantic_retrieval_with_citations"
+postgres_dsn_env = "LORO_POSTGRES_DSN"
+postgres_schema = "loro_memory"
+retention_days = 365
+
+[polaris]
+enabled = false
+cli_path = "polaris"
+require_role_inspection = true
+
+[audit]
+enabled = true
+schema_version = "1.0"
+sink = "http"
+http_url = "http://127.0.0.1:8788/events"
+http_token_env = "LORO_AUDIT_COLLECTOR_TOKEN"
+failure_mode = "fail"
+buffer_path = "/var/lib/loro/audit-buffer.jsonl"
+max_buffer_events = 1000
+http_batch_size = 100
+max_retries = 2
+backoff_seconds = 0.25
+timeout_seconds = 10
+include_prompt_preview = false
+metrics_enabled = true
+metrics_path = "/var/lib/loro/operational-metrics.json"
+
+[sandbox]
+enabled = true
+shell_profile = "controlled-shell"
+git_profile = "git"
+governed_data_profile = "governed-data"
+mcp_stdio_profile = "mcp-stdio"
+skill_profile = "skill-script"
+
+[sandbox.profiles.controlled-shell]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = ["python", "python3", "pytest", "ruff"]
+environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
+writable_roots = ["/work"]
+trusted_executable_prefixes = ["/usr/bin", "/bin"]
+max_seconds = 120
+max_output_bytes = 1000000
+
+[sandbox.profiles.git]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = ["git"]
+environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
+writable_roots = ["/work"]
+trusted_executable_prefixes = ["/usr/bin", "/bin"]
+max_seconds = 120
+max_output_bytes = 1000000
+
+[sandbox.profiles.governed-data]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = ["polaris"]
+environment_allowlist = ["PATH", "LANG", "LC_ALL"]
+writable_roots = []
+trusted_executable_prefixes = ["/usr/bin", "/opt/polaris/bin"]
+max_seconds = 60
+max_output_bytes = 1000000
+
+[sandbox.profiles.mcp-stdio]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = []
+environment_allowlist = ["PATH", "LANG", "LC_ALL"]
+writable_roots = []
+trusted_executable_prefixes = ["/usr/bin", "/opt/loro/mcp/bin"]
+max_seconds = 60
+max_output_bytes = 1000000
+
+[sandbox.profiles.skill-script]
+backend = "bubblewrap"
+require_os_enforcement = true
+network = "deny"
+allowed_executables = ["python", "python3", "sh"]
+environment_allowlist = ["PATH", "LANG", "LC_ALL", "TMPDIR"]
+writable_roots = ["/work"]
+trusted_executable_prefixes = ["/usr/bin", "/bin"]
+max_seconds = 60
+max_output_bytes = 250000
+
+[safety]
+enabled = true
+block_on_findings = true
+default_classification = "internal"
+allow_sensitive_override = false
+
+[skills]
+enabled = true
+allow_user = false
+allow_project = false
+allow_scripts = false
+managed_paths = ["/etc/loro/skills"]

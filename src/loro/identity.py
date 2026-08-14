@@ -118,9 +118,11 @@ def diagnose_identity(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> IdentityDiagnostic:
-    context = build_identity_context(config, environ=environ)
+    values = environ if environ is not None else os.environ
+    context = build_identity_context(config, environ=values)
+    asserted = _asserted_fields(config, values)
     missing = tuple(
-        field for field in config.required_fields if not _identity_value_present(context, field)
+        field for field in config.required_fields if field not in asserted
     )
     return IdentityDiagnostic(
         context=context,
@@ -154,11 +156,17 @@ def _environment_values(
     return resolved
 
 
-def _identity_value_present(context: IdentityContext, field: IdentityField) -> bool:
-    value = getattr(context, field)
-    if isinstance(value, tuple):
-        return bool(value)
-    return _clean(value) is not None
+def _asserted_fields(config: IdentityConfig, environ: Mapping[str, str]) -> set[str]:
+    asserted = {
+        field for field in _SCALAR_FIELDS if _clean(getattr(config, field)) is not None
+    }
+    if config.groups:
+        asserted.add("groups")
+    if config.roles:
+        asserted.add("roles")
+    if config.environment_enabled:
+        asserted.update(_environment_values(config, environ))
+    return asserted
 
 
 def _split_values(value: object) -> tuple[str, ...]:

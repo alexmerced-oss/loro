@@ -23,10 +23,12 @@ existing scanner candidate with an unresolved verdict; it must be adjudicated li
 release owner and security reviewer. Do not bulk-mark findings as false positives. Any accepted
 secret exception needs a reason, owner, review date, and expiry in the release evidence record.
 
-The release-evidence workflow builds wheels and source archives, writes `SHA256SUMS`, and creates
-a GitHub artifact attestation using a short-lived CI identity. Protected branch/tag controls,
-trusted publishing, reviewer assignment, vulnerability SLA, and exception approval are
-repository-administration controls and must be configured by the project owners.
+The release-evidence workflow verifies the SSH-signed release tag, builds wheels and source
+archives, writes `SHA256SUMS`, and creates a GitHub artifact attestation using a short-lived CI
+identity. The signing key and verification policy are documented in
+[Release Signing And Verification](release-signing.md). Protected branch/tag controls, trusted
+publishing, reviewer assignment, vulnerability SLA, and exception approval remain
+repository-administration controls configured by project owners.
 
 Suggested triage targets:
 

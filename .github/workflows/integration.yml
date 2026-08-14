@@ -40,12 +40,28 @@ jobs:
           cache: "pip"
 
       - name: Install integration dependencies
-        run: python -m pip install -e ".[dev,integration]"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          python -m pip install -e ".[dev,integration]"
 
       - name: Run Postgres integration tests
         env:
           LORO_INTEGRATION_POSTGRES: "1"
-        run: python -m pytest -m integration tests/integration/test_postgres_memory_integration.py
+        run: |
+          python -m pytest -m integration \
+            tests/integration/test_postgres_memory_integration.py \
+            tests/integration/test_postgres_recovery_integration.py \
+            --junitxml=postgres-integration.xml
+
+      - name: Upload Postgres integration evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgres-integration-${{ github.sha }}
+          path: postgres-integration.xml
+          if-no-files-found: error
+          retention-days: 90
 
   polaris:
     if: ${{ inputs.polaris == 'true' }}
@@ -66,7 +82,18 @@ jobs:
       - name: Run Polaris CLI integration tests
         env:
           LORO_INTEGRATION_POLARIS: "1"
-        run: python -m pytest -m integration tests/integration/test_polaris_cli_integration.py
+        run: |
+          python -m pytest -m integration tests/integration/test_polaris_cli_integration.py \
+            --junitxml=polaris-cli-integration.xml
+
+      - name: Upload Polaris CLI integration evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: polaris-cli-integration-${{ github.sha }}
+          path: polaris-cli-integration.xml
+          if-no-files-found: error
+          retention-days: 90
 
   polaris-quickstart:
     if: ${{ github.event_name == 'schedule' || inputs.polaris_quickstart == 'true' }}
@@ -83,13 +110,14 @@ jobs:
           cache: "pip"
 
       - name: Install data and seed dependencies
-        run: python -m pip install -e ".[dev,data]" duckdb
+        run: python -m pip install -e ".[dev,data,integration]"
 
       - name: Download Polaris quickstart compose
         run: |
           curl -fsSL \
-            https://raw.githubusercontent.com/apache/polaris/refs/tags/apache-polaris-1.5.0/site/content/guides/quickstart/docker-compose.yml \
+            https://raw.githubusercontent.com/apache/polaris/refs/tags/apache-polaris-1.6.0/site/content/guides/quickstart/docker-compose.yml \
             -o /tmp/polaris-quickstart.yml
+          sed -i 's|apache/polaris:latest|apache/polaris:1.6.0|' /tmp/polaris-quickstart.yml
 
       - name: Start Polaris quickstart stack
         run: docker compose -p loro-polaris-quickstart -f /tmp/polaris-quickstart.yml up -d
@@ -105,8 +133,10 @@ jobs:
           last_error = None
           while time.time() < deadline:
               try:
-                  with urllib.request.urlopen("http://localhost:8181", timeout=5) as response:
-                      if response.status < 500:
+                  with urllib.request.urlopen(
+                      "http://localhost:8182/q/health", timeout=5
+                  ) as response:
+                      if response.status == 200:
                           print(f"Polaris responded with HTTP {response.status}")
                           raise SystemExit(0)
               except urllib.error.HTTPError as error:
@@ -147,6 +177,11 @@ jobs:
               (HEADER, DELIMITER ',')
           """)
           print("Wrote /tmp/loro-ci-seed/seed_memories.parquet and .csv")
+          rows = connection.execute(
+              "SELECT memory_id, tenant_id FROM read_parquet(?)",
+              ["/tmp/loro-ci-seed/seed_memories.parquet"],
+          ).fetchall()
+          assert rows == [("seed-1", "acme")]
           PY
 
       - name: Run Loro Polaris/Iceberg dry-run checks
@@ -172,6 +207,46 @@ jobs:
           python -m loro memory schema --backend iceberg
           python -m loro memory shared-search "launch readiness" --tenant-id acme --dry-run
           python -m loro memory backend-check
+
+      - name: Record quickstart evidence
+        if: success()
+        env:
+          EVIDENCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          matrix = json.loads(Path("docs/data-support-matrix.json").read_text())
+          evidence = {
+              "schema_version": "1.0",
+              "commit": os.environ["EVIDENCE_COMMIT"],
+              "generated_at": datetime.now(UTC).isoformat(),
+              "result": "passed",
+              "reference_stack": matrix["reference_stack"],
+              "checks": [
+                  "polaris_health",
+                  "duckdb_parquet_seed",
+                  "iceberg_schema_render",
+                  "iceberg_search_dry_run",
+                  "pyiceberg_backend_check",
+              ],
+          }
+          Path("polaris-quickstart-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+          )
+          PY
+
+      - name: Upload quickstart evidence
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: polaris-quickstart-${{ github.sha }}
+          path: polaris-quickstart-evidence.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Show Polaris logs on failure
         if: failure()

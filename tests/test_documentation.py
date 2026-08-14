@@ -29,9 +29,7 @@ def test_documented_loro_command_paths_exist() -> None:
     for path in MARKDOWN_FILES:
         for line_number, line in enumerate(path.read_text().splitlines(), start=1):
             command = line.strip().removesuffix("\\").strip()
-            if not command.startswith("loro ") or re.match(
-                r"^loro(?: [a-z-]+)?: ", command
-            ):
+            if not command.startswith("loro ") or re.match(r"^loro(?: [a-z-]+)?: ", command):
                 continue
             try:
                 parts = shlex.split(command)
@@ -49,6 +47,48 @@ def test_documented_loro_command_paths_exist() -> None:
             if subcommands and candidates and candidates[0] not in subcommands:
                 broken.append(f"{location}: unknown subcommand {candidates[0]!r}")
     assert not broken, "Invalid documented Loro commands:\n" + "\n".join(broken)
+
+
+def test_documented_loro_long_options_exist() -> None:
+    root = get_command(app)
+    broken: list[str] = []
+    for path in MARKDOWN_FILES:
+        for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+            command = line.strip().removesuffix("\\").strip()
+            if not command.startswith("loro ") or re.match(r"^loro(?: [a-z-]+)?: ", command):
+                continue
+            try:
+                parts = shlex.split(command)
+            except ValueError:
+                continue
+
+            selected = root
+            argument_start = 1
+            if len(parts) > 1 and not parts[1].startswith("-"):
+                selected = root.commands.get(parts[1], root)
+                argument_start = 2
+                subcommands = getattr(selected, "commands", None)
+                if subcommands and len(parts) > 2 and parts[2] in subcommands:
+                    selected = subcommands[parts[2]]
+                    argument_start = 3
+
+            available = {"--help"} | {
+                option
+                for parameter in selected.params
+                for option in (
+                    *getattr(parameter, "opts", ()),
+                    *getattr(parameter, "secondary_opts", ()),
+                )
+                if option.startswith("--")
+            }
+            for token in parts[argument_start:]:
+                if token == "--":
+                    break
+                option = token.split("=", maxsplit=1)[0]
+                if option.startswith("--") and option not in available:
+                    location = f"{path.relative_to(ROOT)}:{line_number}"
+                    broken.append(f"{location}: unknown option {option!r} for {selected.name!r}")
+    assert not broken, "Invalid documented Loro options:\n" + "\n".join(broken)
 
 
 def test_cli_command_map_matches_registered_commands() -> None:

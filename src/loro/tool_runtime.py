@@ -74,6 +74,11 @@ class ToolRegistry:
         approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
         mcp_service: MCPService | None = None,
         active_session_id: str | None = None,
+        allowed_tools: frozenset[str] | None = None,
+        allowed_mcp_servers: frozenset[str] | None = None,
+        allowed_skills: frozenset[str] | None = None,
+        allowed_subagents: frozenset[str] | None = None,
+        subagent_runner: Callable[[str, str, str], str] | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -99,6 +104,11 @@ class ToolRegistry:
         self.mailbox = SessionMailbox(config.sessions, config.safety)
         self.active_session_id = active_session_id
         self.graph_outputs: dict[str, Any] = {}
+        self.allowed_tools = allowed_tools
+        self.allowed_mcp_servers = allowed_mcp_servers
+        self.allowed_skills = allowed_skills
+        self.allowed_subagents = allowed_subagents
+        self.subagent_runner = subagent_runner
 
     def execute(self, call: ToolCall) -> ToolExecution:
         execution = self._execute(call)
@@ -120,6 +130,14 @@ class ToolRegistry:
 
     def _execute(self, call: ToolCall) -> ToolExecution:
         try:
+            if call.name.startswith("mcp."):
+                call = _normalize_mcp_tool_call(call, set(self.config.mcp.servers))
+            if self.allowed_tools is not None and call.name not in self.allowed_tools:
+                return ToolExecution(
+                    call=call,
+                    ok=False,
+                    output=f"Tool is not available to the active agent profile: {call.name}",
+                )
             if call.name == "file.read":
                 return self._read_file(call)
             if call.name == "file.search":
@@ -148,6 +166,8 @@ class ToolRegistry:
                 return self._run_session_message(call)
             if call.name == "graph.emit_output":
                 return self._emit_graph_output(call)
+            if call.name == "agent.run":
+                return self._run_subagent(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
@@ -549,6 +569,10 @@ class ToolRegistry:
             return ToolExecution(call=call, ok=False, output="MCP is disabled.")
         call = _normalize_mcp_tool_call(call, set(self.config.mcp.servers))
         server_id = str(call.args["server_id"])
+        if self.allowed_mcp_servers is not None and server_id not in self.allowed_mcp_servers:
+            raise PermissionError(
+                f"MCP server is not available to the active agent profile: {server_id}"
+            )
         server = MCPRegistry(self.config.mcp).get(server_id)
         endpoint = server_endpoint_for_display(server)
         operation = call.name.removeprefix("mcp.")
@@ -649,6 +673,8 @@ class ToolRegistry:
 
     def _run_skill(self, call: ToolCall) -> ToolExecution:
         name = str(call.args["name"])
+        if self.allowed_skills is not None and name not in self.allowed_skills:
+            raise PermissionError(f"Skill is not available to the active agent profile: {name}")
         path = str(call.args["path"])
         if call.name == "skill.read":
             self.permissions.require_allowed(
@@ -713,6 +739,27 @@ class ToolRegistry:
                 "sandbox_os_enforced": result.os_enforced,
                 "output_truncated": result.output_truncated,
             },
+        )
+
+    def _run_subagent(self, call: ToolCall) -> ToolExecution:
+        profile = str(call.args["profile"])
+        prompt = str(call.args["prompt"])
+        mode = str(call.args.get("mode", "run"))
+        if self.subagent_runner is None:
+            raise PermissionError("Subagent execution is not available in this runtime.")
+        if self.allowed_subagents is not None and profile not in self.allowed_subagents:
+            raise PermissionError(
+                f"Subagent is not available to the active agent profile: {profile}"
+            )
+        self._authorize(
+            call,
+            PermissionRequest(tool="default", action="run subagent", target=profile),
+            approval_target=profile,
+            risk_reason="Delegate a bounded task to another configured agent profile.",
+        )
+        output = self.subagent_runner(profile, prompt, mode)
+        return ToolExecution(
+            call=call, ok=True, output=output, metadata={"subagent_profile": profile}
         )
 
     def _run_session_message(self, call: ToolCall) -> ToolExecution:

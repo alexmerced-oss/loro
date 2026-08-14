@@ -18,7 +18,12 @@ from loro.audit import AuditLogger
 from loro.config import GatewayEndpointConfig, IdentityConfig, LoroConfig
 from loro.credentials import CredentialError, CredentialVault
 from loro.fileio import atomic_write_text
-from loro.gateway.adapters import ChannelMessage, GatewayAdapterError, parse_inbound
+from loro.gateway.adapters import (
+    ChannelMessage,
+    GatewayAdapterError,
+    GatewayUnsupportedEventError,
+    parse_inbound,
+)
 from loro.runtime import AgentRuntime
 
 
@@ -107,6 +112,9 @@ class GatewayDispatcher:
                 secret,
                 max_age_seconds=self.config.gateway.request_max_age_seconds,
             )
+        except GatewayUnsupportedEventError as error:
+            self._audit("gateway.rejected", endpoint_id=endpoint_id, reason=str(error))
+            return self._json(422, {"error": "gateway event type is unsupported"})
         except GatewayAdapterError as error:
             self._audit("gateway.rejected", endpoint_id=endpoint_id, reason=str(error))
             return self._json(401, {"error": "gateway authentication failed"})
@@ -132,7 +140,13 @@ class GatewayDispatcher:
         if not self.pending.acquire(blocking=False):
             self._audit("gateway.rejected", endpoint_id=endpoint_id, reason="queue-full")
             return self._json(429, {"error": "gateway task queue is full"})
-        if not self._remember(f"{endpoint_id}:{message.message_id}"):
+        replay_key = f"{endpoint_id}:{message.message_id}"
+        try:
+            remembered = self._remember(replay_key)
+        except Exception:
+            self.pending.release()
+            raise
+        if not remembered:
             self.pending.release()
             self._audit("gateway.duplicate", endpoint_id=endpoint_id)
             return self._json(inbound.status, inbound.response)
@@ -145,7 +159,14 @@ class GatewayDispatcher:
             channel_id=message.channel_id,
             workspace_id=message.workspace_id,
         )
-        future = self.executor.submit(self._process, message, endpoint)
+        try:
+            future = self.executor.submit(self._process, message, endpoint)
+        except Exception:
+            try:
+                self._forget(replay_key)
+            finally:
+                self.pending.release()
+            raise
         future.add_done_callback(lambda _future: self.pending.release())
         return self._json(inbound.status, inbound.response)
 
@@ -244,12 +265,30 @@ class GatewayDispatcher:
         with self._seen_lock:
             if key in self._seen_set:
                 return False
+            evicted = self._seen[0] if len(self._seen) == self._seen.maxlen else None
             if len(self._seen) == self._seen.maxlen:
                 self._seen_set.discard(self._seen[0])
             self._seen.append(key)
             self._seen_set.add(key)
-            self._save_seen()
+            try:
+                self._save_seen()
+            except Exception:
+                self._seen.pop()
+                self._seen_set.discard(key)
+                if evicted is not None:
+                    self._seen.appendleft(evicted)
+                    self._seen_set.add(evicted)
+                raise
             return True
+
+    def _forget(self, key: str) -> None:
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        with self._seen_lock:
+            if digest not in self._seen_set:
+                return
+            self._seen.remove(digest)
+            self._seen_set.remove(digest)
+            self._save_seen()
 
     def _load_seen(self) -> list[str]:
         if not self.state_path.exists():

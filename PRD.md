@@ -1,5 +1,10 @@
 # PRD: Loro Enterprise Agent Harness
 
+> Document status: product requirements and design intent. For shipped behavior and support
+> classifications in the current `0.12.0` release, use the
+> [Project Status](docs/project-status.md), [support matrix](docs/support-matrix.json), and
+> [interoperability matrix](docs/interoperability-matrix.json).
+
 ## 1. Product Summary
 
 Build **Loro**, a Python-based CLI agentic harness for software engineering, governed data work, and enterprise productivity. "Loro" is the Spanish word for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups. The product should feel like a capable enterprise work companion that can code, analyze, document, summarize, create artifacts, and coordinate repeatable workflows while staying governed and auditable.
@@ -751,16 +756,14 @@ Operational metrics:
 | Iceberg backend complexity slows MVP | Build Postgres backend first, Iceberg adapter second behind same interface |
 | Ambiguous enterprise identity mapping | Integrate with SSO/internal gateway; include principal and role diagnostics |
 
-## 15. Open Questions
+## 15. Open Product Decisions
 
-- Which model providers and internal AI gateway protocols should be supported first?
 - Which enterprise document, slide, and spreadsheet templates should ship as built-ins versus managed organization templates?
 - Which collaboration suites should be integrated first: Microsoft 365, Google Workspace, Notion, Confluence, Jira, Slack, or email?
 - Should shared memory require reviewer approval before becoming active, or can user-authored memories be active immediately by scope?
 - Which embedding provider is acceptable for restricted enterprise memories?
 - Should Iceberg shared memory use one table per tenant or a multi-tenant table with strict scope filtering?
 - How should Polaris row-level policies be represented to the agent without exposing sensitive policy details?
-- What specific "pi" codebase or product should be studied for additional requirements?
 
 ## 16. Milestones
 
@@ -822,8 +825,8 @@ Operational metrics:
 - SSO/internal gateway integration.
 - Secret scanning.
 - Sandbox profiles.
-- Dual-era MCP support and Agent Skills support as detailed in
-  `docs/mcp-skills-roadmap.md`.
+- Dual-era MCP and Agent Skills support governed by the documented support and interoperability
+  matrices.
 - Integration tests and security review.
 
 ### Milestone 8: Secure Remote Work And Credentials

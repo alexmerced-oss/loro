@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "release_line": "0.12",
+  "stability": "stabilization",
+  "python": {
+    "supported": ["3.11", "3.12", "3.13", "3.14"]
+  },
+  "operating_systems": {
+    "supported": ["linux"],
+    "experimental": ["macos", "windows"]
+  },
+  "memory_backends": {
+    "supported": ["local", "postgres"],
+    "experimental": ["iceberg"]
+  },
+  "provider_protocols": {
+    "supported": ["openai-compatible", "anthropic", "gemini"],
+    "experimental": ["bedrock"]
+  },
+  "governed_data": {
+    "experimental": ["polaris-cli", "iceberg-rest"]
+  },
+  "extensions": {
+    "supported": ["agent-skills", "claude-skill-import", "pi-skill-import"],
+    "experimental": ["mcp", "agentic-graphs", "open-agent-profile-v1"]
+  },
+  "remote_gateways": {
+    "experimental": ["slack", "discord", "telegram", "teams", "signal-bridge", "generic"]
+  },
+  "known_limitations": [
+    "Production identity assertion verification is deployment-owned.",
+    "Process sandbox mode is not an operating-system security boundary.",
+    "Iceberg, Polaris, MCP, and remote gateways require protected deployment evidence before stable support.",
+    "Per-user and per-tenant period budgets require an external shared gateway or coordinator.",
+    "The reference audit collector needs deployment-managed TLS, immutable retention, and external chain anchoring.",
+    "The declared recovery targets require validation in each organization's managed environment.",
+    "OAP Level 3 behavior is provisional against the supplied implementation guide until the canonical upstream schema and conformance suite are pinned."
+  ]
+}

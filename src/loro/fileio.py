@@ -74,6 +74,12 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None) -
         if mode is not None:
             os.chmod(temporary, mode)
         temporary.replace(path)
+        if os.name != "nt":
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
