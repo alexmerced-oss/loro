@@ -33,9 +33,7 @@ jobs:
       - run: python scripts/check_oap_conformance.py
       - run: python -m pytest tests/test_agent_profiles.py -q
       - name: Verify CLI surface
-        env:
-          NO_COLOR: "1"
         run: |
           loro agents --help
           loro setup agents --help
-          loro run --help | grep -- --agent
+          python -c 'from typer.main import get_command; from loro.cli import app; assert "agent" in {param.name for param in get_command(app).commands["run"].params}'
