@@ -2,7 +2,7 @@
 
 ## Pre-1.0 Contract
 
-Loro follows semantic-versioning intent while the public surface is pre-1.0. The `0.11`
+Loro follows semantic-versioning intent while the public surface is pre-1.0. The `0.12`
 stabilization contract freezes supported CLI, schema, protocol, matrix, and deployment
 surfaces. Minor releases may change experimental features, but supported surfaces receive a
 migration path whenever practical. Patch releases do not intentionally break documented
@@ -30,9 +30,9 @@ approval, audit, data protection, and explicit-memory rules still apply.
   or shared-memory write mode.
 - Unknown configuration or persisted-record versions are rejected instead of guessed.
 
-No surface is deprecated in `0.11.0`; the warning type and policy establish the contract for later
+No surface is deprecated in `0.12.0`; the warning type and policy establish the contract for later
 releases.
 
-The generated [release contract](release-contract.json) is enforced in CI. After the `0.11`
+The generated [release contract](release-contract.json) is enforced in CI. After the `0.12`
 stabilization freeze, changing a captured command, schema, protocol, support classification, matrix,
 or reference deployment requires explicit regeneration and review.

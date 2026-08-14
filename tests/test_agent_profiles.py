@@ -14,17 +14,20 @@ from loro.agent_profiles import (
     ProfileError,
     apply_delta,
     build_effective_profile,
+    effective_config,
     load_path,
     narrow_decision,
 )
 from loro.agent_profiles.digest import canonical_json, spec_digest
 from loro.agent_profiles.proposals import ProfileProposalStore
 from loro.agent_profiles.render import render_state
+from loro.agraph.execute import GraphExecutor
 from loro.cli import app
-from loro.config import AgentProfilesConfig, LoroConfig, ModelTierConfig
+from loro.config import AgentProfilesConfig, LoroConfig, MCPServerConfig, ModelTierConfig
 from loro.data_protection import DataProtectionEngine
 from loro.runtime import AgentRuntime
 from loro.sessions import SessionStore
+from loro.tool_runtime import ToolCall, ToolRegistry
 
 
 def _profile(name: str = "reviewer", **spec: object) -> dict[str, object]:
@@ -321,6 +324,157 @@ def test_literal_profile_secret_is_rejected_at_load(tmp_path: Path) -> None:
     )
     with pytest.raises(ProfileError, match="literal secret"):
         registry.load("reviewer")
+
+
+def test_extends_composes_role_and_intersects_authority(tmp_path: Path) -> None:
+    parent = _profile(
+        "base",
+        permissions={"shell": "deny"},
+        tools={"policy": "allowlist", "allow": ["file.*"]},
+        writeback="auto",
+    )
+    child = _profile(
+        "child",
+        tools={"policy": "allowlist", "allow": ["file.read", "shell.run"]},
+        writeback="auto",
+    )
+    child["extends"] = "base"
+    child["spec"]["role"]["instructions"] = "Child role."  # type: ignore[index]
+    _write(tmp_path / "base.agent.yaml", parent)
+    _write(tmp_path / "child.agent.yaml", child)
+    config = LoroConfig()
+    config.agent_profiles.managed_paths = [str(tmp_path)]
+    config.agent_profiles.user_paths = []
+    config.agent_profiles.project_paths = []
+    config.agent_profiles.writeback = "auto"
+    resolved = AgentProfileRegistry(config.agent_profiles).load("child")
+    effective = build_effective_profile(resolved, config)
+    assert resolved.lineage == ("base", "child")
+    assert resolved.document.spec.role.instructions == "Child role."
+    assert effective.permissions.shell == "deny"
+    assert effective.tools == frozenset({"file.read"})
+    assert effective.writeback == "off"
+
+
+def test_extends_rejects_cycles_and_depth_overflow(tmp_path: Path) -> None:
+    one = _profile("one")
+    two = _profile("two")
+    one["extends"] = ["two"]
+    two["extends"] = ["one"]
+    _write(tmp_path / "one.agent.yaml", one)
+    _write(tmp_path / "two.agent.yaml", two)
+    registry = AgentProfileRegistry(
+        AgentProfilesConfig(managed_paths=[str(tmp_path)], user_paths=[], project_paths=[])
+    )
+    with pytest.raises(ProfileError, match="cycle"):
+        registry.load("one")
+
+
+def test_profile_scopes_mcp_skills_and_memory_at_execution(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Review code\n---\nReview carefully.\n", encoding="utf-8"
+    )
+    _write(
+        tmp_path / "agents" / "scoped.agent.yaml",
+        _profile(
+            "scoped",
+            tools={"mcp_servers": ["allowed"], "skills": [], "allow": []},
+            memory={"stores": ["oap-state"]},
+        ),
+    )
+    config = LoroConfig()
+    config.agent_profiles.managed_paths = [str(tmp_path / "agents")]
+    config.agent_profiles.user_paths = []
+    config.agent_profiles.project_paths = []
+    config.skills.managed_paths = [str(tmp_path / "skills")]
+    config.skills.user_paths = []
+    config.skills.project_paths = []
+    config.mcp.enabled = True
+    config.mcp.servers = {
+        "allowed": MCPServerConfig(command="allowed-server"),
+        "blocked": MCPServerConfig(command="blocked-server"),
+    }
+    config.memory.local.enabled = True
+    config.memory.shared.enabled = True
+    effective = build_effective_profile(
+        AgentProfileRegistry(config.agent_profiles).load("scoped"), config
+    )
+    assert effective.mcp_servers == frozenset({"allowed"})
+    assert effective.skills == frozenset()
+    assert effective.memory_stores == frozenset({"oap-state"})
+    assert not effective_config(config, effective).memory.local.enabled
+    registry = ToolRegistry(
+        config,
+        allowed_mcp_servers=effective.mcp_servers,
+        allowed_skills=effective.skills,
+    )
+    denied_mcp = registry.execute(ToolCall("mcp.tools", {"server_id": "blocked", "approved": True}))
+    denied_skill = registry.execute(ToolCall("skill.read", {"name": "review", "path": "x"}))
+    assert not denied_mcp.ok and "active agent profile" in denied_mcp.output
+    assert not denied_skill.ok and "active agent profile" in denied_skill.output
+
+
+def test_shared_memory_scope_cannot_cross_identity_tenant(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "agents" / "scoped.agent.yaml",
+        _profile("scoped", memory={"stores": ["shared"], "scopes": ["other-tenant"]}),
+    )
+    config = LoroConfig()
+    config.identity.tenant = "acme"
+    config.memory.shared.enabled = True
+    config.agent_profiles.managed_paths = [str(tmp_path / "agents")]
+    config.agent_profiles.user_paths = []
+    config.agent_profiles.project_paths = []
+    effective = build_effective_profile(
+        AgentProfileRegistry(config.agent_profiles).load("scoped"), config
+    )
+    assert effective.memory_scopes == frozenset()
+    assert "shared" not in effective.memory_stores
+
+
+def test_subagent_delegation_is_allowlisted_and_depth_bounded(tmp_path: Path) -> None:
+    parent = _profile(
+        "parent",
+        tools={"policy": "allowlist", "allow": ["agent.run"]},
+        runtime={"subagents": ["child"], "max_subagent_depth": 1},
+    )
+    _write(tmp_path / "agents" / "parent.agent.yaml", parent)
+    _write(tmp_path / "agents" / "child.agent.yaml", _profile("child"))
+    _write(tmp_path / "agents" / "other.agent.yaml", _profile("other"))
+    config = LoroConfig()
+    config.agent_profiles.managed_paths = [str(tmp_path / "agents")]
+    config.agent_profiles.user_paths = []
+    config.agent_profiles.project_paths = []
+    config.memory.local.enabled = False
+    config.audit.path = str(tmp_path / "audit.jsonl")
+    config.sessions.path = str(tmp_path / "sessions")
+    config.sessions.message_path = str(tmp_path / "messages")
+    effective = build_effective_profile(
+        AgentProfileRegistry(config.agent_profiles).load("parent"), config
+    )
+    runtime = AgentRuntime(config, profile=effective)
+    child_result = runtime.run_subagent("child", "Review this.")
+    assert child_result.summary
+    with pytest.raises(PermissionError, match="not allowed"):
+        runtime.run_subagent("other", "Review this.")
+    bounded = AgentRuntime(config, profile=effective, _subagent_depth=1)
+    with pytest.raises(PermissionError, match="depth"):
+        bounded.run_subagent("child", "Review this.")
+
+
+def test_graph_node_extension_binds_effective_profile(tmp_path: Path) -> None:
+    _write(tmp_path / "agents" / "reviewer.agent.yaml", _profile("reviewer"))
+    config = LoroConfig()
+    config.agent_profiles.managed_paths = [str(tmp_path / "agents")]
+    config.agent_profiles.user_paths = []
+    config.agent_profiles.project_paths = []
+    config.audit.path = str(tmp_path / "audit.jsonl")
+    executor = GraphExecutor(config, workspace=tmp_path)
+    runtime = executor._runtime_for_node(config, {"x-agent-profile": "reviewer"})
+    assert runtime.profile is not None
+    assert runtime.profile.resolved.document.metadata.name == "reviewer"
 
 
 def test_runtime_records_profile_filters_tools_and_creates_state_proposal(tmp_path: Path) -> None:

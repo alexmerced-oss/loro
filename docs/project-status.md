@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.11.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.12.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
 general availability because several production and organization-owned controls require evidence
@@ -32,10 +32,11 @@ Postgres recovery, Polaris/Iceberg quickstart integration, and content-free benc
 release validation suite passed 547 tests with 5 environment-dependent skips and 74.31% branch
 coverage.
 
-The 0.11.0 release adds experimental OAP profile evidence without changing that stable boundary.
-Its 574-test validation run had 5 environment-dependent skips, 74.88% repository branch-aware
-coverage, and 87.70% coverage across the new profile package. Formal upstream OAP certification
-remains pending and is explicitly provisional in the machine-readable conformance statement.
+The 0.12.0 release completes the repository-defined provisional OAP Level 3 harness without
+changing that stable boundary. Its pre-release validation run passed 580 tests with 5
+environment-dependent skips, 75.04% repository branch-aware coverage, and 89.13%
+profile-package coverage. Formal upstream OAP certification remains pending and is explicitly
+provisional in the machine-readable conformance statement.
 
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and

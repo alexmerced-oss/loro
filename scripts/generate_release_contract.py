@@ -69,7 +69,7 @@ def build_contract() -> dict[str, object]:
         "protocols": {
             "agentic_graph": "1.0",
             "mcp": mcp_protocol_factory(),
-            "open_agent_profile": "1.0-provisional-level-2",
+            "open_agent_profile": "1.0-provisional-level-3",
             "provider": sorted(interoperability["providers"]["protocols"]),
         },
         "supported": {

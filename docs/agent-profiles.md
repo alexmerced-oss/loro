@@ -1,7 +1,7 @@
 # Open Agent Profiles
 
-Loro `0.11.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
-provisional Level 2 against the supplied implementation guide; formal upstream certification is
+Loro `0.12.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
+provisional Level 3 against the supplied implementation guide; formal upstream certification is
 pending an immutable canonical schema and conformance-suite source.
 
 ## Create And Run
@@ -16,8 +16,41 @@ loro plan --agent reviewer "Plan the smallest safe change"
 ```
 
 `explain` is the authoritative local answer to what a profile can actually do. It prints the
-root-derived trust, selected model, effective tools, narrowed permissions and budgets, writeback
-mode, and every adjustment made by Loro policy.
+root-derived trust, inheritance lineage, selected model, effective tools, MCP servers, Skills,
+subagents, memory stores/scopes, narrowed permissions and budgets, writeback mode, and every
+adjustment made by Loro policy.
+
+## Composition And Harness Controls
+
+`extends` accepts one profile name or an ordered list. Loro resolves the inheritance graph from
+the same trusted discovery roots, rejects cycles and references deeper than
+`max_reference_depth`, and computes digests from the composed document. Every inheritance layer is
+then evaluated separately, so a child cannot widen a parent's tool, permission, path, runtime,
+MCP, Skill, memory, or subagent ceiling. Composed profiles use `writeback = "off"`; update a leaf
+profile explicitly rather than applying a state delta to an ambiguous merged document.
+
+```yaml
+extends: base-reviewer
+spec:
+  tools:
+    policy: allowlist
+    allow: [file.read, file.search, mcp.call, skill.read, agent.run]
+    mcp_servers: [source-control]
+    skills: [secure-review]
+  runtime:
+    subagents: [test-reviewer]
+    max_subagent_depth: 1
+  memory:
+    stores: [oap-state, local, shared]
+    scopes: [acme]
+```
+
+MCP and Skill identifiers are checked both when schemas are offered to a model and again at tool
+execution. Subagents run through the ordinary bounded `AgentRuntime`, must be explicitly named,
+cannot exceed the profile depth limit, and inherit the intersection of parent and child authority.
+Local and shared memory backends can be disabled per profile. Shared scopes are intersected with
+the resolved identity tenant; a mismatch disables shared memory. Agentic Graph task nodes bind a
+profile with the schema-preserving `x-agent-profile: reviewer` extension.
 
 ## Discovery And Trust
 
@@ -36,8 +69,9 @@ Symlinks escaping a root are rejected. Resolution performs no installs, fetches,
 Profiles narrow existing Loro configuration. They never add authority. Decisions use the least
 permissive value, workspace roots must remain contained, tools are intersected with the configured
 catalog, runtime budgets use the lower ceiling, profile rules cannot short-circuit managed rules,
-and writeback is capped by `[agent_profiles].writeback`. Profile-selected sandbox, MCP, Skills,
-subagents, and external memory stores are not implemented in this release.
+and writeback is capped by `[agent_profiles].writeback`. Profiles can narrow configured MCP
+servers, enabled Skills, local/shared memory, and named subagents. They cannot install a Skill,
+configure an MCP server, create a tenant, or grant a child capability.
 
 Profile state is rendered in a delimited `trust="untrusted"` block. It cannot grant tools,
 permissions, approval, or user authority. State is budgeted by whole entry, preserves pinned
@@ -89,6 +123,8 @@ writeback = "propose"
 max_bytes = 1000000
 max_state_bytes = 200000
 max_profiles = 200
+max_reference_depth = 8
+max_subagent_depth = 3
 state_path = ".loro/agent-state.json"
 proposal_path = ".loro/agent-proposals"
 ```
@@ -101,6 +137,8 @@ because this section is additive and defaults fail closed around writes.
 
 The machine-readable statement is [oap-conformance.json](oap-conformance.json). Tests cover
 encodings, digest determinism, timestamp handling, trust, root precedence, collisions, symlink
-escape, permission/tool/root/budget narrowing, untrusted state, whole-entry eviction, `/state`
-scope, revision/spec conflicts, atomic persistence, secret redaction, runtime filtering, sessions,
-proposals, and auto-writeback ceilings.
+escape, composition cycles/depth, inherited authority intersection, permission/tool/root/budget
+narrowing, MCP and Skill execution scoping, tenant-bound memory scopes, bounded subagents, graph
+profile binding, untrusted state, whole-entry eviction, `/state` scope, revision/spec conflicts,
+atomic persistence, secret redaction, runtime filtering, sessions, proposals, and auto-writeback
+ceilings. Formal upstream fixture certification remains the only declared OAP gap.

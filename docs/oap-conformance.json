@@ -1,20 +1,19 @@
 {
   "oap": "1.0",
   "implementation": "loro",
-  "version": "0.11.0",
-  "level": 2,
+  "version": "0.12.0",
+  "level": 3,
   "status": "provisional",
   "source": "docs/oap-implementation-plan.md",
   "source_revision": null,
   "encodings": ["yaml", "json", "md"],
   "discovery_roots": ["managed", "user", "project"],
-  "evidence": ["tests/test_agent_profiles.py"],
+  "evidence": [
+    "tests/test_agent_profiles.py",
+    "tests/test_agraph.py",
+    "tests/test_agraph_failures.py"
+  ],
   "unimplemented": [
-    "extends",
-    "spec.tools.mcp_servers",
-    "spec.tools.skills",
-    "spec.runtime.subagents",
-    "memory stores beyond profile state",
     "formal upstream fixture certification"
   ]
 }

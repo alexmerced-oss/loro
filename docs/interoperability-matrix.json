@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.11",
+  "release_line": "0.12",
   "providers": {
     "protocols": {
       "anthropic": {"status": "supported", "fixture": "anthropic.json"},
@@ -70,7 +70,7 @@
   },
   "agent_profiles": {
     "specification": "open-agent-profile-v1",
-    "status": "experimental-provisional-level-2",
+    "status": "experimental-provisional-level-3",
     "encodings": ["yaml", "json", "markdown"],
     "evidence": ["tests/test_agent_profiles.py", "docs/oap-conformance.json"],
     "limitations": [

@@ -15,6 +15,7 @@ from uuid import uuid4
 import jsonschema
 
 from loro import __version__
+from loro.agent_profiles import AgentProfileRegistry, build_effective_profile
 from loro.agraph import CONFORMANCE_LEVEL, SUPPORTED_FEATURES
 from loro.agraph.criteria import CriteriaEvaluator, ExternalChecker
 from loro.agraph.document import GraphDocument, graph_digest, load_graph
@@ -550,7 +551,9 @@ class GraphExecutor:
             prompt = self._prompt(node_id, node, inputs, feedback)
             started = _now()
             try:
-                result: RuntimeResult = self.runtime_factory(routed).run(prompt, mode="run")
+                result: RuntimeResult = self._runtime_for_node(routed, node, node_id).run(
+                    prompt, mode="run"
+                )
                 outputs = dict(result.emitted_outputs)
                 self._discover_outputs(outputs, node.get("outputs", {}))
                 missing_output = self._validate_outputs(outputs, node.get("outputs", {}))
@@ -1043,6 +1046,26 @@ class GraphExecutor:
                 runtime.max_input_tokens, self._graph_token_limit // parallel
             )
         return self.config.model_copy(update={"model": model, "runtime": runtime})
+
+    def _runtime_for_node(
+        self, routed: LoroConfig, node: Mapping[str, Any], node_id: str = ""
+    ) -> AgentRuntime:
+        profile_name = node.get("x-agent-profile")
+        if profile_name is None:
+            return self.runtime_factory(routed)
+        if not isinstance(profile_name, str) or not profile_name:
+            raise GraphExecutionError("x-agent-profile must be a non-empty profile name")
+        registry = AgentProfileRegistry(
+            routed.agent_profiles, cwd=self.workspace, safety=routed.safety
+        )
+        profile = build_effective_profile(registry.load(profile_name), routed)
+        self.audit.write(
+            "agraph.agent_profile_bound",
+            graph_node_id=node_id,
+            profile=profile_name,
+            spec_digest=profile.resolved.spec_digest,
+        )
+        return AgentRuntime(routed, profile=profile, _profile_cwd=self.workspace)
 
     def _parallel_limit(self, graph: Mapping[str, Any]) -> int:
         requested = int(graph.get("constraints", {}).get("max_parallel_nodes", 1))

@@ -120,6 +120,10 @@ Release `0.11.0` preserves that stable core and adds experimental provisional OA
 agents, fail-closed narrowing, untrusted state, and atomic `/state`-only writeback. See
 [Loro 0.11.0](releases/0.11.0.md).
 
+Release `0.12.0` completes provisional OAP Level 3 harness behavior with composition, scoped MCP,
+Skills and memory, bounded subagents, and Agentic Graph profile binding. See
+[Loro 0.12.0](releases/0.12.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.

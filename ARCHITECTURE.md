@@ -1,6 +1,6 @@
 # Loro Architecture
 
-> Architecture baseline: Loro `0.11.0`. This document describes implemented components and their
+> Architecture baseline: Loro `0.12.0`. This document describes implemented components and their
 > intended boundaries; the [Project Status](docs/project-status.md) and machine-readable
 > [support matrix](docs/support-matrix.json) determine which components are stable or experimental.
 

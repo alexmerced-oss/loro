@@ -35,6 +35,8 @@ class ToolSpec(OAPModel):
     policy: Literal["allowlist", "denylist", "inherit"] = "inherit"
     allow: list[str] = Field(default_factory=list)
     deny: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
 
 
 class ProfilePermissions(OAPModel):
@@ -57,6 +59,13 @@ class RuntimeSpec(OAPModel):
     max_steps: int | None = Field(default=None, ge=1)
     max_tool_calls: int | None = Field(default=None, ge=0)
     max_cost_usd: float | None = Field(default=None, gt=0)
+    subagents: list[str] = Field(default_factory=list)
+    max_subagent_depth: int | None = Field(default=None, ge=0, le=20)
+
+
+class MemorySpec(OAPModel):
+    stores: list[Literal["oap-state", "local", "shared"]] = Field(default_factory=list)
+    scopes: list[str] = Field(default_factory=list)
 
 
 class ContextFile(OAPModel):
@@ -80,6 +89,7 @@ class ProfileSpec(OAPModel):
     permissions: ProfilePermissions = Field(default_factory=ProfilePermissions)
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     context: ContextSpec = Field(default_factory=ContextSpec)
+    memory: MemorySpec = Field(default_factory=MemorySpec)
     writeback: Literal["off", "propose", "auto"] = "propose"
 
 
@@ -101,9 +111,17 @@ class AgentProfileModel(OAPModel):
     api_version: str = Field(default="oap/v1", alias="apiVersion")
     kind: str = "AgentProfile"
     metadata: ProfileMetadata
+    extends: list[str] = Field(default_factory=list)
     spec: ProfileSpec = Field(default_factory=ProfileSpec)
     state: list[StateEntry] = Field(default_factory=list)
     history: list[HistoryEntry] = Field(default_factory=list)
+
+    @field_validator("extends", mode="before")
+    @classmethod
+    def _extends(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        return [value] if isinstance(value, str) else value
 
     @field_validator("kind")
     @classmethod
