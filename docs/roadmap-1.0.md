@@ -3,8 +3,8 @@
 ## Purpose
 
 This is the single authoritative roadmap for work remaining after Loro `0.10.0`. It covers the
-first stable `1.0` release. Completed milestones belong in release notes; implementation proof
-belongs in the
+experimental `0.11.0` Open Agent Profile release and the first stable `1.0` release. Completed
+milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
 
 No calendar date is promised. A milestone ships when its repository-owned work is complete and
@@ -78,7 +78,36 @@ available for evaluation.
 | `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
 | `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
 | `0.10` | Released | Repository hardening, release signing, and the deliberately small stable core are frozen. |
-| `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
+| `0.11` | Next | Experimental OAP v1 Level 2 named-agent profiles ship without expanding the stable core. |
+| `1.0` | Planned | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
+
+## 0.11: Open Agent Profile
+
+Loro `0.11.0` adds portable, named agent profiles as an experimental surface. The target is Open
+Agent Profile v1 conformance Level 2: document loading, discovery and trust, fail-closed privilege
+narrowing, runtime instantiation, untrusted state injection, and approval-gated state writeback.
+Level 3 composition, profile-selected MCP/Skills, subagents, external profile memory stores, and
+Agentic Graph integration remain deferred.
+
+The detailed, batch-by-batch scope and release gates are in the
+[0.11.0 Release Plan](releases/0.11.0-plan.md). The source guide remains the
+[OAP Implementation Guide](oap-implementation-plan.md).
+
+### 0.11 Exit Gate
+
+- The exact OAP v1 source revision, schemas, fixtures, reference digests, conformance tests, and
+  license are pinned and recorded before any conformance claim.
+- Profiles can narrow but never widen model, tool, permission, path, host, budget, sandbox, data,
+  identity, tenant, or writeback policy.
+- Profile state is always labeled untrusted, data-protected before injection and persistence, and
+  unable to carry approval authority.
+- Delta application is revision-checked, digest-bound, `/state`-only, locked, durable, atomic, and
+  recoverable; capability proposals never auto-apply.
+- The no-profile runtime and existing 0.10 stable surface remain behaviorally compatible.
+- Python 3.11-3.14 CI, security evidence, OAP fixture/conformance jobs, package verification, and
+  clean-install smoke tests pass for the exact release artifacts.
+- Support and interoperability matrices classify OAP as experimental and publish precise Level 2
+  limitations.
 
 ## 1.0: General Availability
 
