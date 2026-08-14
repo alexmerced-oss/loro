@@ -19,8 +19,8 @@ def main() -> int:
             raise ValueError("identity must declare Loro OAP 1.0")
         if payload.get("version") != __version__:
             raise ValueError("conformance version does not match package")
-        if payload.get("level") != 2 or payload.get("status") != "provisional":
-            raise ValueError("0.11 must declare provisional Level 2")
+        if payload.get("level") != 3 or payload.get("status") != "provisional":
+            raise ValueError("0.12 must declare provisional Level 3")
         if payload.get("source_revision") is not None:
             raise ValueError("source revision must remain null until canonical upstream is pinned")
         for evidence in payload.get("evidence", []):
@@ -29,7 +29,7 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"OAP conformance statement invalid: {error}")
         return 1
-    print("OAP conformance statement OK: provisional Level 2 evidence is explicit.")
+    print("OAP conformance statement OK: provisional Level 3 evidence is explicit.")
     return 0
 
 

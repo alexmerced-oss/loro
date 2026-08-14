@@ -801,6 +801,8 @@ class AgentProfilesConfig(BaseModel):
     max_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
     max_state_bytes: int = Field(default=200_000, ge=0, le=5_000_000)
     max_profiles: int = Field(default=200, ge=1, le=10_000)
+    max_reference_depth: int = Field(default=8, ge=1, le=20)
+    max_subagent_depth: int = Field(default=3, ge=0, le=20)
     state_path: str = ".loro/agent-state.json"
     proposal_path: str = ".loro/agent-proposals"
 

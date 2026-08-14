@@ -171,6 +171,14 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
         description="Emit a named output value for the current Agentic Graph node.",
         parameters=_object({"name": _STRING, "value": {}}, ["name", "value"]),
     ),
+    ToolSchema(
+        name="agent.run",
+        description="Run an allowed named agent profile as a bounded subagent.",
+        parameters=_object(
+            {"profile": _STRING, "prompt": _STRING, "mode": _STRING},
+            ["profile", "prompt"],
+        ),
+    ),
 )
 
 

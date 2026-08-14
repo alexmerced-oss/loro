@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.11",
+  "release_line": "0.12",
   "stability": "stabilization",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
@@ -34,6 +34,6 @@
     "Per-user and per-tenant period budgets require an external shared gateway or coordinator.",
     "The reference audit collector needs deployment-managed TLS, immutable retention, and external chain anchoring.",
     "The declared recovery targets require validation in each organization's managed environment.",
-    "OAP Level 2 behavior is provisional against the supplied implementation guide until the canonical upstream schema and conformance suite are pinned."
+    "OAP Level 3 behavior is provisional against the supplied implementation guide until the canonical upstream schema and conformance suite are pinned."
   ]
 }

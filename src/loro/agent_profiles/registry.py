@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -49,6 +50,9 @@ class ResolvedProfile:
     spec_digest: str
     profile_digest: str
     warnings: tuple[str, ...] = ()
+    lineage: tuple[str, ...] = ()
+    layers: tuple[AgentProfileModel, ...] = ()
+    available_profiles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -136,6 +140,13 @@ class AgentProfileRegistry:
         return found
 
     def load(self, name: str) -> ResolvedProfile:
+        return self._load_composed(name, stack=())
+
+    def _load_composed(self, name: str, stack: tuple[str, ...]) -> ResolvedProfile:
+        if name in stack:
+            raise ProfileError("Agent profile inheritance cycle: " + " -> ".join((*stack, name)))
+        if len(stack) >= self.config.max_reference_depth:
+            raise ProfileError("Agent profile inheritance exceeds managed depth limit.")
         metadata = self.get(name)
         raw = _load_document(metadata.source_path, self.config.max_bytes)
         decision = self.protection.evaluate(
@@ -146,8 +157,28 @@ class AgentProfileRegistry:
             raise ProfileError(f"Agent profile contains literal secret material: {kinds}")
         raw.get("metadata", {}).pop("trust", None)
         document = AgentProfileModel.model_validate(raw)
+        parents = [self._load_composed(parent, (*stack, name)) for parent in document.extends]
+        composed_raw: dict[str, Any] = {}
+        lineage: list[str] = []
+        layers: list[AgentProfileModel] = []
+        inherited_warnings: list[str] = []
+        for parent in parents:
+            composed_raw = _deep_merge(
+                composed_raw,
+                parent.document.model_dump(mode="json", by_alias=True, exclude_none=True),
+            )
+            lineage.extend(parent.lineage)
+            layers.extend(parent.layers)
+            inherited_warnings.extend(parent.warnings)
+        composed_raw = _deep_merge(composed_raw, raw)
+        composed_raw["extends"] = list(document.extends)
+        composed_raw["metadata"] = document.metadata.model_dump(mode="json", exclude_none=True)
+        document = AgentProfileModel.model_validate(composed_raw)
         dumped = document.model_dump(mode="json", by_alias=True, exclude_none=True)
-        warnings = tuple(f"shadowed profile: {path}" for path in metadata.shadowed)
+        warnings = tuple(
+            [*inherited_warnings, *(f"shadowed profile: {path}" for path in metadata.shadowed)]
+        )
+        ordered_lineage = tuple(dict.fromkeys((*lineage, name)))
         return ResolvedProfile(
             document=document,
             source_path=metadata.source_path,
@@ -155,7 +186,20 @@ class AgentProfileRegistry:
             spec_digest=spec_digest(dumped),
             profile_digest=profile_digest(dumped),
             warnings=warnings,
+            lineage=ordered_lineage,
+            layers=tuple((*layers, AgentProfileModel.model_validate(raw))),
+            available_profiles=tuple(item.name for item in self.discover()),
         )
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
 
 
 def load_path(path: Path, *, max_bytes: int = 1_000_000) -> AgentProfileModel:

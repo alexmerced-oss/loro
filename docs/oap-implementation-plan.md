@@ -1,8 +1,8 @@
 # Implementing Open Agent Profile (OAP) v1 in Loro
 
-**Status:** Plan, not yet implemented
+**Status:** Level 3 implemented provisionally in Loro 0.12.0
 **Spec:** `open-agent-profile` repository, `spec/v1/SPEC.md`
-**Target:** Conformance Level 2 in the first release, Level 3 incrementally
+**Target:** Conformance Level 3, pending formal upstream fixture certification
 **Audience:** An engineer or agent implementing this end to end
 
 > Release planning status: reviewed against Loro `0.10.0` on August 14, 2026. The delivery
@@ -52,7 +52,7 @@ The work is mostly composition. The genuinely new pieces are the profile documen
 - `loro agents` CLI surface
 - Published conformance statement
 
-### Deferred to Level 3
+### Delivered in 0.12.0 Level 3
 
 - `extends` composition
 - `spec.tools.mcp_servers` (Loro has MCP; wiring it through profiles is separable)
@@ -459,17 +459,11 @@ Publish the conformance statement at `docs/oap-conformance.json`:
 {
   "oap": "1.0",
   "implementation": "loro",
-  "version": "0.11.0",
-  "level": 2,
+  "version": "0.12.0",
+  "level": 3,
   "encodings": ["yaml", "json", "md"],
   "discovery_roots": ["managed", "user", "project"],
-  "unimplemented": [
-    "extends",
-    "spec.tools.mcp_servers",
-    "spec.tools.skills",
-    "spec.runtime.subagents",
-    "memory stores beyond oap-state"
-  ]
+  "unimplemented": ["formal upstream fixture certification"]
 }
 ```
 

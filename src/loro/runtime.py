@@ -1,14 +1,19 @@
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Any
 from uuid import uuid4
 
 from loro.agent_profiles.delta import apply_delta, create_delta
-from loro.agent_profiles.effective import EffectiveProfile, effective_config
+from loro.agent_profiles.effective import (
+    EffectiveProfile,
+    build_effective_profile,
+    effective_config,
+)
 from loro.agent_profiles.proposals import ProfileProposalStore
+from loro.agent_profiles.registry import AgentProfileRegistry
 from loro.agent_profiles.render import context_files, render_role, render_state
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger, prompt_preview
@@ -52,8 +57,13 @@ class AgentRuntime:
         config: LoroConfig,
         approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
         profile: EffectiveProfile | None = None,
+        _subagent_depth: int = 0,
+        _profile_cwd: Path | None = None,
     ) -> None:
         self.profile = profile
+        self.base_config = config
+        self.subagent_depth = _subagent_depth
+        self.profile_cwd = (_profile_cwd or Path.cwd()).resolve()
         self.config = effective_config(config, profile) if profile is not None else config
         self.identity = resolve_identity(config.identity)
         self.protection = DataProtectionEngine(config.safety)
@@ -69,11 +79,15 @@ class AgentRuntime:
         self.sessions = SessionStore(config.sessions, config.safety)
         self.mailbox = SessionMailbox(config.sessions, config.safety)
         self.tools = ToolRegistry(
-            config,
+            self.config,
             identity=self.identity,
             approval_manager=self.approvals,
             approval_provider=approval_provider,
             allowed_tools=(profile.tools if profile is not None else None),
+            allowed_mcp_servers=(profile.mcp_servers if profile is not None else None),
+            allowed_skills=(profile.skills if profile is not None else None),
+            allowed_subagents=(profile.subagents if profile is not None else frozenset()),
+            subagent_runner=(self._run_subagent if profile is not None else None),
         )
         self.usage = UsageBudget(config.runtime, config.model)
 
@@ -115,6 +129,10 @@ class AgentRuntime:
         self.tools.active_session_id = active_session_id
         inbound_messages = self.mailbox.deliver(active_session_id) if session_id else []
         activated_skills = SkillRegistry(self.config.skills).select(prompt)
+        if self.profile is not None:
+            activated_skills = [
+                skill for skill in activated_skills if skill.metadata.name in self.profile.skills
+            ]
         recalled_memories: list[str] = []
         if self.config.memory.local.enabled:
             store = LocalMemoryStore.from_config(self.config.memory.local, self.config.safety)
@@ -136,7 +154,7 @@ class AgentRuntime:
                 self.protection,
                 self.config.agent_profiles.max_state_bytes,
             )
-            if self.profile is not None
+            if self.profile is not None and "oap-state" in self.profile.memory_stores
             else ""
         )
         profile_context = ""
@@ -204,6 +222,8 @@ class AgentRuntime:
             policy_source=provider_policy.policy_source,
         )
         schemas = tool_catalog(self.config) if self.config.runtime.native_tool_calling else None
+        if schemas is not None and self.profile is None:
+            schemas = [schema for schema in schemas if schema.name != "agent.run"]
         if schemas is not None and self.profile is not None:
             schemas = [schema for schema in schemas if schema.name in self.profile.tools]
         client = create_model_client(self.config.model, schemas)
@@ -415,8 +435,53 @@ class AgentRuntime:
             emitted_outputs=dict(self.tools.graph_outputs),
         )
 
+    def run_subagent(self, profile_name: str, prompt: str, *, mode: str = "run") -> AgentResult:
+        if self.profile is None or profile_name not in self.profile.subagents:
+            raise PermissionError(f"Subagent is not allowed: {profile_name}")
+        if self.subagent_depth >= self.profile.max_subagent_depth:
+            raise PermissionError("Subagent depth exceeds the active profile limit.")
+        registry = AgentProfileRegistry(
+            self.base_config.agent_profiles,
+            cwd=self.profile_cwd,
+            safety=self.base_config.safety,
+        )
+        child = build_effective_profile(registry.load(profile_name), self.config)
+        child = replace(
+            child,
+            tools=child.tools & self.profile.tools,
+            mcp_servers=child.mcp_servers & self.profile.mcp_servers,
+            skills=child.skills & self.profile.skills,
+            subagents=child.subagents & self.profile.subagents,
+            memory_stores=child.memory_stores & self.profile.memory_stores,
+            memory_scopes=child.memory_scopes & self.profile.memory_scopes,
+            max_subagent_depth=min(child.max_subagent_depth, self.profile.max_subagent_depth),
+        )
+        return AgentRuntime(
+            self.base_config,
+            profile=child,
+            _subagent_depth=self.subagent_depth + 1,
+            _profile_cwd=self.profile_cwd,
+        ).run(prompt, mode=mode)
+
+    def _run_subagent(self, profile_name: str, prompt: str, mode: str) -> str:
+        result = self.run_subagent(profile_name, prompt, mode=mode)
+        return json.dumps(
+            {
+                "profile": profile_name,
+                "session_id": result.session_id,
+                "summary": result.summary,
+                "stop_reason": result.stop_reason,
+                "usage": result.usage,
+            },
+            sort_keys=True,
+        )
+
     def _handle_profile_state_directives(self, prompt: str, session_id: str) -> None:
-        if self.profile is None or self.profile.writeback == "off":
+        if (
+            self.profile is None
+            or self.profile.writeback == "off"
+            or "oap-state" not in self.profile.memory_stores
+        ):
             return
         contents = [
             line.strip().removeprefix("@agent-state ").strip()
@@ -727,8 +792,7 @@ def _protect_native_tool_calls(
     protected: list[ModelToolCall] = []
     for call in calls:
         protected_args = {
-            key: _protect_native_tool_value(protection, value)
-            for key, value in call.args.items()
+            key: _protect_native_tool_value(protection, value) for key, value in call.args.items()
         }
         protected.append(
             ModelToolCall(
@@ -750,8 +814,7 @@ def _protect_native_tool_value(protection: DataProtectionEngine, value: Any) -> 
         return protection.enforce(value, "model_output").content
     if isinstance(value, dict):
         return {
-            key: _protect_native_tool_value(protection, nested)
-            for key, nested in value.items()
+            key: _protect_native_tool_value(protection, nested) for key, nested in value.items()
         }
     if isinstance(value, (list, tuple)):
         return [_protect_native_tool_value(protection, nested) for nested in value]
