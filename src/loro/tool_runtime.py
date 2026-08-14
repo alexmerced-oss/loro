@@ -74,6 +74,7 @@ class ToolRegistry:
         approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
         mcp_service: MCPService | None = None,
         active_session_id: str | None = None,
+        allowed_tools: frozenset[str] | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -99,6 +100,7 @@ class ToolRegistry:
         self.mailbox = SessionMailbox(config.sessions, config.safety)
         self.active_session_id = active_session_id
         self.graph_outputs: dict[str, Any] = {}
+        self.allowed_tools = allowed_tools
 
     def execute(self, call: ToolCall) -> ToolExecution:
         execution = self._execute(call)
@@ -120,6 +122,12 @@ class ToolRegistry:
 
     def _execute(self, call: ToolCall) -> ToolExecution:
         try:
+            if self.allowed_tools is not None and call.name not in self.allowed_tools:
+                return ToolExecution(
+                    call=call,
+                    ok=False,
+                    output=f"Tool is not available to the active agent profile: {call.name}",
+                )
             if call.name == "file.read":
                 return self._read_file(call)
             if call.name == "file.search":

@@ -13,6 +13,7 @@ class AuditEventFamily:
 AUDIT_EVENT_FAMILIES = (
     AuditEventFamily("agraph.", "Agentic Graph validation and execution", True),
     AuditEventFamily("approval.", "Approval request lifecycle", True),
+    AuditEventFamily("agent_profile.", "Open Agent Profile lifecycle and writeback", True),
     AuditEventFamily("artifact.", "Productivity artifact creation", True),
     AuditEventFamily("config.", "Configuration changes", True),
     AuditEventFamily("data.", "Governed-data inspection", True),

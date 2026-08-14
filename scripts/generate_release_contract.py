@@ -33,6 +33,7 @@ def build_contract() -> dict[str, object]:
     support_path = ROOT / "docs" / "support-matrix.json"
     data_path = ROOT / "docs" / "data-support-matrix.json"
     interop_path = ROOT / "docs" / "interoperability-matrix.json"
+    oap_path = ROOT / "docs" / "oap-conformance.json"
     deployment_path = ROOT / "deploy" / "reference" / "manifest.json"
     managed_policy_path = ROOT / "deploy" / "reference" / "managed.toml"
     compose_path = ROOT / "deploy" / "reference" / "compose.yaml"
@@ -53,7 +54,7 @@ def build_contract() -> dict[str, object]:
         "release_line": ".".join(__version__.split(".")[:2]),
         "package_version": __version__,
         "stability": "stabilization",
-        "change_policy": "stable-core-fixes-and-evidence-only",
+        "change_policy": "stable-core-preserved-experimental-oap-addition",
         "cli": command_map,
         "schemas": {
             "approval": JsonApprovalStore.SCHEMA_VERSION,
@@ -61,12 +62,14 @@ def build_contract() -> dict[str, object]:
             "benchmark": BENCHMARK_SCHEMA_VERSION,
             "configuration": CONFIG_SCHEMA_VERSION,
             "metrics": METRICS_SCHEMA_VERSION,
+            "open_agent_profile": "1.0-provisional",
             "postgres_memory": LATEST_POSTGRES_MEMORY_SCHEMA_VERSION,
             "recovery": RECOVERY_SCHEMA_VERSION,
         },
         "protocols": {
             "agentic_graph": "1.0",
             "mcp": mcp_protocol_factory(),
+            "open_agent_profile": "1.0-provisional-level-2",
             "provider": sorted(interoperability["providers"]["protocols"]),
         },
         "supported": {
@@ -82,6 +85,7 @@ def build_contract() -> dict[str, object]:
         "digests": {
             "data_support_matrix": _sha256(data_path),
             "interoperability_matrix": _sha256(interop_path),
+            "oap_conformance": _sha256(oap_path),
             "reference_compose": _sha256(compose_path),
             "reference_deployment": _sha256(deployment_path),
             "reference_managed_policy": _sha256(managed_policy_path),

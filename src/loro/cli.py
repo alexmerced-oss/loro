@@ -30,6 +30,7 @@ from loro.audit.collector import (
 )
 from loro.audit.metrics import OperationalMetrics
 from loro.benchmarks import run_reference_benchmarks, write_benchmark_report
+from loro.cli_agents import agents_app, setup_agents
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
@@ -201,6 +202,8 @@ app.add_typer(config_app, name="config")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(operations_app, name="operations")
 app.add_typer(artifacts_app, name="artifacts")
+app.add_typer(agents_app, name="agents")
+setup_app.command("agents")(setup_agents)
 app.command("doctor")(ops_doctor)
 config_app.command("check")(ops_config_check)
 audit_app.command("query")(ops_audit_query)
@@ -211,8 +214,19 @@ console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
-def _runtime() -> AgentRuntime:
+def _runtime(agent_name: str | None = None) -> AgentRuntime:
     config = load_config()
+    profile = None
+    if agent_name is not None:
+        from loro.agent_profiles import AgentProfileRegistry, ProfileError, build_effective_profile
+
+        try:
+            profile = build_effective_profile(
+                AgentProfileRegistry(config.agent_profiles, safety=config.safety).load(agent_name),
+                config,
+            )
+        except ProfileError as error:
+            raise typer.BadParameter(str(error)) from error
     try:
         return AgentRuntime(
             config,
@@ -224,6 +238,7 @@ def _runtime() -> AgentRuntime:
             )
             if config.approvals.interactive
             else None,
+            profile=profile,
         )
     except IdentityConfigurationError as error:
         raise typer.BadParameter(str(error)) from error
@@ -651,19 +666,27 @@ def run(
     stream: Annotated[
         bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
     ] = False,
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="Run from a named Open Agent Profile.")
+    ] = None,
 ) -> None:
     """Run an agent task, optionally resuming a durable session."""
     try:
-        result = _run_task(prompt, mode="run", session_id=resume_session, stream=stream)
+        result = _run_task(
+            prompt, mode="run", session_id=resume_session, stream=stream, agent_name=agent
+        )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
 
 
-def _run_task(prompt: str, *, mode: str, session_id: str | None, stream: bool):
+def _run_task(
+    prompt: str, *, mode: str, session_id: str | None, stream: bool,
+    agent_name: str | None = None,
+):
     """Run one agent task, live-rendering tokens when streaming is requested."""
 
-    runtime = _runtime()
+    runtime = _runtime(agent_name)
     if not stream:
         return runtime.run(prompt, mode=mode, session_id=session_id)
     with Live(Text(""), console=console, refresh_per_second=12, transient=True) as live:
@@ -693,9 +716,14 @@ def plan(
     stream: Annotated[
         bool, typer.Option("--stream", help="Render model output token by token as it arrives.")
     ] = False,
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="Plan from a named Open Agent Profile.")
+    ] = None,
 ) -> None:
     """Run a read-only planning task."""
     if format == "agraph":
+        if agent is not None:
+            raise typer.BadParameter("--agent is supported only with --format text.")
         from loro.agraph.generate import write_generated_graph
 
         try:
@@ -706,7 +734,9 @@ def plan(
     if format != "text":
         raise typer.BadParameter("--format must be text or agraph")
     try:
-        result = _run_task(prompt, mode="plan", session_id=resume_session, stream=stream)
+        result = _run_task(
+            prompt, mode="plan", session_id=resume_session, stream=stream, agent_name=agent
+        )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)

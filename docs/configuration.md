@@ -399,6 +399,29 @@ All setup commands preserve existing sections in the target config file. Secret 
 environment variables or the [Credential Vault](credentials.md); local TOML stores only vault
 references. `loro setup gateway` configures one signed endpoint and trusted identity mapping.
 
+## Open Agent Profiles
+
+Loro `0.11.0` adds an optional additive `[agent_profiles]` section for named OAP v1 agents:
+
+```toml
+[agent_profiles]
+enabled = true
+managed_paths = ["/etc/loro/agents"]
+user_paths = ["~/.config/loro/agents"]
+project_paths = [".agents", ".loro/agents"]
+allow_user = true
+allow_project = true
+writeback = "propose"
+max_bytes = 1000000
+max_state_bytes = 200000
+max_profiles = 200
+proposal_path = ".loro/agent-proposals"
+```
+
+`writeback` is a managed ceiling ordered `off < propose < auto`; a profile cannot raise it.
+Profile trust comes from its discovery root, and profile permissions, tools, paths, models, and
+budgets can only narrow the resolved Loro configuration. See [Open Agent Profiles](agent-profiles.md).
+
 ## Credential Vault And Named Provider Accounts
 
 ```toml

@@ -20,6 +20,7 @@ DataSurface = Literal[
     "session_message",
     "tool_output",
     "audit",
+    "agent_profile",
 ]
 DecisionAction = Literal["allow", "redact", "block"]
 

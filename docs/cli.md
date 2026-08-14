@@ -17,6 +17,7 @@ loro setup shared-memory
 loro setup polaris
 loro setup mcp
 loro setup gateway
+loro setup agents
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
@@ -33,11 +34,12 @@ quickstart` runs the setup wizards in sequence and preserves existing sections i
 
 ## Complete Command Map
 
-This map reflects Loro 0.10.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.11.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: approvals, artifacts, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: agents, approvals, artifacts, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro agents: apply, create, digest, explain, forget, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
 loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
@@ -58,7 +60,7 @@ loro providers: check, conformance, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
-loro setup: approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
+loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
 loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate

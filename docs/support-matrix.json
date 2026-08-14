@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.10",
+  "release_line": "0.11",
   "stability": "stabilization",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
@@ -22,7 +22,7 @@
   },
   "extensions": {
     "supported": ["agent-skills", "claude-skill-import", "pi-skill-import"],
-    "experimental": ["mcp", "agentic-graphs"]
+    "experimental": ["mcp", "agentic-graphs", "open-agent-profile-v1"]
   },
   "remote_gateways": {
     "experimental": ["slack", "discord", "telegram", "teams", "signal-bridge", "generic"]
@@ -33,6 +33,7 @@
     "Iceberg, Polaris, MCP, and remote gateways require protected deployment evidence before stable support.",
     "Per-user and per-tenant period budgets require an external shared gateway or coordinator.",
     "The reference audit collector needs deployment-managed TLS, immutable retention, and external chain anchoring.",
-    "The declared recovery targets require validation in each organization's managed environment."
+    "The declared recovery targets require validation in each organization's managed environment.",
+    "OAP Level 2 behavior is provisional against the supplied implementation guide until the canonical upstream schema and conformance suite are pinned."
   ]
 }

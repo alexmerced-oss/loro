@@ -2,10 +2,11 @@
 
 ## Assessment
 
-Loro `0.10.0`, released August 11, 2026, is a **release-quality pre-1.0 stabilization baseline
-for controlled evaluation**. It is a credible 1.0 candidate with a deliberately limited stable
-core. It is not yet unrestricted enterprise general availability because several production and
-organization-owned controls require evidence that cannot be created by repository tests.
+Loro `0.11.0` is an **experimental feature release built on the release-quality 0.10
+stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
+unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
+general availability because several production and organization-owned controls require evidence
+that cannot be created by repository tests.
 
 ## Stable Boundary
 
@@ -24,12 +25,17 @@ surface.
 
 ## Verified Release State
 
-The 0.10.0 source tag is signed and its wheel and source distribution are published to PyPI and
+The 0.10.0 stabilization source tag is signed and its wheel and source distribution are published to PyPI and
 GitHub Releases with checksums, SBOM, provenance, attestations, and a frozen release contract.
 Protected CI covers Python 3.11-3.14, security evidence, MCP and Agentic Graph conformance,
 Postgres recovery, Polaris/Iceberg quickstart integration, and content-free benchmarks. The
 release validation suite passed 547 tests with 5 environment-dependent skips and 74.31% branch
 coverage.
+
+The 0.11.0 release adds experimental OAP profile evidence without changing that stable boundary.
+Its 574-test validation run had 5 environment-dependent skips, 74.88% repository branch-aware
+coverage, and 87.70% coverage across the new profile package. Formal upstream OAP certification
+remains pending and is explicitly provisional in the machine-readable conformance statement.
 
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and

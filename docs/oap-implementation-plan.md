@@ -423,19 +423,20 @@ Reuse the skills proposal pattern (`propose` / `review --accept` / `review --rej
 `src/loro/cli_agents.py`, mirroring `cli_gateway.py`:
 
 ```bash
-$ loro agents list                             # name, revision, trust, source, state size
-$ loro agents show NAME                        # resolved profile
-$ loro agents explain NAME                     # effective profile + every adjustment
-$ loro agents validate PATH
-$ loro agents create NAME [--from TEMPLATE]
-$ loro agents digest NAME                      # profile and spec digests
-$ loro agents history NAME                     # the revision log
-$ loro agents state NAME [--json]              # what it has learned
-$ loro agents forget NAME ENTRY_ID             # human-driven state removal
-$ loro agents proposals                        # pending capability requests
-$ loro agents review PROPOSAL_ID --accept|--reject
-$ loro agents apply NAME DELTA_PATH [--approve]
-$ loro setup agents                            # wizard, mirroring `loro setup skills`
+loro agents list
+loro agents show NAME
+loro agents explain NAME
+loro agents validate PATH
+loro agents create NAME
+loro agents digest NAME
+loro agents history NAME
+loro agents state NAME
+loro agents forget NAME ENTRY_ID --approve
+loro agents proposals
+loro agents review PROPOSAL_ID --accept
+loro agents review PROPOSAL_ID --reject
+loro agents apply NAME DELTA_PATH --approve
+loro setup agents
 ```
 
 Plus `--agent NAME` on `loro run` and `loro plan`.

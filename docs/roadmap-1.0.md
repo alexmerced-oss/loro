@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.10.0`. It covers the
-experimental `0.11.0` Open Agent Profile release and the first stable `1.0` release. Completed
+This is the single authoritative roadmap for work remaining after Loro `0.11.0`. It records the
+experimental `0.11.0` Open Agent Profile release and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
 
@@ -13,7 +13,8 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.10.0`, released August 11, 2026, is the 1.0 stabilization baseline. In addition to the
+Loro `0.11.0`, released August 14, 2026, preserves the 0.10 stable-core baseline and adds an
+experimental, provisional OAP v1 Level 2 surface. In addition to the
 agent, memory, governance, provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark,
 and release controls delivered through `0.8`, the repository now provides:
 
@@ -78,8 +79,8 @@ available for evaluation.
 | `0.8` | Released | A reproducible reference deployment is measurable and operable for a restricted beta. |
 | `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
 | `0.10` | Released | Repository hardening, release signing, and the deliberately small stable core are frozen. |
-| `0.11` | Next | Experimental OAP v1 Level 2 named-agent profiles ship without expanding the stable core. |
-| `1.0` | Planned | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
+| `0.11` | Released | Experimental provisional OAP v1 Level 2 named-agent profiles ship without expanding the stable core. |
+| `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 0.11: Open Agent Profile
 
@@ -93,10 +94,11 @@ The detailed, batch-by-batch scope and release gates are in the
 [0.11.0 Release Plan](releases/0.11.0-plan.md). The source guide remains the
 [OAP Implementation Guide](oap-implementation-plan.md).
 
-### 0.11 Exit Gate
+### 0.11 Exit Record
 
-- The exact OAP v1 source revision, schemas, fixtures, reference digests, conformance tests, and
-  license are pinned and recorded before any conformance claim.
+- The supplied guide is recorded as the implementation source. No discoverable canonical
+  repository, revision, schemas, fixtures, reference digests, conformance suite, or license could
+  be pinned, so the release makes no formal upstream conformance or certification claim.
 - Profiles can narrow but never widen model, tool, permission, path, host, budget, sandbox, data,
   identity, tenant, or writeback policy.
 - Profile state is always labeled untrusted, data-protected before injection and persistence, and

@@ -13,6 +13,7 @@ The detailed payload remains for family-specific metadata.
 | Family | Consequential | Purpose |
 | --- | --- | --- |
 | `agraph.*` | Yes | Graph validation, policy, scheduling, gates, and execution. |
+| `agent_profile.*` | Yes | Profile loading, narrowing, state deltas, and proposals. |
 | `approval.*` | Yes | Approval request, grant, denial, expiry, and use. |
 | `artifact.*` | Yes | Document, presentation, spreadsheet, and brief creation. |
 | `config.*` | Yes | User-visible configuration mutations. |

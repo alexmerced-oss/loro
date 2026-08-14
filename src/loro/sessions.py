@@ -25,6 +25,10 @@ class SessionRecord:
     identity: dict[str, Any] = field(default_factory=dict)
     usage: dict[str, int | float] = field(default_factory=dict)
     stop_reason: str = "completed"
+    agent_name: str | None = None
+    agent_revision: int | None = None
+    agent_spec_digest: str | None = None
+    agent_trust: str | None = None
     session_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -43,6 +47,10 @@ class SessionRecord:
             "identity": self.identity,
             "usage": self.usage,
             "stop_reason": self.stop_reason,
+            "agent_name": self.agent_name,
+            "agent_revision": self.agent_revision,
+            "agent_spec_digest": self.agent_spec_digest,
+            "agent_trust": self.agent_trust,
         }
 
 

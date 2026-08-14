@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Draft for engineering and security review |
-| Scope | Loro CLI 0.10.0 and the stabilization reference deployment |
+| Scope | Loro CLI 0.11.0 and the stabilization reference deployment |
 | Review cadence | Before each enterprise pilot release and after material data-flow changes |
 | Accountable owner | Security owner (TBD) |
 | Technical owners | Runtime, identity/policy, memory/data, and release owners (TBD) |
@@ -118,7 +118,22 @@ Polaris access control.
 
 ## Existing Security Positives And Known Gaps
 
-Current 0.10.0 strengths include bounded agent steps and budgets, typed tools, layered managed configuration,
+### Open Agent Profile Threats
+
+OAP documents and state are untrusted durable inputs. Loro assigns trust from the discovery root,
+rejects root and symlink escapes, bounds count and bytes, and resolves profiles without network or
+write side effects. Effective profiles intersect rather than merge authority; tools, permissions,
+workspace roots, model routes, runtime budgets, and writeback cannot exceed managed configuration.
+
+Prior-session state is delimited as untrusted and cannot carry approval authority. State values are
+data-protected before injection, proposal persistence, and profile persistence. Delta application
+is locked, revision- and spec-digest-bound, `/state`-only, atomically replaced, and directory-fsynced
+where supported. Capability proposals never auto-apply. Remaining risk includes model susceptibility
+to prompt injection from profile role/state, local users able to mutate user/project profile files,
+single-host advisory lock semantics, and the absence of pinned canonical upstream OAP conformance
+fixtures in 0.11.0.
+
+Current 0.11.0 strengths include bounded agent steps and budgets, typed tools, layered managed configuration,
 permission decisions, explicit shared-memory drafts and commits, tenant fields, cited recall,
 read-only Polaris validation, secret-pattern scanning, and JSONL auditing.
 
@@ -126,7 +141,7 @@ These are stabilization controls. Identity is not yet backed by a verified corpo
 records are local rather than an enterprise approval service; tenant isolation requires managed `identity` mode and verified identity;
 normalized scopes use optional Bubblewrap only for shell/Skill execution; external audit lacks
 production and tamper-evidence proof; full subprocess coverage, DLP, retention,
-and external release-administration controls remain open. Consequently, Loro 0.10.0 is suitable for
+and external release-administration controls remain open. Consequently, Loro 0.11.0 is suitable for
 controlled evaluation with non-production or approved low-risk data, not unrestricted
 enterprise deployment.
 

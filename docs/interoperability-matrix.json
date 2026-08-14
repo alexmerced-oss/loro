@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.10",
+  "release_line": "0.11",
   "providers": {
     "protocols": {
       "anthropic": {"status": "supported", "fixture": "anthropic.json"},
@@ -67,6 +67,16 @@
   "graphs": {
     "specification": "agentic-graph-spec-1.0",
     "evidence": [".github/workflows/ags-conformance.yml", "tests/test_agraph_failures.py"]
+  },
+  "agent_profiles": {
+    "specification": "open-agent-profile-v1",
+    "status": "experimental-provisional-level-2",
+    "encodings": ["yaml", "json", "markdown"],
+    "evidence": ["tests/test_agent_profiles.py", "docs/oap-conformance.json"],
+    "limitations": [
+      "canonical upstream schemas and conformance fixtures are not yet pinned",
+      "extends, profile-selected MCP/Skills, subagents, and external memory stores are deferred"
+    ]
   },
   "gateways": {
     "platforms": ["slack", "discord", "telegram", "teams", "signal", "generic"],

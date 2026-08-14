@@ -105,6 +105,7 @@ jobs:
           cp docs/support-matrix.json dist/support-matrix.json
           cp docs/data-support-matrix.json dist/data-support-matrix.json
           cp docs/interoperability-matrix.json dist/interoperability-matrix.json
+          cp docs/oap-conformance.json dist/oap-conformance.json
           cp deploy/reference/manifest.json dist/reference-deployment-manifest.json
           cp docs/release-contract.json dist/release-contract.json
           python scripts/generate_release_manifest.py \
@@ -115,6 +116,7 @@ jobs:
             reference-deployment-manifest.json release-sbom.cdx.json support-matrix.json \
             data-support-matrix.json \
             interoperability-matrix.json \
+            oap-conformance.json \
             release-manifest.json > SHA256SUMS
 
       - name: Attest build provenance

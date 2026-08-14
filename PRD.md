@@ -1,7 +1,7 @@
 # PRD: Loro Enterprise Agent Harness
 
 > Document status: product requirements and design intent. For shipped behavior and support
-> classifications in the current `0.10.0` release, use the
+> classifications in the current `0.11.0` release, use the
 > [Project Status](docs/project-status.md), [support matrix](docs/support-matrix.json), and
 > [interoperability matrix](docs/interoperability-matrix.json).
 

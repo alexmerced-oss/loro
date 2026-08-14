@@ -790,6 +790,21 @@ class SkillsConfig(BaseModel):
     max_active: int = Field(default=3, ge=1, le=20)
 
 
+class AgentProfilesConfig(BaseModel):
+    enabled: bool = True
+    managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/agents"])
+    user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/agents"])
+    project_paths: list[str] = Field(default_factory=lambda: [".agents", ".loro/agents"])
+    allow_user: bool = True
+    allow_project: bool = True
+    writeback: Literal["off", "propose", "auto"] = "propose"
+    max_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    max_state_bytes: int = Field(default=200_000, ge=0, le=5_000_000)
+    max_profiles: int = Field(default=200, ge=1, le=10_000)
+    state_path: str = ".loro/agent-state.json"
+    proposal_path: str = ".loro/agent-proposals"
+
+
 class SafetyConfig(BaseModel):
     enabled: bool = True
     block_on_findings: bool = True
@@ -873,6 +888,7 @@ def _default_data_protection_surfaces() -> dict[str, DataProtectionSurfaceConfig
         "session_message": persistence.model_copy(),
         "tool_output": DataProtectionSurfaceConfig(action="redact"),
         "audit": DataProtectionSurfaceConfig(action="redact", maximum_classification="internal"),
+        "agent_profile": DataProtectionSurfaceConfig(action="redact"),
     }
 
 
@@ -893,6 +909,7 @@ class LoroConfig(BaseModel):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    agent_profiles: AgentProfilesConfig = Field(default_factory=AgentProfilesConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
 

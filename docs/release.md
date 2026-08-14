@@ -47,6 +47,9 @@ loro mcp server-inspect
 loro skills list
 loro skills import-claude --help
 loro skills import-pi --help
+loro agents create release-reviewer --instructions "Review release evidence."
+loro agents validate .loro/agents/release-reviewer.agent.yaml
+loro agents explain release-reviewer
 loro graph validate docs/examples/agraph/release-readiness.agraph.yaml --strict
 loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
 loro skills validate "$(loro graph skill-path)"
@@ -112,6 +115,10 @@ readiness evidence, and publishes pilot/assurance/consumer-verification procedur
 Release `0.10.0` resolves repository hardening findings, freezes the deliberately small stable
 core, adds digest-bound artifact verification, and establishes signed release tags. See
 [Loro 0.10.0](releases/0.10.0.md).
+
+Release `0.11.0` preserves that stable core and adds experimental provisional OAP v1 Level 2 named
+agents, fail-closed narrowing, untrusted state, and atomic `/state`-only writeback. See
+[Loro 0.11.0](releases/0.11.0.md).
 
 ## Documentation
 

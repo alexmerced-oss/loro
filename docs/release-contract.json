@@ -1,6 +1,20 @@
 {
-  "change_policy": "stable-core-fixes-and-evidence-only",
+  "change_policy": "stable-core-preserved-experimental-oap-addition",
   "cli": {
+    "agents": [
+      "apply",
+      "create",
+      "digest",
+      "explain",
+      "forget",
+      "history",
+      "list",
+      "proposals",
+      "review",
+      "show",
+      "state",
+      "validate"
+    ],
     "approvals": [
       "list"
     ],
@@ -168,6 +182,7 @@
       "wake"
     ],
     "setup": [
+      "agents",
       "approvals",
       "audit",
       "gateway",
@@ -208,17 +223,19 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:d852b01e61a941e4a73d408b2d8d4a4a9d921944c1976ac1a4d10ba320c92e9c",
-    "interoperability_matrix": "sha256:6ad838cd3ec397e93e537e01727e25860cd5168dba721f048283619b228f15f5",
+    "data_support_matrix": "sha256:e0c04928b7f1c47df7e2d27a72eaa4aea90b784219c6eba4298c75e45fa6a179",
+    "interoperability_matrix": "sha256:ba71d78bed9ba8abc6ccf28fbcda95f1e9d372ebe16dc6c8964cc104ffde5513",
+    "oap_conformance": "sha256:92001b88ebf7600b6999f8351bf61d9ed3aa1bcc88fc4a2def3a1a2814decf87",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:813e813b66c7dcbea0ec7ca73e03f35ae7b4a4a9211cbf82210c80e3db5c080d",
+    "reference_deployment": "sha256:3919073caedf06b2aaf8d6cfad2d7394839c473dbdd8011cd00a20ebdad4a63a",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:5742a1639efcf85c18a8f824f505916ae37ce5e32a1b4d99846f234831b2b9a5"
+    "support_matrix": "sha256:d803c0228bf485cd6dd523caffd2091765827e9168a641efac170c99a8393806"
   },
   "experimental": {
     "extensions": [
       "mcp",
-      "agentic-graphs"
+      "agentic-graphs",
+      "open-agent-profile-v1"
     ],
     "governed_data": [
       "polaris-cli",
@@ -252,7 +269,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.10.0",
+  "package_version": "0.11.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -260,6 +277,7 @@
       "2025-11-25",
       "2024-11-05"
     ],
+    "open_agent_profile": "1.0-provisional-level-2",
     "provider": [
       "anthropic",
       "bedrock",
@@ -267,7 +285,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.10",
+  "release_line": "0.11",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",
@@ -275,6 +293,7 @@
     "benchmark": "1.0",
     "configuration": "1.0",
     "metrics": "1.0",
+    "open_agent_profile": "1.0-provisional",
     "postgres_memory": 2,
     "recovery": "1.0"
   },

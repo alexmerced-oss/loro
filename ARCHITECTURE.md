@@ -1,6 +1,6 @@
 # Loro Architecture
 
-> Architecture baseline: Loro `0.10.0`. This document describes implemented components and their
+> Architecture baseline: Loro `0.11.0`. This document describes implemented components and their
 > intended boundaries; the [Project Status](docs/project-status.md) and machine-readable
 > [support matrix](docs/support-matrix.json) determine which components are stable or experimental.
 
@@ -71,6 +71,9 @@ flowchart LR
 - `loro.credentials`: strict vault references, OS-keyring access, and non-secret metadata indexing.
 - `loro.gateway`: signed Slack, Discord, Telegram, Teams, Signal-bridge, and generic adapters plus
   identity mapping, durable replay suppression, bounded dispatch, and asynchronous replies.
+- `loro.agent_profiles`: provisional OAP v1 profile models, safe loading, discovery trust,
+  deterministic digests, effective-policy narrowing, untrusted state rendering, proposals, and
+  locked `/state`-only durable writeback.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,

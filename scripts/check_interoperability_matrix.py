@@ -17,7 +17,7 @@ def main() -> int:
             ROOT / "tests" / "fixtures" / "providers",
         )
         matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
-        for surface in ("mcp", "skills", "graphs", "gateways"):
+        for surface in ("mcp", "skills", "graphs", "gateways", "agent_profiles"):
             claim = matrix.get(surface)
             if not isinstance(claim, dict) or not claim.get("evidence"):
                 raise ProviderContractError(f"{surface} must name conformance evidence")
