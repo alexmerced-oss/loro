@@ -1,5 +1,6 @@
 import json
 import tomllib
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -220,6 +221,76 @@ def test_docs_create(tmp_path) -> None:
     )
     assert result.exit_code == 0
     assert "Created document artifacts" in result.stdout
+    markdown = next(tmp_path.glob("*.md")).read_text(encoding="utf-8")
+    assert "Draft a rollout plan" in markdown
+    assert "deterministic MVP" not in markdown
+
+
+def test_create_docs_alias_uses_model_draft(tmp_path, monkeypatch) -> None:
+    generated = json.dumps(
+        {
+            "kind": "document",
+            "title": "AI Authored Guide",
+            "body_markdown": "## Main Idea\n\nThe model populated this document.",
+        }
+    )
+    monkeypatch.setattr(
+        "loro.cli._run_task",
+        lambda *args, **kwargs: SimpleNamespace(summary=generated),
+    )
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["create", "docs", "create a doc on x topic", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    markdown = next(tmp_path.glob("*.md")).read_text(encoding="utf-8")
+    assert "AI Authored Guide" in markdown
+    assert "The model populated this document." in markdown
+
+
+def test_configure_interactive_selects_provider_and_models(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(app, ["configure"], input="\n\n\n")
+
+    assert result.exit_code == 0, result.stdout
+    assert "Provider" in result.stdout
+    assert "Primary model" in result.stdout
+    payload = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
+    assert payload["model"]["provider"] == "mock"
+    assert payload["model"]["model"] == "mock-agent"
+
+
+def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("loro.cli.os.isatty", lambda _fd: True)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[sessions]\npath = "{tmp_path / "sessions"}"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app, [], input="hello from repl\ncontinue in this session\n/status\n/exit\n"
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert ".--." in result.stdout
+    assert "Provider" in result.stdout
+    assert "mock-agent" in result.stdout
+    assert "Mock response for" in result.stdout
+    assert "Session closed" in result.stdout
+    assert len(list((tmp_path / "sessions").glob("*.json"))) == 1
 
 
 def test_brief_meeting(tmp_path) -> None:
@@ -876,9 +947,7 @@ def test_configure_new_project_writes_strict_ready_local_profile(tmp_path, monke
     assert checked.exit_code == 0, checked.stdout
     payload = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
     assert payload["permissions"]["workspace_roots"] == [str(tmp_path)]
-    assert "*" not in payload["sandbox"]["profiles"]["controlled-shell"][
-        "allowed_executables"
-    ]
+    assert "*" not in payload["sandbox"]["profiles"]["controlled-shell"]["allowed_executables"]
     assert "*" not in payload["sandbox"]["profiles"]["mcp-stdio"]["allowed_executables"]
 
 

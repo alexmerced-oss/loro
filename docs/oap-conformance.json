@@ -1,7 +1,7 @@
 {
   "oap": "1.0",
   "implementation": "loro",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "level": 3,
   "status": "provisional",
   "source": "docs/oap-implementation-plan.md",

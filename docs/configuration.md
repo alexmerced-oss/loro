@@ -382,6 +382,10 @@ loro setup skills
 loro setup quickstart
 ```
 
+The interactive provider flow uses numbered provider and model menus. Each provider exposes its
+primary and fast profile models plus a custom-model choice for deployments whose catalog has
+changed. Explicit `--provider`, `--model`, and `--small-model` flags remain available for scripts.
+
 `loro configure` and `loro setup provider` configure the AI provider. `loro setup identity`
 configures local or enterprise-provided identity fields and fail-closed requirements. `loro
 setup approvals` configures interactive prompts, non-interactive automation, exact session
@@ -401,7 +405,7 @@ references. `loro setup gateway` configures one signed endpoint and trusted iden
 
 ## Open Agent Profiles
 
-Loro `0.12.0` provides an optional additive `[agent_profiles]` section for named OAP v1 agents:
+Loro `0.13.0` provides an optional additive `[agent_profiles]` section for named OAP v1 agents:
 
 ```toml
 [agent_profiles]

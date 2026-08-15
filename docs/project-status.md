@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.12.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.13.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
 general availability because several production and organization-owned controls require evidence
@@ -37,6 +37,11 @@ changing that stable boundary. Its pre-release validation run passed 580 tests w
 environment-dependent skips, 75.04% repository branch-aware coverage, and 89.13%
 profile-package coverage. Formal upstream OAP certification remains pending and is explicitly
 provisional in the machine-readable conformance statement.
+
+The 0.13.0 feature release adds selectable provider/model setup, a durable folder REPL, and
+model-drafted document, presentation, spreadsheet, and brief commands. These additions preserve
+the 0.10 stable boundary and the provisional OAP Level 3 status. Its release validation run passed
+586 tests with 5 environment-dependent skips and 75.07% repository branch-aware coverage.
 
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and

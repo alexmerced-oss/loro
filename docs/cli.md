@@ -4,6 +4,8 @@
 
 ```bash
 loro --version
+loro
+loro repl --resume-session SESSION_ID
 loro doctor
 loro config
 loro configure
@@ -27,18 +29,21 @@ loro graph plan release.agraph.yaml --json
 loro graph run release.agraph.yaml --dry-run
 ```
 
-`loro configure` and `loro setup provider` run the AI provider wizard. The other setup
+Plain `loro` opens a folder-oriented REPL with provider, model, agent, memory, and durable session
+metadata. Use `/status`, `/new`, `/resume ID`, `/agent NAME`, `/help`, or `/exit` inside it.
+
+`loro configure` and `loro setup provider` run the numbered AI provider and model wizard. The other setup
 commands guide identity, approvals, sandboxing, local memory, shared-memory, Polaris, and MCP configuration. `loro setup
 quickstart` runs the setup wizards in sequence and preserves existing sections in
 `.loro/config.local.toml`.
 
 ## Complete Command Map
 
-This map reflects Loro 0.12.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.13.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: agents, approvals, artifacts, audit, brief, config, configure, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
 loro agents: apply, create, digest, explain, forget, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
@@ -308,9 +313,14 @@ loro docs create "Draft a project kickoff document"
 loro slides create "Quarterly platform update"
 loro sheets create "Launch readiness tracker"
 loro brief meeting "Prepare for roadmap sync"
+loro create docs "Create a practical guide to incident triage"
 ```
 
-Use `--output-dir` to choose where generated files go.
+These commands ask the configured model for a complete, typed draft, validate its JSON shape,
+scan generated content through the artifact data-protection surface, and then render Markdown,
+DOCX, PPTX, XLSX, or CSV files. `--no-ai` explicitly selects the deterministic offline renderer.
+Use `--output-dir` to choose where generated files go. The `sheets analyze` command currently
+creates an analysis workbook from prompt context; it does not ingest an existing workbook.
 
 ## Files And Shell
 

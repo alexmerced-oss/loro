@@ -54,7 +54,7 @@ def build_contract() -> dict[str, object]:
         "release_line": ".".join(__version__.split(".")[:2]),
         "package_version": __version__,
         "stability": "stabilization",
-        "change_policy": "stable-core-preserved-experimental-oap-addition",
+        "change_policy": "stable-core-preserved-experimental-ux-artifact-addition",
         "cli": command_map,
         "schemas": {
             "approval": JsonApprovalStore.SCHEMA_VERSION,

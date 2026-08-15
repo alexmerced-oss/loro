@@ -23,14 +23,16 @@ class PresentationOutline:
     slides: list[Slide]
 
 
-def create_presentation_artifact(prompt: str, output_dir: Path) -> ArtifactResult:
-    title = title_from_prompt(prompt, "Loro Presentation")
+def create_presentation_artifact(
+    prompt: str, output_dir: Path, *, outline: PresentationOutline | None = None
+) -> ArtifactResult:
+    title = outline.title if outline else title_from_prompt(prompt, "Loro Presentation")
     slug = unique_slug(title, "presentation")
     output_dir = ensure_output_dir(output_dir)
     outline_path = output_dir / f"{slug}-outline.md"
     pptx_path = output_dir / f"{slug}.pptx"
 
-    outline = PresentationOutline(
+    outline = outline or PresentationOutline(
         title=title,
         slides=[
             Slide(
