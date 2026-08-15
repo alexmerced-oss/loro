@@ -21,12 +21,13 @@ def create_brief_artifact(
     prompt: str,
     output_dir: Path,
     brief_type: str = "meeting",
+    draft: Brief | None = None,
 ) -> ArtifactResult:
-    title = title_from_prompt(prompt, f"Loro {brief_type.title()} Brief")
+    title = draft.title if draft else title_from_prompt(prompt, f"Loro {brief_type.title()} Brief")
     slug = unique_slug(f"{brief_type}-{title}", "brief")
     output_dir = ensure_output_dir(output_dir)
     path = output_dir / f"{slug}.md"
-    brief = Brief(
+    brief = draft or Brief(
         title=title,
         summary=prompt.strip(),
         risks=[

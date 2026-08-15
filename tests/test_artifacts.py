@@ -6,6 +6,12 @@ from openpyxl import load_workbook
 from loro.artifacts.briefs import create_brief_artifact
 from loro.artifacts.common import verify_provenance, write_provenance
 from loro.artifacts.documents import create_document_artifact
+from loro.artifacts.generation import (
+    DocumentPayload,
+    SpreadsheetPayload,
+    document_draft,
+    parse_generated_payload,
+)
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 
@@ -16,6 +22,24 @@ def test_document_artifact(tmp_path: Path) -> None:
     assert result.paths[0].suffix == ".md"
     assert result.paths[1].suffix == ".docx"
     assert all(path.exists() for path in result.paths)
+
+
+def test_document_artifact_renders_generated_draft(tmp_path: Path) -> None:
+    result = create_document_artifact(
+        "ignored scaffold",
+        tmp_path,
+        draft=document_draft(
+            DocumentPayload(
+                kind="document",
+                title="Useful Guide",
+                body_markdown="## Answer\n\nSubstantive model-written content.",
+            )
+        ),
+    )
+    markdown = result.paths[0].read_text(encoding="utf-8")
+    assert "Useful Guide" in markdown
+    assert "Substantive model-written content" in markdown
+    assert "deterministic MVP" not in markdown
 
 
 def test_presentation_artifact(tmp_path: Path) -> None:
@@ -30,6 +54,40 @@ def test_spreadsheet_artifact(tmp_path: Path) -> None:
     workbook = load_workbook(workbook_path, data_only=False)
     assert "Summary" in workbook.sheetnames
     workbook.close()
+
+
+def test_spreadsheet_artifact_renders_generated_rows_safely(tmp_path: Path) -> None:
+    draft = SpreadsheetPayload(
+        kind="spreadsheet",
+        title="Generated Tracker",
+        columns=["Item", "Value"],
+        rows=[["Alpha", 3], ["=unsafe()", 4]],
+    )
+    result = create_spreadsheet_artifact("tracker", tmp_path, draft=draft)
+    workbook_path = next(path for path in result.paths if path.suffix == ".xlsx")
+    workbook = load_workbook(workbook_path, data_only=False)
+    assert workbook["Summary"]["A5"].value == "Alpha"
+    assert workbook["Summary"]["A6"].value == "'=unsafe()"
+    workbook.close()
+
+
+def test_generated_payload_parser_validates_kind_and_shape() -> None:
+    parsed = parse_generated_payload(
+        'prefix {"kind":"document","title":"Guide","body_markdown":"Complete text"}',
+        expected_kind="document",
+    )
+    assert isinstance(parsed, DocumentPayload)
+    assert parsed.title == "Guide"
+
+    try:
+        parse_generated_payload(
+            '{"kind":"spreadsheet","title":"Bad","columns":["A"],"rows":[[1,2]]}',
+            expected_kind="spreadsheet",
+        )
+    except ValueError as error:
+        assert "column count" in str(error)
+    else:
+        raise AssertionError("Expected invalid spreadsheet rows to be rejected")
 
 
 def test_brief_artifact(tmp_path: Path) -> None:

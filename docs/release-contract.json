@@ -1,5 +1,5 @@
 {
-  "change_policy": "stable-core-preserved-experimental-oap-addition",
+  "change_policy": "stable-core-preserved-experimental-ux-artifact-addition",
   "cli": {
     "agents": [
       "apply",
@@ -43,6 +43,7 @@
       "summary"
     ],
     "configure": [],
+    "create": [],
     "credentials": [
       "delete",
       "doctor",
@@ -165,6 +166,7 @@
       "smoke"
     ],
     "remember": [],
+    "repl": [],
     "run": [],
     "safety": [
       "doctor",
@@ -223,13 +225,13 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:48275756776a47f0592f2758075a565b4b8ccdb0ce01a6d97828d933e8065551",
-    "interoperability_matrix": "sha256:b4b231e56cd3f731b1152897ac1e38598e407b3fb6a04d90c44da60d37f017cc",
-    "oap_conformance": "sha256:716429c41d89e4c8ba46a59f22889107a270f34b758a4cb78ef50bfd38ecacf6",
+    "data_support_matrix": "sha256:36716316a065f646855e9fcce63b5baf4366ae7ddac53844b2c173434337d9be",
+    "interoperability_matrix": "sha256:525606042bff18fde3d2600c89b514e894c11737b948c4df636afe033f9d7346",
+    "oap_conformance": "sha256:6af9a30c430caac64719234dac605c259ae3653c1a9c03a604fb3a0e84a97c1a",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:8420304195b80b244d6acd45113d5055010405ec544bc9f24a0379775892ecd5",
+    "reference_deployment": "sha256:61cc7c7b38fd13c57823ef731ac1b2e10fd09c9a7963b70b8684816509b06a11",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:e3bee6b876920121f58bcdca3784341e60e5d05d3edf94749020b415eb81fcc6"
+    "support_matrix": "sha256:027f3cb7f2377e63c8067928f1a080ca906e5c097b892c865f92e5afdff3750f"
   },
   "experimental": {
     "extensions": [
@@ -269,7 +271,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.12.0",
+  "package_version": "0.13.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -285,7 +287,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.12",
+  "release_line": "0.13",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

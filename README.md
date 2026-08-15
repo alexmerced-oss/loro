@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.12.0` is the current experimental feature release. The `0.10` deliberately limited stable
+Loro `0.13.0` is the current experimental feature release. The `0.10` deliberately limited stable
 core remains the stabilization baseline, while Open Agent Profile support joins the experimental
 surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
 gates.
@@ -35,7 +35,7 @@ Loro ships with a provider setup wizard. Run it with no flags for an interactive
 loro configure
 loro config check --strict
 loro doctor
-loro plan "Create a release readiness checklist for this project."
+loro
 ```
 
 Create a portable, governed AGS 1.0 plan when work needs explicit scheduling and approval:
@@ -59,7 +59,9 @@ Provider and gateway secrets can live in the operating-system credential vault, 
 named accounts for the same provider. Environment variables remain an override for automation. See
 the [Credential Vault](docs/credentials.md).
 
-For a no-key first run, choose the `mock` provider in the wizard. That lets you verify the CLI,
+The wizard presents numbered provider and model choices; select the custom-model entry when a
+new deployment or catalog entry is not bundled yet. For a no-key first run, choose the `mock`
+provider. That lets you verify the CLI,
 configuration loading, memory paths, artifact folders, and health checks before connecting a
 paid model provider.
 
@@ -234,6 +236,7 @@ loro docs create "Draft a project kickoff document"
 loro slides create "Quarterly platform update"
 loro sheets create "Launch readiness tracker"
 loro brief meeting "Prepare for roadmap sync"
+loro create docs "Create a practical guide to incident triage"
 loro memory search "status briefs"
 loro sessions list
 loro file search "Polaris" --root .

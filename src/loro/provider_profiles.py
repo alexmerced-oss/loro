@@ -14,6 +14,12 @@ class ProviderProfile:
     optional_header_env: tuple[tuple[str, str], ...] = ()
     notes: str = ""
 
+    @property
+    def model_choices(self) -> tuple[str, ...]:
+        """Return the profile's known model choices with stable, duplicate-free ordering."""
+
+        return tuple(dict.fromkeys((self.default_model, self.small_model)))
+
 
 PROVIDER_PROFILES: dict[str, ProviderProfile] = {
     "mock": ProviderProfile(

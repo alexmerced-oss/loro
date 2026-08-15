@@ -12,6 +12,7 @@ import click
 import typer
 from rich.console import Console
 from rich.live import Live
+from rich.table import Table
 from rich.text import Text
 
 from loro import __version__
@@ -19,6 +20,18 @@ from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
 from loro.artifacts.common import ArtifactResult, verify_provenance, write_provenance
 from loro.artifacts.documents import create_document_artifact
+from loro.artifacts.generation import (
+    ArtifactPayload,
+    BriefPayload,
+    DocumentPayload,
+    PresentationPayload,
+    SpreadsheetPayload,
+    brief_draft,
+    document_draft,
+    generation_prompt,
+    parse_generated_payload,
+    presentation_draft,
+)
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import AuditDeliveryError, AuditLogger, prompt_preview, verify_jsonl_audit
@@ -107,6 +120,7 @@ from loro.provider_contracts import (
     default_contract_paths,
     validate_provider_contracts,
 )
+from loro.provider_profiles import ProviderProfile
 from loro.providers import (
     check_provider_config,
     get_provider_profile,
@@ -121,6 +135,7 @@ from loro.recovery import (
     verify_postgres_backup,
 )
 from loro.release_readiness import assess_release_readiness
+from loro.repl import run_repl
 from loro.resources import (
     NormalizedResource,
     filesystem_resource,
@@ -151,7 +166,7 @@ app = typer.Typer(
         "Enterprise agent harness for coding, governed data, and productivity work. "
         "Start with `loro configure`, then run `loro plan` or `loro run`."
     ),
-    no_args_is_help=True,
+    no_args_is_help=False,
     invoke_without_command=True,
 )
 memory_app = typer.Typer(help="Inspect and write Loro memories.")
@@ -559,11 +574,102 @@ def _create_and_print_artifact(
     output_dir: Path,
     allow_sensitive: bool,
     context: str,
-    factory: Callable[[str, Path], ArtifactResult],
+    factory: Callable[..., ArtifactResult],
+    kind: str,
+    use_ai: bool = True,
+    brief_type: str | None = None,
+    agent_name: str | None = None,
 ) -> None:
     _enforce_safe_content(prompt, context=context, allow_sensitive=allow_sensitive)
-    result = factory(prompt, output_dir)
+    draft = (
+        _generate_artifact_draft(kind, prompt, brief_type=brief_type, agent_name=agent_name)
+        if use_ai
+        else None
+    )
+    if draft is not None:
+        _enforce_safe_content(
+            draft.model_dump_json(), context=context, allow_sensitive=allow_sensitive
+        )
+    if isinstance(draft, DocumentPayload):
+        result = factory(prompt, output_dir, draft=document_draft(draft))
+    elif isinstance(draft, PresentationPayload):
+        result = factory(prompt, output_dir, outline=presentation_draft(draft))
+    elif isinstance(draft, SpreadsheetPayload):
+        result = factory(prompt, output_dir, draft=draft)
+    elif isinstance(draft, BriefPayload):
+        result = factory(prompt, output_dir, draft=brief_draft(draft))
+    else:
+        result = factory(prompt, output_dir)
     _print_artifact_result(result, prompt)
+
+
+def _generate_artifact_draft(
+    kind: str,
+    prompt: str,
+    *,
+    brief_type: str | None = None,
+    agent_name: str | None = None,
+) -> ArtifactPayload:
+    result = _run_task(
+        generation_prompt(kind, prompt, brief_type=brief_type),
+        mode="run",
+        session_id=None,
+        stream=False,
+        agent_name=agent_name,
+    )
+    try:
+        return parse_generated_payload(result.summary, expected_kind=kind)
+    except ValueError as error:
+        if load_config().model.provider == "mock":
+            return _mock_artifact_draft(kind, prompt, brief_type=brief_type)
+        raise typer.BadParameter(str(error)) from error
+
+
+def _mock_artifact_draft(
+    kind: str, prompt: str, *, brief_type: str | None = None
+) -> ArtifactPayload:
+    title = " ".join(prompt.strip().split())[:80].rstrip(" .") or "Loro Artifact"
+    if kind == "document":
+        return DocumentPayload(
+            kind="document",
+            title=title,
+            body_markdown=(
+                "## Overview\n\n"
+                f"This document addresses the requested topic: {prompt.strip()}\n\n"
+                "## Key Considerations\n\n"
+                "- Define the intended audience and desired outcome.\n"
+                "- Validate claims against authoritative source material.\n"
+                "- Record owners and decisions before distribution.\n\n"
+                "## Next Steps\n\nReview and expand this draft with project-specific evidence."
+            ),
+        )
+    if kind == "presentation":
+        return PresentationPayload(
+            kind="presentation",
+            title=title,
+            slides=[
+                {"title": "Objective", "bullets": [prompt.strip()]},
+                {"title": "Key Considerations", "bullets": ["Audience", "Evidence", "Decisions"]},
+                {"title": "Next Steps", "bullets": ["Validate inputs", "Assign owners"]},
+            ],
+        )
+    if kind == "spreadsheet":
+        return SpreadsheetPayload(
+            kind="spreadsheet",
+            title=title,
+            columns=["Item", "Status", "Owner", "Notes"],
+            rows=[
+                [prompt.strip(), "Planned", "Unassigned", "Source request"],
+                ["Validate inputs", "Not started", "Unassigned", "Confirm scope and data"],
+            ],
+        )
+    return BriefPayload(
+        kind="brief",
+        title=title,
+        summary=f"{(brief_type or 'general').title()} brief for: {prompt.strip()}",
+        risks=["Source context may be incomplete.", "Facts require validation."],
+        next_steps=["Confirm the decision needed.", "Assign owners and due dates."],
+    )
 
 
 def _create_and_print_brief(
@@ -572,18 +678,52 @@ def _create_and_print_brief(
     output_dir: Path,
     allow_sensitive: bool,
     brief_type: str,
+    use_ai: bool = True,
 ) -> None:
     _create_and_print_artifact(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         context="artifact.brief",
-        factory=lambda artifact_prompt, artifact_dir: create_brief_artifact(
+        kind="brief",
+        use_ai=use_ai,
+        brief_type=brief_type,
+        agent_name=None,
+        factory=lambda artifact_prompt, artifact_dir, **kwargs: create_brief_artifact(
             artifact_prompt,
             artifact_dir,
             brief_type=brief_type,
+            draft=kwargs.get("draft"),
         ),
     )
+
+
+def _select_option(label: str, choices: list[tuple[str, str]], *, default: str) -> str:
+    table = Table(title=label, show_lines=False)
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Choice", style="bold")
+    for index, (_, display) in enumerate(choices, start=1):
+        table.add_row(str(index), display)
+    console.print(table)
+    default_index = next(
+        (index for index, (value, _) in enumerate(choices, start=1) if value == default), 1
+    )
+    while True:
+        selected = typer.prompt(f"Select {label.lower()}", default=default_index)
+        try:
+            return choices[int(selected) - 1][0]
+        except (ValueError, IndexError):
+            console.print(f"Choose a number from 1 to {len(choices)}.")
+
+
+def _select_model(label: str, profile: ProviderProfile, *, default: str) -> str:
+    choices = [(name, name) for name in profile.model_choices]
+    custom_value = "__custom__"
+    choices.append((custom_value, "Custom model name..."))
+    selected = _select_option(label, choices, default=default)
+    if selected == custom_value:
+        return typer.prompt(label, default=default)
+    return selected
 
 
 def _run_polaris_result(result: PolarisResult) -> None:
@@ -649,11 +789,44 @@ def _polaris_client() -> PolarisClient:
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: Annotated[bool, typer.Option("--version", help="Show Loro version.")] = False,
 ) -> None:
     if version:
         console.print(f"loro {__version__}")
         raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        if not os.isatty(0):
+            console.print(ctx.get_help())
+            raise typer.Exit()
+        _launch_repl()
+
+
+def _launch_repl(*, session_id: str | None = None, agent_name: str | None = None) -> None:
+    run_repl(
+        load_config(),
+        lambda prompt, active_session, active_agent: _run_task(
+            prompt,
+            mode="run",
+            session_id=active_session,
+            stream=False,
+            agent_name=active_agent,
+        ),
+        console=console,
+        session_id=session_id,
+        agent_name=agent_name,
+    )
+
+
+@app.command()
+def repl(
+    resume_session: Annotated[
+        str | None, typer.Option("--resume-session", help="Resume a saved session.")
+    ] = None,
+    agent: Annotated[str | None, typer.Option("--agent", help="Use a named agent profile.")] = None,
+) -> None:
+    """Open Loro's interactive folder session."""
+    _launch_repl(session_id=resume_session, agent_name=agent)
 
 
 @app.command()
@@ -681,7 +854,11 @@ def run(
 
 
 def _run_task(
-    prompt: str, *, mode: str, session_id: str | None, stream: bool,
+    prompt: str,
+    *,
+    mode: str,
+    session_id: str | None,
+    stream: bool,
     agent_name: str | None = None,
 ):
     """Run one agent task, live-rendering tokens when streaming is requested."""
@@ -843,19 +1020,19 @@ def configure(
     chosen_provider = provider
     interactive = chosen_provider is None
     if chosen_provider is None:
-        console.print("Available providers:")
-        for name in provider_names():
-            profile = get_provider_profile(name)
-            console.print(f"- {name}: {profile.display_name}")
-        chosen_provider = typer.prompt("Provider", default="mock")
+        choices = [
+            (name, f"{get_provider_profile(name).display_name} ({name})")
+            for name in provider_names()
+        ]
+        chosen_provider = _select_option("Provider", choices, default="mock")
     profile = get_provider_profile(chosen_provider)
     chosen_model = model or (
-        typer.prompt("Primary model", default=profile.default_model)
+        _select_model("Primary model", profile, default=profile.default_model)
         if interactive
         else profile.default_model
     )
     chosen_small = small_model or (
-        typer.prompt("Small model", default=profile.small_model)
+        _select_model("Small model", profile, default=profile.small_model)
         if interactive
         else profile.small_model
     )
@@ -2033,7 +2210,7 @@ def audit_collect(
     token_env: Annotated[
         str,
         typer.Option("--token-env", help="Environment variable containing the bearer token."),
-    # This is an environment variable name, not a credential.
+        # This is an environment variable name, not a credential.
     ] = "LORO_AUDIT_COLLECTOR_TOKEN",  # nosec B107
     host: Annotated[str, typer.Option("--host", help="Collector bind host.")] = "127.0.0.1",
     port: Annotated[
@@ -2222,9 +2399,7 @@ def operations_restore(
         raise typer.BadParameter("Executed restore requires --yes explicit authorization.")
     dsn = os.environ.get(config.memory.shared.postgres_dsn_env)
     if not dsn:
-        raise typer.BadParameter(
-            f"Missing DSN env var: {config.memory.shared.postgres_dsn_env}"
-        )
+        raise typer.BadParameter(f"Missing DSN env var: {config.memory.shared.postgres_dsn_env}")
     try:
         restore_postgres_backup(
             backup,
@@ -3666,14 +3841,83 @@ def docs_create(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_artifact(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         context="artifact.document",
+        kind="document",
+        use_ai=not no_ai,
         factory=create_document_artifact,
     )
+
+
+@app.command("create")
+def create_artifact(
+    artifact_type: Annotated[
+        str, typer.Argument(help="Artifact type: docs, slides, sheets, or brief.")
+    ],
+    prompt: Annotated[str, typer.Argument(help="Artifact prompt.")],
+    output_dir: Annotated[
+        Path, typer.Option("--output-dir", "-o", help="Directory for generated artifacts.")
+    ] = DEFAULT_ARTIFACT_DIR,
+    allow_sensitive: Annotated[
+        bool,
+        typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
+    ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
+) -> None:
+    """Create an AI-drafted document, presentation, spreadsheet, or brief."""
+    normalized = artifact_type.strip().lower()
+    if normalized in {"doc", "docs", "document"}:
+        _create_and_print_artifact(
+            prompt=prompt,
+            output_dir=output_dir,
+            allow_sensitive=allow_sensitive,
+            context="artifact.document",
+            factory=create_document_artifact,
+            kind="document",
+            use_ai=not no_ai,
+        )
+        return
+    if normalized in {"slide", "slides", "presentation"}:
+        _create_and_print_artifact(
+            prompt=prompt,
+            output_dir=output_dir,
+            allow_sensitive=allow_sensitive,
+            context="artifact.presentation",
+            factory=create_presentation_artifact,
+            kind="presentation",
+            use_ai=not no_ai,
+        )
+        return
+    if normalized in {"sheet", "sheets", "spreadsheet"}:
+        _create_and_print_artifact(
+            prompt=prompt,
+            output_dir=output_dir,
+            allow_sensitive=allow_sensitive,
+            context="artifact.spreadsheet",
+            factory=create_spreadsheet_artifact,
+            kind="spreadsheet",
+            use_ai=not no_ai,
+        )
+        return
+    if normalized == "brief":
+        _create_and_print_brief(
+            prompt=prompt,
+            output_dir=output_dir,
+            allow_sensitive=allow_sensitive,
+            brief_type="general",
+            use_ai=not no_ai,
+        )
+        return
+    raise typer.BadParameter("Artifact type must be docs, slides, sheets, or brief.")
 
 
 @artifacts_app.command("verify")
@@ -3697,12 +3941,17 @@ def slides_create(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_artifact(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         context="artifact.presentation",
+        kind="presentation",
+        use_ai=not no_ai,
         factory=create_presentation_artifact,
     )
 
@@ -3717,12 +3966,17 @@ def sheets_analyze(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_artifact(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         context="artifact.spreadsheet",
+        kind="spreadsheet",
+        use_ai=not no_ai,
         factory=create_spreadsheet_artifact,
     )
 
@@ -3737,12 +3991,17 @@ def sheets_create(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_artifact(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         context="artifact.spreadsheet",
+        kind="spreadsheet",
+        use_ai=not no_ai,
         factory=create_spreadsheet_artifact,
     )
 
@@ -3757,12 +4016,16 @@ def brief_meeting(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_brief(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         brief_type="meeting",
+        use_ai=not no_ai,
     )
 
 
@@ -3776,12 +4039,16 @@ def brief_project(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_brief(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         brief_type="project",
+        use_ai=not no_ai,
     )
 
 
@@ -3795,12 +4062,16 @@ def brief_incident(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_brief(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         brief_type="incident",
+        use_ai=not no_ai,
     )
 
 
@@ -3814,12 +4085,16 @@ def brief_executive(
         bool,
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+    ] = False,
 ) -> None:
     _create_and_print_brief(
         prompt=prompt,
         output_dir=output_dir,
         allow_sensitive=allow_sensitive,
         brief_type="executive",
+        use_ai=not no_ai,
     )
 
 
