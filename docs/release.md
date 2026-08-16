@@ -31,6 +31,7 @@ LORO_INTEGRATION_POLARIS=1 python -m pytest -m integration tests/integration/tes
 
 ```bash
 loro --version
+loro get-started --topic setup
 loro doctor
 loro providers list
 loro configure mock
@@ -53,7 +54,7 @@ loro agents explain release-reviewer
 loro graph validate docs/examples/agraph/release-readiness.agraph.yaml --strict
 loro graph plan docs/examples/agraph/release-readiness.agraph.yaml --json
 loro skills validate "$(loro graph skill-path)"
-loro docs create "Release verification" --output-dir /tmp/loro-release-artifacts
+loro docs create "Release verification" --no-ai --output-dir /tmp/loro-release-artifacts
 loro artifacts verify /tmp/loro-release-artifacts/*.provenance.json
 ```
 
@@ -126,6 +127,10 @@ Skills and memory, bounded subagents, and Agentic Graph profile binding. See
 
 Release `0.13.0` adds selectable provider/model setup, the folder REPL, and governed structured
 AI drafting for productivity artifacts. See [Loro 0.13.0](releases/0.13.0.md).
+
+Release `0.14.0` adds live provider model discovery, a complete profile wizard, streaming REPL
+tool activity, model-authored artifact enforcement, AI-compiled executable graphs, and the
+context-aware `get-started` guide. See [Loro 0.14.0](releases/0.14.0.md).
 
 ## Documentation
 

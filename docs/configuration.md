@@ -379,12 +379,28 @@ loro setup mcp
 loro setup mcp-server
 loro setup gateway
 loro setup skills
+loro setup profile
 loro setup quickstart
 ```
 
-The interactive provider flow uses numbered provider and model menus. Each provider exposes its
-primary and fast profile models plus a custom-model choice for deployments whose catalog has
-changed. Explicit `--provider`, `--model`, and `--small-model` flags remain available for scripts.
+The interactive provider flow uses numbered provider and model menus. After provider selection,
+Loro loads the current catalog using that provider's native model-list API. Large catalogs support
+paging and substring search. If discovery fails, bundled primary and fast choices remain available
+alongside a custom-model choice. Use `--no-discover-models` for offline setup. Explicit
+`--provider`, `--model`, and `--small-model` flags remain available for scripts and never trigger
+implicit discovery.
+
+The profile wizard lists only routes that this configuration already authorizes. Run plain `loro
+configure` first when the desired provider or model is absent, then re-run `loro setup profile`.
+Primary and small routes appear separately only when they differ, and configured model tiers add
+more choices. The wizard cannot accept an arbitrary new route because Open Agent Profiles narrow
+authority rather than creating provider endpoints or credentials.
+
+Web retrieval requires three settings: `shell.run` in the profile tools, a non-denied
+`[permissions].web` decision, and a sandbox profile that permits `curl` with inherited networking.
+The web preset offers to configure the latter two locally while denying generic shell commands.
+Custom profiles ask independently about generic shell and web retrieval. This capability provides
+governed HTTP fetching through `curl`; it is not a dedicated web-search provider.
 
 `loro configure` and `loro setup provider` configure the AI provider. `loro setup identity`
 configures local or enterprise-provided identity fields and fail-closed requirements. `loro
@@ -405,11 +421,12 @@ references. `loro setup gateway` configures one signed endpoint and trusted iden
 
 ## Open Agent Profiles
 
-Loro `0.13.0` provides an optional additive `[agent_profiles]` section for named OAP v1 agents:
+Loro `0.14.0` provides an optional additive `[agent_profiles]` section for named OAP v1 agents:
 
 ```toml
 [agent_profiles]
 enabled = true
+default_profile = "project-coder"
 managed_paths = ["/etc/loro/agents"]
 user_paths = ["~/.config/loro/agents"]
 project_paths = [".agents", ".loro/agents"]
@@ -427,7 +444,10 @@ proposal_path = ".loro/agent-proposals"
 `writeback` is a managed ceiling ordered `off < propose < auto`; a profile cannot raise it.
 Profile trust comes from its discovery root. Composition, permissions, tools, paths, models,
 budgets, MCP servers, Skills, memory stores/scopes, and subagents can only narrow the resolved
-Loro configuration. See [Open Agent Profiles](agent-profiles.md).
+Loro configuration. `default_profile` activates a discovered profile when `loro`, `loro run`, or
+`loro plan` does not receive an explicit `--agent`. Use `loro setup profile` to create and validate
+the profile, configure its tool/Skill ceilings, and set this field safely. See
+[Open Agent Profiles](agent-profiles.md).
 
 ## Credential Vault And Named Provider Accounts
 

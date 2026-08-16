@@ -9,9 +9,19 @@ loro configure
 loro doctor
 ```
 
-The wizard lists available providers, prompts for the primary and small model, and writes
-`.loro/config.local.toml`. API keys stay in environment variables. Choose `mock` for a no-key
-first run, or pick a cloud provider after exporting the matching API key.
+The wizard lists available providers, loads the selected provider's live model catalog, prompts
+for the primary and small model, and writes `.loro/config.local.toml`. Large catalogs are paged
+and searchable. API keys stay in environment variables or the OS credential vault. Export or
+store the key before starting the wizard when model discovery requires authentication. Choose
+`mock` for a no-key first run, or pick a cloud provider after exporting the matching API key.
+
+Discovery uses each protocol's catalog API: OpenAI-compatible `/models`, Anthropic `/v1/models`,
+Gemini `/v1beta/models`, Ollama `/api/tags`, and AWS Bedrock `ListFoundationModels`. This covers
+all built-in profiles, including OpenCode Go and Zen. A five-second timeout, response and model
+count bounds, disabled redirects, and normalized errors keep setup predictable. If a catalog is
+unavailable, malformed, unauthenticated, or unsupported by a custom endpoint, the wizard explains
+the problem and falls back to bundled choices plus a custom model entry. Pass
+`--no-discover-models` to skip network discovery explicitly.
 
 `loro setup provider` is an alias-style entrypoint for the same provider wizard. Use
 `loro setup quickstart` to run provider setup together with identity, approvals, audit, local

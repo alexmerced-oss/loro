@@ -1,6 +1,8 @@
 # Artifacts
 
 Loro generates enterprise productivity artifacts from approved user prompts and local context.
+The direct CLI commands use the configured model to author complete content before a deterministic
+renderer writes the files.
 
 ## Supported MVP Outputs
 
@@ -30,6 +32,25 @@ The command exits nonzero when a file is missing, its size changed, its digest c
 record does not use the supported schema. The sidecar is intentionally separate from the artifact
 so governance systems can ingest it; protect both files from unauthorized replacement.
 
+## AI Drafting Contract
+
+`loro docs create`, `loro slides create`, `loro sheets create`, `loro sheets analyze`, `loro brief
+*`, and the `loro create` aliases require a schema-valid model draft by default. Loro parses the
+model's direct response, asks once for a corrected draft when validation fails, and writes no files
+unless a draft validates. A resolved `mock` provider is treated as unconfigured for this workflow;
+run `loro configure` to select a real provider and model.
+
+Use `--no-ai` only when an offline scaffold is intentionally useful. This mode is deterministic
+and does not claim that the resulting content was model-authored.
+
+Agents use the runtime `artifact.create` tool as the rendering half of the same workflow. The agent
+must provide final kind-specific content: document title/body, presentation slides, spreadsheet
+columns/rows, or brief summary/risks/next steps. A prompt alone is rejected. The only scaffold path
+is an explicit `offline_scaffold=true` tool argument.
+
 ## Safety Notes
 
-The deterministic MVP generators do not query governed data or embed external data. Future model-powered generation must classify inputs and avoid restricted data unless policy and user confirmation allow it.
+Prompts and generated drafts pass through artifact data protection before rendering. Drafts are
+structurally validated, spreadsheet cells are formula-neutralized where required, and factual
+accuracy still requires user review. The renderer itself does not autonomously query governed data
+or external sources.

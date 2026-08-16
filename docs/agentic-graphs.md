@@ -22,10 +22,15 @@ loro graph status RUN_ID
 loro graph resume RUN_ID
 ```
 
-`loro plan GOAL --format agraph --out FILE` is an equivalent generation entry point. Generation is
-deterministic and conservative: the resulting skeleton is validated and checked against managed
-policy before it is written successfully. The bundled `skills/agentic-graph` package supplies an
-authoring workflow, schema, expression reference, and starter template.
+`loro plan GOAL --format agraph --out FILE` is an equivalent generation entry point. Both commands
+ask the configured model to author a typed workflow of concrete steps and outputs. Loro then
+compiles that substance into exact AGS structure with deterministic bounds, retries, typed outputs,
+success criteria, estimates, and dependencies before validating every static layer and applying
+managed graph policy. Invalid workflow output receives one correction attempt; no graph remains on
+failure. A `mock` provider fails with instructions to run `loro configure` rather than silently
+writing a generic one-node graph. Use `--no-ai` only when an explicit deterministic one-node
+skeleton is useful. The bundled `skills/agentic-graph` package supplies an authoring workflow,
+schema, expression reference, and starter template.
 
 Inspect and install the exact Skill shipped in the wheel through the normal digest review flow:
 

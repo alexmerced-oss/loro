@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from loro.audit import AuditDeliveryError
 from loro.cli import app
 from loro.memory.base import SharedMemoryBackendCheck
+from loro.providers import ModelCatalog, ModelDiscoveryError, provider_names
 from loro.sandbox import SandboxResult
 
 
@@ -30,6 +31,45 @@ def test_version() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "loro" in result.stdout
+
+
+def test_get_started_shows_context_aware_readiness_and_workflows(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    local = tmp_path / ".loro/config.local.toml"
+    local.parent.mkdir(parents=True)
+    local.write_text("# project configuration\n", encoding="utf-8")
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[model]\nprovider = "opencode-go"\nmodel = "glm-5"\nsmall_model = "glm-5"\n'
+        '[agent_profiles]\ndefault_profile = "project-coder"\n'
+        f'[permissions]\nworkspace_roots = ["{tmp_path}"]\nweb = "ask"\n',
+    )
+
+    result = CliRunner().invoke(app, ["get-started"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Loro | getting started" in result.stdout
+    assert "opencode-go/glm-5" in result.stdout
+    assert "project-coder" in result.stdout
+    assert "Recommended first journey" in result.stdout
+    assert "loro setup profile" in result.stdout
+    assert "loro get-started --topic" in result.stdout
+    assert "artifacts" in result.stdout
+    assert "Working well with Loro" in result.stdout
+
+
+def test_get_started_focused_topic_and_invalid_topic() -> None:
+    focused = CliRunner().invoke(app, ["get-started", "--topic", "artifacts"])
+
+    assert focused.exit_code == 0, focused.stdout
+    assert "Documents and productivity artifacts" in focused.stdout
+    assert "loro docs create" in focused.stdout
+    assert "--no-ai" in focused.stdout
+    assert "This folder" not in focused.stdout
+
+    invalid = CliRunner().invoke(app, ["get-started", "--topic", "unknown"])
+    assert invalid.exit_code == 2
+    assert "Unknown topic" in invalid.stderr
 
 
 def test_provider_conformance_command_reports_advertised_contracts() -> None:
@@ -217,7 +257,14 @@ def test_plan_with_explicit_tool_call(tmp_path, monkeypatch) -> None:
 def test_docs_create(tmp_path) -> None:
     result = CliRunner().invoke(
         app,
-        ["docs", "create", "Draft a rollout plan", "--output-dir", str(tmp_path)],
+        [
+            "docs",
+            "create",
+            "Draft a rollout plan",
+            "--output-dir",
+            str(tmp_path),
+            "--no-ai",
+        ],
     )
     assert result.exit_code == 0
     assert "Created document artifacts" in result.stdout
@@ -236,7 +283,9 @@ def test_create_docs_alias_uses_model_draft(tmp_path, monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "loro.cli._run_task",
-        lambda *args, **kwargs: SimpleNamespace(summary=generated),
+        lambda *args, **kwargs: SimpleNamespace(
+            response=generated, summary="Verbose report that should not be parsed"
+        ),
     )
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
@@ -252,6 +301,59 @@ def test_create_docs_alias_uses_model_draft(tmp_path, monkeypatch) -> None:
     markdown = next(tmp_path.glob("*.md")).read_text(encoding="utf-8")
     assert "AI Authored Guide" in markdown
     assert "The model populated this document." in markdown
+
+
+def test_docs_create_never_silently_falls_back_to_placeholder(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["docs", "create", "Write a useful guide", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 2
+    assert "Run `loro configure`" in result.stderr
+    assert "No artifact was written" in result.stderr
+    assert not list(tmp_path.glob("*.md"))
+    assert not list(tmp_path.glob("*.docx"))
+
+
+def test_docs_create_retries_invalid_model_draft_once(tmp_path, monkeypatch) -> None:
+    calls: list[str] = []
+    generated = json.dumps(
+        {
+            "kind": "document",
+            "title": "Corrected Guide",
+            "body_markdown": "## Complete\n\nA substantive corrected document.",
+        }
+    )
+
+    def run_task(prompt, **_kwargs):
+        calls.append(prompt)
+        response = "not valid JSON" if len(calls) == 1 else generated
+        return SimpleNamespace(response=response, summary="ignored")
+
+    monkeypatch.setattr("loro.cli._run_task", run_task)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[model]\nprovider = "openai"\nmodel = "test-model"\nsmall_model = "test-model"\n'
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["docs", "create", "Write a useful guide", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert len(calls) == 2
+    assert "placeholder sections" in calls[0]
+    assert "previous draft was rejected" in calls[1]
+    markdown = next(tmp_path.glob("*.md")).read_text(encoding="utf-8")
+    assert "A substantive corrected document." in markdown
 
 
 def test_configure_interactive_selects_provider_and_models(tmp_path, monkeypatch) -> None:
@@ -271,6 +373,56 @@ def test_configure_interactive_selects_provider_and_models(tmp_path, monkeypatch
     assert payload["model"]["model"] == "mock-agent"
 
 
+def test_configure_interactive_uses_live_provider_catalog(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+    monkeypatch.setattr(
+        "loro.cli.discover_provider_models",
+        lambda *args, **kwargs: ModelCatalog(
+            "opencode-go",
+            ("glm-5", "kimi-k3", "deepseek-v4-flash"),
+            "test catalog",
+        ),
+    )
+    provider_index = provider_names().index("opencode-go") + 1
+
+    result = CliRunner().invoke(
+        app,
+        ["configure"],
+        input=f"{provider_index}\n2\n1\n\n\n",
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Loaded 3 models from test catalog." in result.stdout
+    payload = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
+    assert payload["model"]["provider"] == "opencode-go"
+    assert payload["model"]["model"] == "kimi-k3"
+    assert payload["model"]["small_model"] == "glm-5"
+
+
+def test_configure_interactive_falls_back_to_bundled_models(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
+    )
+
+    def fail_discovery(*args, **kwargs):
+        raise ModelDiscoveryError("catalog offline")
+
+    monkeypatch.setattr("loro.cli.discover_provider_models", fail_discovery)
+
+    result = CliRunner().invoke(app, ["configure"], input="\n\n\n")
+
+    assert result.exit_code == 0, result.stdout
+    assert "Live model discovery unavailable: catalog offline" in result.stdout
+    payload = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
+    assert payload["model"]["model"] == "mock-agent"
+
+
 def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("loro.cli.os.isatty", lambda _fd: True)
@@ -285,7 +437,8 @@ def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) ->
     )
 
     assert result.exit_code == 0, result.stdout
-    assert ".--." in result.stdout
+    assert "Loro | interactive workspace" in result.stdout
+    assert "/ 6  6" in result.stdout
     assert "Provider" in result.stdout
     assert "mock-agent" in result.stdout
     assert "Mock response for" in result.stdout
@@ -296,7 +449,14 @@ def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) ->
 def test_brief_meeting(tmp_path) -> None:
     result = CliRunner().invoke(
         app,
-        ["brief", "meeting", "Prepare for roadmap sync", "--output-dir", str(tmp_path)],
+        [
+            "brief",
+            "meeting",
+            "Prepare for roadmap sync",
+            "--output-dir",
+            str(tmp_path),
+            "--no-ai",
+        ],
     )
     assert result.exit_code == 0
     assert "Created meeting brief artifact" in result.stdout

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -188,7 +190,10 @@ def test_graph_cli_validate_plan_and_generate(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setenv("LORO_CONFIG_CONTENT", f'[agraph]\nstate_path = "{tmp_path / "runs"}"')
     output = tmp_path / "generated.agraph.yaml"
     runner = CliRunner()
-    generated = runner.invoke(app, ["graph", "generate", "Prepare evidence", "--out", str(output)])
+    generated = runner.invoke(
+        app,
+        ["graph", "generate", "Prepare evidence", "--out", str(output), "--no-ai"],
+    )
     assert generated.exit_code == 0, generated.output
     assert runner.invoke(app, ["graph", "validate", str(output), "--strict"]).exit_code == 0
     planned = runner.invoke(app, ["graph", "plan", str(output), "--json"])
@@ -197,13 +202,77 @@ def test_graph_cli_validate_plan_and_generate(tmp_path: Path, monkeypatch) -> No
     second = tmp_path / "from-plan.agraph.yaml"
     generated_from_plan = runner.invoke(
         app,
-        ["plan", "Prepare another report", "--format", "agraph", "--out", str(second)],
+        [
+            "plan",
+            "Prepare another report",
+            "--format",
+            "agraph",
+            "--out",
+            str(second),
+            "--no-ai",
+        ],
     )
     assert generated_from_plan.exit_code == 0
     assert validate_graph(second).ok
     skill_path = runner.invoke(app, ["graph", "skill-path"])
     assert skill_path.exit_code == 0
     assert (Path(skill_path.output.strip()) / "SKILL.md").is_file()
+
+
+def test_graph_generate_uses_model_authored_graph_by_default(tmp_path: Path, monkeypatch) -> None:
+    authored = {
+        "title": "Research and publish evidence",
+        "description": "A model-authored research and publication workflow.",
+        "steps": [
+            {
+                "title": "Research authoritative sources and document their provenance carefully",
+                "description": "Collect authoritative evidence for the report.",
+                "output_description": "A cited evidence summary.",
+            },
+            {
+                "title": "Publish report",
+                "description": "Synthesize and review the evidence as a final report.",
+                "output_description": "The reviewed final report.",
+            },
+        ],
+    }
+
+    class FakeRuntime:
+        def __init__(self, _config) -> None:
+            pass
+
+        def run(self, _prompt, **_kwargs):
+            return SimpleNamespace(response=json.dumps(authored))
+
+    monkeypatch.setattr("loro.cli_graph.AgentRuntime", FakeRuntime)
+    monkeypatch.setenv(
+        "LORO_CONFIG_CONTENT",
+        '[model]\nprovider = "openai"\nmodel = "test-model"\nsmall_model = "test-model"\n'
+        f'[agraph]\nstate_path = "{tmp_path / "runs"}"\n',
+    )
+    output = tmp_path / "authored.agraph.yaml"
+
+    result = CliRunner().invoke(
+        app,
+        ["graph", "generate", "Research and publish evidence", "--out", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "model-authored research" in output.read_text(encoding="utf-8")
+    assert not validate_graph(output).warnings
+
+
+def test_graph_generate_does_not_silently_write_mock_skeleton(tmp_path: Path) -> None:
+    output = tmp_path / "mock.agraph.yaml"
+
+    result = CliRunner().invoke(
+        app,
+        ["graph", "generate", "Prepare evidence", "--out", str(output)],
+    )
+
+    assert result.exit_code == 2
+    assert "Run `loro configure`" in result.stderr
+    assert not output.exists()
 
 
 def test_criteria_variants_and_external_registry(tmp_path: Path) -> None:

@@ -792,6 +792,10 @@ class SkillsConfig(BaseModel):
 
 class AgentProfilesConfig(BaseModel):
     enabled: bool = True
+    default_profile: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    )
     managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/agents"])
     user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/agents"])
     project_paths: list[str] = Field(default_factory=lambda: [".agents", ".loro/agents"])
@@ -1006,6 +1010,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"gateway": config.gateway.model_dump(exclude_none=True)}
     if section == "skills":
         return {"skills": config.skills.model_dump(exclude_none=True)}
+    if section == "agent_profiles":
+        return {"agent_profiles": config.agent_profiles.model_dump(exclude_none=True)}
     if section == "safety":
         return {"safety": config.safety.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")

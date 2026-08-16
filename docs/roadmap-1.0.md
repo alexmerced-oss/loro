@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.13.0`. It records the
+This is the single authoritative roadmap for work remaining after Loro `0.14.0`. It records the
 experimental Open Agent Profile releases and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -13,9 +13,11 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.13.0`, released August 15, 2026, preserves the 0.10 stable-core baseline. It includes the
-provisional Level 3 harness delivered in 0.12 and adds a selectable provider/model wizard, a
-durable folder REPL, and governed model-drafted productivity artifacts. In addition to the
+Loro `0.14.0`, released August 16, 2026, preserves the 0.10 stable-core baseline. It includes the
+provisional Level 3 harness delivered in 0.12, the interactive workflows introduced in 0.13, and
+adds provider-wide model discovery, an authority-oriented profile wizard, streaming model/tool
+activity, fail-closed model-authored artifacts, AI-compiled executable graphs, and a context-aware
+getting-started guide. In addition to the
 agent, memory, governance, provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark,
 and release controls delivered through `0.8`, the repository now provides:
 
@@ -83,6 +85,7 @@ available for evaluation.
 | `0.11` | Released | Experimental provisional OAP v1 Level 2 named-agent profiles ship without expanding the stable core. |
 | `0.12` | Released | Provisional Level 3 composition and full harness scoping ship; formal upstream certification remains open. |
 | `0.13` | Released | Selectable setup, a durable folder REPL, and governed AI artifact drafting ship. |
+| `0.14` | Released | Discovery, profile setup, streaming interaction, artifacts, graphs, and onboarding operate as complete harness workflows. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 0.11: Open Agent Profile

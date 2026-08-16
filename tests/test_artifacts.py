@@ -42,6 +42,24 @@ def test_document_artifact_renders_generated_draft(tmp_path: Path) -> None:
     assert "deterministic MVP" not in markdown
 
 
+def test_document_artifact_does_not_duplicate_model_heading(tmp_path: Path) -> None:
+    result = create_document_artifact(
+        "ignored scaffold",
+        tmp_path,
+        draft=document_draft(
+            DocumentPayload(
+                kind="document",
+                title="Useful Guide",
+                body_markdown="# Useful Guide\n\n## Answer\n\nFinished content.",
+            )
+        ),
+    )
+
+    markdown = result.paths[0].read_text(encoding="utf-8")
+    assert markdown.count("# Useful Guide") == 1
+    assert "## Answer\n\nFinished content." in markdown
+
+
 def test_presentation_artifact(tmp_path: Path) -> None:
     result = create_presentation_artifact("Quarterly business review", tmp_path)
     assert any(path.suffix == ".pptx" for path in result.paths)

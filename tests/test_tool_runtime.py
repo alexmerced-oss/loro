@@ -327,6 +327,18 @@ def test_tool_registry_shell_run_respects_deny() -> None:
     assert "denied by policy" in result.output
 
 
+def test_tool_registry_curl_uses_web_permission_instead_of_generic_shell() -> None:
+    call = parse_tool_calls(
+        '@tool shell.run {"args": ["curl", "https://example.com"], "approved": true}'
+    )[0]
+    config = LoroConfig(permissions=PermissionsConfig(shell="allow", web="deny"))
+
+    result = ToolRegistry(config).execute(call)
+
+    assert result.ok is False
+    assert "web is denied by policy" in result.output
+
+
 def test_tool_registry_shell_structured_rule_blocks_absolute_executable() -> None:
     call = parse_tool_calls(
         '@tool shell.run {"args": ["/usr/bin/python3", "-c", "print(123)"], "approved": true}'
@@ -470,6 +482,8 @@ def test_tool_registry_artifact_create_document(tmp_path) -> None:
     call = parse_tool_calls(
         "@tool artifact.create "
         f'{{"kind": "document", "prompt": "Draft onboarding guide", '
+        '"title": "Onboarding Guide", '
+        '"body_markdown": "## Welcome\\n\\nComplete onboarding content.", '
         f'"output_dir": "{tmp_path}"}}'
     )[0]
     result = ToolRegistry(_artifact_config()).execute(call)
@@ -484,12 +498,42 @@ def test_tool_registry_artifact_create_brief(tmp_path) -> None:
     call = parse_tool_calls(
         "@tool artifact.create "
         f'{{"kind": "brief", "brief_type": "executive", '
-        f'"prompt": "Summarize launch readiness", "output_dir": "{tmp_path}"}}'
+        '"prompt": "Summarize launch readiness", "title": "Launch Readiness", '
+        '"summary": "The launch is ready with monitored risks.", '
+        '"risks": ["Capacity"], "next_steps": ["Approve launch"], '
+        f'"output_dir": "{tmp_path}"}}'
     )[0]
     result = ToolRegistry(_artifact_config()).execute(call)
     assert result.ok is True
     assert "Created executive brief artifact" in result.output
     assert any(path.suffix == ".md" for path in tmp_path.iterdir())
+
+
+def test_tool_registry_artifact_create_rejects_prompt_only_placeholder(tmp_path) -> None:
+    call = parse_tool_calls(
+        "@tool artifact.create "
+        f'{{"kind": "document", "prompt": "Draft onboarding guide", '
+        f'"output_dir": "{tmp_path}"}}'
+    )[0]
+
+    result = ToolRegistry(_artifact_config()).execute(call)
+
+    assert result.ok is False
+    assert "body_markdown" in result.output
+    assert not any(tmp_path.iterdir())
+
+
+def test_tool_registry_artifact_create_allows_explicit_offline_scaffold(tmp_path) -> None:
+    call = parse_tool_calls(
+        "@tool artifact.create "
+        f'{{"kind": "document", "prompt": "Draft onboarding guide", '
+        f'"offline_scaffold": true, "output_dir": "{tmp_path}"}}'
+    )[0]
+
+    result = ToolRegistry(_artifact_config()).execute(call)
+
+    assert result.ok is True
+    assert any(path.suffix == ".docx" for path in tmp_path.iterdir())
 
 
 def test_tool_registry_artifact_create_rejects_unknown_kind(tmp_path) -> None:

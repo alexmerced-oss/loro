@@ -116,7 +116,8 @@ def build_effective_profile(resolved: ResolvedProfile, config: LoroConfig) -> Ef
         )
     permissions = PermissionsConfig.model_validate(permission_data)
 
-    available = {item.name for item in tool_catalog(config)}
+    capability_config = config.model_copy(update={"permissions": permissions})
+    available = {item.name for item in tool_catalog(capability_config)}
     tools = set(available)
     enabled_mcp = {name for name, server in config.mcp.servers.items() if server.enabled}
     mcp_servers = set(enabled_mcp if config.mcp.enabled else ())

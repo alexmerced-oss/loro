@@ -10,6 +10,15 @@ from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.artifacts.briefs import create_brief_artifact
 from loro.artifacts.common import ArtifactResult, write_provenance
 from loro.artifacts.documents import create_document_artifact
+from loro.artifacts.generation import (
+    BriefPayload,
+    DocumentPayload,
+    PresentationPayload,
+    SpreadsheetPayload,
+    brief_draft,
+    document_draft,
+    presentation_draft,
+)
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
 from loro.audit import prompt_preview
@@ -36,6 +45,8 @@ from loro.skills import SkillRegistry
 from loro.tools.files import FileTools
 from loro.tools.git import GitTools
 from loro.tools.shell import ShellTools
+
+_GOVERNED_WEB_EXECUTABLES = frozenset({"curl", "wget"})
 
 
 @dataclass(frozen=True)
@@ -290,16 +301,23 @@ class ToolRegistry:
             raise ValueError("shell.run requires args as a list of strings.")
         timeout = int(call.args.get("timeout", 120))
         resource = shell_resource(args)
+        executable_name = str(resource.fields["resolved_executable_name"])
+        permission_tool = "web" if executable_name in _GOVERNED_WEB_EXECUTABLES else "shell"
+        action = "fetch web resource" if permission_tool == "web" else "run command"
         self._authorize(
             call,
             PermissionRequest(
-                tool="shell",
-                action="run command",
+                tool=permission_tool,
+                action=action,
                 target=" ".join(args),
                 resource=resource,
             ),
             approval_target=resource.target,
-            risk_reason="Execute a subprocess with the displayed arguments.",
+            risk_reason=(
+                "Fetch an external web resource with the displayed arguments."
+                if permission_tool == "web"
+                else "Execute a subprocess with the displayed arguments."
+            ),
         )
         result = self.shell.run(args, timeout=timeout)
         output = _format_process_output(
@@ -419,8 +437,12 @@ class ToolRegistry:
     def _create_artifact(self, call: ToolCall) -> ToolExecution:
         kind = str(call.args.get("kind", "document"))
         prompt = str(call.args["prompt"])
-        # Reject an unknown kind before prompting for approval on a request that cannot run.
-        factory = None if kind == "brief" else _artifact_factory(kind)
+        offline_scaffold = bool(call.args.get("offline_scaffold", False))
+        if kind not in {"document", "presentation", "spreadsheet", "brief"}:
+            raise ValueError(
+                "artifact.create kind must be one of: document, presentation, spreadsheet, "
+                "brief."
+            )
         resource = filesystem_resource(
             str(call.args.get("output_dir", "artifacts")),
             operation="write",
@@ -450,11 +472,37 @@ class ToolRegistry:
                     "Set allow_sensitive only if policy allows persistence."
                 ),
             )
-        if factory is None:
+        draft = None if offline_scaffold else _artifact_draft_from_call(kind, call.args)
+        if kind == "brief":
             brief_type = str(call.args.get("brief_type", "meeting"))
-            result = create_brief_artifact(prompt, output_dir, brief_type=brief_type)
+            result = create_brief_artifact(
+                prompt,
+                output_dir,
+                brief_type=brief_type,
+                draft=brief_draft(draft) if isinstance(draft, BriefPayload) else None,
+            )
+        elif kind == "document":
+            result = create_document_artifact(
+                prompt,
+                output_dir,
+                draft=document_draft(draft) if isinstance(draft, DocumentPayload) else None,
+            )
+        elif kind == "presentation":
+            result = create_presentation_artifact(
+                prompt,
+                output_dir,
+                outline=(
+                    presentation_draft(draft)
+                    if isinstance(draft, PresentationPayload)
+                    else None
+                ),
+            )
         else:
-            result = factory(prompt, output_dir)
+            result = create_spreadsheet_artifact(
+                prompt,
+                output_dir,
+                draft=draft if isinstance(draft, SpreadsheetPayload) else None,
+            )
         provenance_path = write_provenance(result=result, prompt_preview=prompt_preview(prompt))
         return ToolExecution(
             call=call,
@@ -995,18 +1043,37 @@ def _format_process_output(*, returncode: int, stdout: str, stderr: str) -> str:
     return "\n".join(sections)
 
 
-def _artifact_factory(kind: str) -> Callable[[str, Path], ArtifactResult]:
-    factories: dict[str, Callable[[str, Path], ArtifactResult]] = {
-        "document": create_document_artifact,
-        "presentation": create_presentation_artifact,
-        "spreadsheet": create_spreadsheet_artifact,
-    }
-    try:
-        return factories[kind]
-    except KeyError as error:
-        raise ValueError(
-            "artifact.create kind must be one of: document, presentation, spreadsheet, brief."
-        ) from error
+def _artifact_draft_from_call(kind: str, args: dict[str, Any]):
+    if kind == "document":
+        return DocumentPayload(
+            kind="document",
+            title=args.get("title", ""),
+            body_markdown=args.get("body_markdown", ""),
+        )
+    if kind == "presentation":
+        return PresentationPayload(
+            kind="presentation",
+            title=args.get("title", ""),
+            slides=args.get("slides", []),
+        )
+    if kind == "spreadsheet":
+        return SpreadsheetPayload(
+            kind="spreadsheet",
+            title=args.get("title", ""),
+            columns=args.get("columns", []),
+            rows=args.get("rows", []),
+        )
+    if kind == "brief":
+        return BriefPayload(
+            kind="brief",
+            title=args.get("title", ""),
+            summary=args.get("summary", ""),
+            risks=args.get("risks", []),
+            next_steps=args.get("next_steps", []),
+        )
+    raise ValueError(
+        "artifact.create kind must be one of: document, presentation, spreadsheet, brief."
+    )
 
 
 def _data_protection_detail(decision: DataProtectionDecision) -> str:

@@ -12,6 +12,7 @@ import click
 import typer
 from rich.console import Console
 from rich.live import Live
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
@@ -31,6 +32,7 @@ from loro.artifacts.generation import (
     generation_prompt,
     parse_generated_payload,
     presentation_draft,
+    repair_generation_prompt,
 )
 from loro.artifacts.presentations import create_presentation_artifact
 from loro.artifacts.spreadsheets import create_spreadsheet_artifact
@@ -43,7 +45,7 @@ from loro.audit.collector import (
 )
 from loro.audit.metrics import OperationalMetrics
 from loro.benchmarks import run_reference_benchmarks, write_benchmark_report
-from loro.cli_agents import agents_app, setup_agents
+from loro.cli_agents import agents_app, profile_wizard, setup_agents
 from loro.cli_credentials import credentials_app
 from loro.cli_gateway import gateway_app, gateway_setup
 from loro.cli_graph import graph_app
@@ -122,7 +124,9 @@ from loro.provider_contracts import (
 )
 from loro.provider_profiles import ProviderProfile
 from loro.providers import (
+    ModelDiscoveryError,
     check_provider_config,
+    discover_provider_models,
     get_provider_profile,
     model_config_from_profile,
     provider_names,
@@ -145,7 +149,7 @@ from loro.resources import (
     session_message_resource,
     shell_resource,
 )
-from loro.runtime import AgentRuntime
+from loro.runtime import AgentRuntime, RuntimeEventHandler
 from loro.sandbox import SandboxRunner
 from loro.serialization import jsonable_mapping
 from loro.session_messages import SessionMailbox, message_digest
@@ -164,7 +168,7 @@ app = typer.Typer(
     name="loro",
     help=(
         "Enterprise agent harness for coding, governed data, and productivity work. "
-        "Start with `loro configure`, then run `loro plan` or `loro run`."
+        "Start with `loro get-started`, then run `loro plan` or `loro run`."
     ),
     no_args_is_help=False,
     invoke_without_command=True,
@@ -219,6 +223,7 @@ app.add_typer(operations_app, name="operations")
 app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(agents_app, name="agents")
 setup_app.command("agents")(setup_agents)
+setup_app.command("profile")(profile_wizard)
 app.command("doctor")(ops_doctor)
 config_app.command("check")(ops_config_check)
 audit_app.command("query")(ops_audit_query)
@@ -232,12 +237,15 @@ DEFAULT_ARTIFACT_DIR = Path("artifacts")
 def _runtime(agent_name: str | None = None) -> AgentRuntime:
     config = load_config()
     profile = None
-    if agent_name is not None:
+    selected_agent = agent_name or config.agent_profiles.default_profile
+    if selected_agent is not None:
         from loro.agent_profiles import AgentProfileRegistry, ProfileError, build_effective_profile
 
         try:
             profile = build_effective_profile(
-                AgentProfileRegistry(config.agent_profiles, safety=config.safety).load(agent_name),
+                AgentProfileRegistry(config.agent_profiles, safety=config.safety).load(
+                    selected_agent
+                ),
                 config,
             )
         except ProfileError as error:
@@ -581,6 +589,11 @@ def _create_and_print_artifact(
     agent_name: str | None = None,
 ) -> None:
     _enforce_safe_content(prompt, context=context, allow_sensitive=allow_sensitive)
+    if use_ai:
+        config = load_config()
+        console.print(
+            f"Drafting {kind} with {config.model.provider}/{config.model.model}..."
+        )
     draft = (
         _generate_artifact_draft(kind, prompt, brief_type=brief_type, agent_name=agent_name)
         if use_ai
@@ -610,66 +623,40 @@ def _generate_artifact_draft(
     brief_type: str | None = None,
     agent_name: str | None = None,
 ) -> ArtifactPayload:
-    result = _run_task(
-        generation_prompt(kind, prompt, brief_type=brief_type),
-        mode="run",
-        session_id=None,
-        stream=False,
-        agent_name=agent_name,
-    )
+    config = load_config()
+    request = generation_prompt(kind, prompt, brief_type=brief_type)
+    result = _run_task(request, mode="run", session_id=None, stream=False, agent_name=agent_name)
+    response = getattr(result, "response", None) or result.summary
     try:
-        return parse_generated_payload(result.summary, expected_kind=kind)
-    except ValueError as error:
-        if load_config().model.provider == "mock":
-            return _mock_artifact_draft(kind, prompt, brief_type=brief_type)
-        raise typer.BadParameter(str(error)) from error
-
-
-def _mock_artifact_draft(
-    kind: str, prompt: str, *, brief_type: str | None = None
-) -> ArtifactPayload:
-    title = " ".join(prompt.strip().split())[:80].rstrip(" .") or "Loro Artifact"
-    if kind == "document":
-        return DocumentPayload(
-            kind="document",
-            title=title,
-            body_markdown=(
-                "## Overview\n\n"
-                f"This document addresses the requested topic: {prompt.strip()}\n\n"
-                "## Key Considerations\n\n"
-                "- Define the intended audience and desired outcome.\n"
-                "- Validate claims against authoritative source material.\n"
-                "- Record owners and decisions before distribution.\n\n"
-                "## Next Steps\n\nReview and expand this draft with project-specific evidence."
+        return parse_generated_payload(response, expected_kind=kind)
+    except ValueError as first_error:
+        if config.model.provider == "mock":
+            raise typer.BadParameter(
+                "AI artifact creation requires a configured model provider; the resolved "
+                "provider is mock. Run `loro configure`, then retry. Use --no-ai only when "
+                "you explicitly want the offline scaffold. No artifact was written."
+            ) from first_error
+        console.print("Model draft failed validation; requesting one corrected draft...")
+        retry = _run_task(
+            repair_generation_prompt(
+                kind,
+                prompt,
+                str(first_error),
+                brief_type=brief_type,
             ),
+            mode="run",
+            session_id=None,
+            stream=False,
+            agent_name=agent_name,
         )
-    if kind == "presentation":
-        return PresentationPayload(
-            kind="presentation",
-            title=title,
-            slides=[
-                {"title": "Objective", "bullets": [prompt.strip()]},
-                {"title": "Key Considerations", "bullets": ["Audience", "Evidence", "Decisions"]},
-                {"title": "Next Steps", "bullets": ["Validate inputs", "Assign owners"]},
-            ],
-        )
-    if kind == "spreadsheet":
-        return SpreadsheetPayload(
-            kind="spreadsheet",
-            title=title,
-            columns=["Item", "Status", "Owner", "Notes"],
-            rows=[
-                [prompt.strip(), "Planned", "Unassigned", "Source request"],
-                ["Validate inputs", "Not started", "Unassigned", "Confirm scope and data"],
-            ],
-        )
-    return BriefPayload(
-        kind="brief",
-        title=title,
-        summary=f"{(brief_type or 'general').title()} brief for: {prompt.strip()}",
-        risks=["Source context may be incomplete.", "Facts require validation."],
-        next_steps=["Confirm the decision needed.", "Assign owners and due dates."],
-    )
+        retry_response = getattr(retry, "response", None) or retry.summary
+        try:
+            return parse_generated_payload(retry_response, expected_kind=kind)
+        except ValueError as second_error:
+            raise typer.BadParameter(
+                f"The model could not produce a valid {kind} draft after one correction: "
+                f"{second_error}. No artifact was written."
+            ) from second_error
 
 
 def _create_and_print_brief(
@@ -716,14 +703,60 @@ def _select_option(label: str, choices: list[tuple[str, str]], *, default: str) 
             console.print(f"Choose a number from 1 to {len(choices)}.")
 
 
-def _select_model(label: str, profile: ProviderProfile, *, default: str) -> str:
-    choices = [(name, name) for name in profile.model_choices]
+def _select_model(
+    label: str,
+    profile: ProviderProfile,
+    *,
+    default: str,
+    models: tuple[str, ...] | None = None,
+) -> str:
+    catalog = models or profile.model_choices
+    filtered = catalog
+    page = 0
+    page_size = 30
     custom_value = "__custom__"
-    choices.append((custom_value, "Custom model name..."))
-    selected = _select_option(label, choices, default=default)
-    if selected == custom_value:
-        return typer.prompt(label, default=default)
-    return selected
+    search_value = "__search__"
+    next_value = "__next__"
+    previous_value = "__previous__"
+
+    while True:
+        page_count = max(1, (len(filtered) + page_size - 1) // page_size)
+        page = min(page, page_count - 1)
+        start = page * page_size
+        visible = filtered[start : start + page_size]
+        choices = [(name, name) for name in visible]
+        if page > 0:
+            choices.append((previous_value, "Previous page"))
+        if page + 1 < page_count:
+            choices.append((next_value, "Next page"))
+        choices.extend(
+            [
+                (search_value, "Search models..."),
+                (custom_value, "Custom model name..."),
+            ]
+        )
+        title = label
+        if len(filtered) > page_size:
+            title = f"{label} ({start + 1}-{start + len(visible)} of {len(filtered)})"
+        selected = _select_option(title, choices, default=default)
+        if selected == custom_value:
+            return typer.prompt(label, default=default)
+        if selected == search_value:
+            query = typer.prompt("Search model names").strip().lower()
+            matches = tuple(name for name in catalog if query in name.lower())
+            if not matches:
+                console.print(f"No models matched {query!r}.")
+                continue
+            filtered = matches
+            page = 0
+            continue
+        if selected == next_value:
+            page += 1
+            continue
+        if selected == previous_value:
+            page -= 1
+            continue
+        return selected
 
 
 def _run_polaris_result(result: PolarisResult) -> None:
@@ -802,19 +835,282 @@ def main(
         _launch_repl()
 
 
+_GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "setup": (
+        "Set up this folder",
+        (
+            "Run `loro configure` to select a provider and dynamically discover models.",
+            "Run `loro setup profile` to create a named assistant with explicit tools "
+            "and permissions.",
+            "Use `loro setup quickstart` for the full identity, approvals, audit, memory, "
+            "data, and MCP sequence.",
+            "Finish with `loro config check --strict` and `loro doctor`.",
+        ),
+    ),
+    "profiles": (
+        "Profiles and permissions",
+        (
+            "Profiles narrow configured authority; they cannot add an unconfigured model, "
+            "tool, path, or credential.",
+            "Create one with `loro setup profile`, inspect it with `loro agents explain "
+            "NAME`, and switch in the REPL with `/agent NAME`.",
+            "Tool availability and permission decisions are separate. `ask` requires "
+            "trusted approval; `deny` always wins.",
+            "Web retrieval needs `shell.run`, a non-denied web permission, and approved "
+            "curl/network sandbox settings.",
+        ),
+    ),
+    "repl": (
+        "Daily REPL workflow",
+        (
+            "Run plain `loro` inside the folder you want to work on.",
+            "Use `/status`, `/new`, `/resume ID`, `/agent NAME`, `/help`, and `/exit` "
+            "to control the session.",
+            "Loro streams assistant text and reports tool starts, completions, approvals, "
+            "usage, and the durable session ID.",
+            "Use `loro run \"TASK\"` for one-shot execution and `loro plan \"GOAL\"` for "
+            "read-only planning.",
+        ),
+    ),
+    "prompts": (
+        "Prompts that work well",
+        (
+            "State the outcome, relevant folder or files, constraints, and how completion "
+            "should be verified.",
+            "Name required sources or ask for web research only when the profile has "
+            "governed web retrieval.",
+            "For consequential changes, ask Loro to inspect first, implement, run tests, "
+            "and summarize evidence.",
+            "Example: `loro run \"Inspect this project, fix the failing tests without "
+            "changing public behavior, run the focused suite, and report changed files.\"`",
+        ),
+    ),
+    "artifacts": (
+        "Documents and productivity artifacts",
+        (
+            "Use `loro docs create`, `slides create`, `sheets create`, or `brief meeting` "
+            "with a substantive authoring brief.",
+            "AI drafting is the default. Loro validates the model draft before rendering "
+            "and writes provenance sidecars.",
+            "Use `--no-ai` only when you explicitly want an offline scaffold.",
+            "Verify a result with `loro artifacts verify PATH.provenance.json`.",
+        ),
+    ),
+    "graphs": (
+        "Multi-step Agentic Graphs",
+        (
+            "Generate with `loro graph generate \"GOAL\" --out workflow.agraph.yaml`.",
+            "Review with `loro graph validate workflow.agraph.yaml --strict` and `loro "
+            "graph plan workflow.agraph.yaml --json`.",
+            "Execute with `loro graph run workflow.agraph.yaml`; Loro asks you to approve "
+            "the exact digest.",
+            "Inspect durable execution using `loro graph status RUN_ID` and resume eligible "
+            "runs with `loro graph resume RUN_ID`.",
+        ),
+    ),
+    "memory": (
+        "Memory and durable sessions",
+        (
+            "Use local memory for preferences that should remain private to this installation: "
+            "`loro remember --local \"...\"`.",
+            "Shared memory is explicit and governed: propose, review drafts, then commit "
+            "deliberately.",
+            "Use `loro sessions list` and `loro sessions show ID` to inspect durable task history.",
+            "Do not store credentials, tokens, or restricted data in prompts or memory.",
+        ),
+    ),
+    "tools": (
+        "Tools, MCP, and Skills",
+        (
+            "Models request typed file, Git, shell, memory, governed-data, artifact, MCP, "
+            "Skill, and subagent tools.",
+            "Write-like and process actions remain policy- and approval-gated; "
+            "model-provided approval is never trusted.",
+            "Configure MCP with `loro setup mcp`, then inspect with `loro mcp doctor` and "
+            "`loro mcp tools SERVER`.",
+            "Discover Skills with `loro skills list`; validate and review digests before "
+            "installation or enabling scripts.",
+        ),
+    ),
+    "governance": (
+        "Safety and troubleshooting",
+        (
+            "Keep credentials in environment variables or the credential vault, never "
+            "project TOML or prompts.",
+            "Use `loro policy explain JSON` to understand a denial and `loro agents explain "
+            "NAME` to see profile narrowing.",
+            "Run `loro doctor`, `loro config check --strict`, `loro identity doctor`, "
+            "`loro sandbox doctor`, and `loro audit doctor` when diagnosing setup.",
+            "Review approvals, tool activity, generated files, graph digests, and provenance "
+            "before consequential use.",
+        ),
+    ),
+}
+
+
+@app.command("get-started")
+def get_started(
+    topic: Annotated[
+        str | None,
+        typer.Option(
+            "--topic",
+            "-t",
+            help=(
+                "Focused guide: setup, profiles, repl, prompts, artifacts, graphs, memory, "
+                "tools, or governance."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Show a context-aware guide to setting up and working effectively with Loro."""
+    selected = topic.strip().casefold() if topic else None
+    if selected is not None and selected not in _GET_STARTED_TOPICS:
+        choices = ", ".join(_GET_STARTED_TOPICS)
+        raise typer.BadParameter(f"Unknown topic {topic!r}. Choose one of: {choices}.")
+
+    config = load_config()
+    console.print(
+        Panel(
+            "Loro is a folder-oriented AI harness: configure a model, choose an agent profile, "
+            "work in the REPL or a focused command, and let policy govern every tool action.",
+            title="Loro | getting started",
+            border_style="cyan",
+        )
+    )
+    if selected is not None:
+        _print_get_started_topic(selected)
+        console.print("\n[dim]Return to the complete guide with `loro get-started`.[/dim]")
+        return
+
+    _print_get_started_readiness(config)
+    journey = Table(title="Recommended first journey", show_lines=False)
+    journey.add_column("Step", justify="right", style="cyan", no_wrap=True)
+    journey.add_column("Command", style="bold")
+    journey.add_column("Purpose")
+    steps = [
+        ("1", "loro configure", "Select a provider and discovered primary/small models."),
+        (
+            "2",
+            "loro setup profile",
+            "Choose instructions, model route, tools, memory, and permissions.",
+        ),
+        (
+            "3",
+            "loro doctor",
+            "Check configuration, identity, provider, sandbox, audit, and storage.",
+        ),
+        ("4", "loro", "Open the streaming folder REPL and start a durable session."),
+        ("5", "loro plan \"GOAL\"", "Preview consequential work before running it."),
+        ("6", "loro run \"TASK\"", "Execute a bounded one-shot task with visible tool activity."),
+    ]
+    for row in steps:
+        journey.add_row(*row)
+    console.print(journey)
+
+    topics = Table(title="Learn the workflows", show_lines=False)
+    topics.add_column("Topic", style="cyan", no_wrap=True)
+    topics.add_column("What it covers")
+    topics.add_column("Open")
+    for name, (title, _items) in _GET_STARTED_TOPICS.items():
+        topics.add_row(name, title, f"loro get-started --topic {name}")
+    console.print(topics)
+    console.print(
+        Panel(
+            "Best default: work from the target folder, use the smallest capable profile, "
+            "describe the desired outcome and verification, review approval prompts, and keep "
+            "secrets out of prompts and project configuration.",
+            title="Working well with Loro",
+            border_style="green",
+        )
+    )
+
+
+def _print_get_started_readiness(config: LoroConfig) -> None:
+    table = Table(title=f"This folder | {Path.cwd()}", show_lines=False)
+    table.add_column("Area", style="bold")
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Next action")
+    local_config = Path(".loro/config.local.toml").is_file()
+    rows = [
+        (
+            "Project config",
+            "ready" if local_config else "not found",
+            "Review `loro config summary`" if local_config else "Run `loro configure`",
+        ),
+        (
+            "Model",
+            (
+                f"{config.model.provider}/{config.model.model}"
+                if config.model.provider != "mock"
+                else "mock (offline)"
+            ),
+            "Ready for model work" if config.model.provider != "mock" else "Run `loro configure`",
+        ),
+        (
+            "Default profile",
+            config.agent_profiles.default_profile or "none",
+            (
+                "Inspect with `loro agents explain NAME`"
+                if config.agent_profiles.default_profile
+                else "Run `loro setup profile`"
+            ),
+        ),
+        (
+            "Workspace",
+            ", ".join(config.permissions.workspace_roots) or "not restricted",
+            "Keep tool roots scoped to the project",
+        ),
+        (
+            "Web retrieval",
+            config.permissions.web,
+            "Use the profile wizard's web preset when needed",
+        ),
+        (
+            "Memory",
+            "local on" if config.memory.local.enabled else "local off",
+            "Optional: `loro setup memory`",
+        ),
+        (
+            "MCP / Skills",
+            f"{len(config.mcp.servers)} servers / {config.skills.max_active} max active skills",
+            "Optional: `loro setup mcp` and `loro skills list`",
+        ),
+        (
+            "Safety",
+            f"sandbox {'on' if config.sandbox.enabled else 'off'} / "
+            f"audit {'on' if config.audit.enabled else 'off'}",
+            "Run `loro doctor`",
+        ),
+    ]
+    for area, status, action in rows:
+        table.add_row(area, status, action)
+    console.print(table)
+
+
+def _print_get_started_topic(topic: str) -> None:
+    title, items = _GET_STARTED_TOPICS[topic]
+    console.print(f"\n[bold]{title}[/bold]")
+    for index, item in enumerate(items, start=1):
+        console.print(f"{index}. {item}")
+
+
 def _launch_repl(*, session_id: str | None = None, agent_name: str | None = None) -> None:
+    config = load_config()
+    selected_agent = agent_name or config.agent_profiles.default_profile
     run_repl(
-        load_config(),
-        lambda prompt, active_session, active_agent: _run_task(
+        config,
+        lambda prompt, active_session, active_agent, on_token, on_event: _run_task(
             prompt,
             mode="run",
             session_id=active_session,
-            stream=False,
+            stream=True,
             agent_name=active_agent,
+            on_token=on_token,
+            on_event=on_event,
         ),
         console=console,
         session_id=session_id,
-        agent_name=agent_name,
+        agent_name=selected_agent,
     )
 
 
@@ -860,10 +1156,20 @@ def _run_task(
     session_id: str | None,
     stream: bool,
     agent_name: str | None = None,
+    on_token: Callable[[str], None] | None = None,
+    on_event: RuntimeEventHandler | None = None,
 ):
     """Run one agent task, live-rendering tokens when streaming is requested."""
 
     runtime = _runtime(agent_name)
+    if on_token is not None or on_event is not None:
+        return runtime.run(
+            prompt,
+            mode=mode,
+            session_id=session_id,
+            on_token=on_token if stream else None,
+            on_event=on_event,
+        )
     if not stream:
         return runtime.run(prompt, mode=mode, session_id=session_id)
     with Live(Text(""), console=console, refresh_per_second=12, transient=True) as live:
@@ -896,15 +1202,39 @@ def plan(
     agent: Annotated[
         str | None, typer.Option("--agent", help="Plan from a named Open Agent Profile.")
     ] = None,
+    no_ai: Annotated[
+        bool,
+        typer.Option(
+            "--no-ai",
+            help="With --format agraph, explicitly create an offline one-node skeleton.",
+        ),
+    ] = False,
 ) -> None:
     """Run a read-only planning task."""
     if format == "agraph":
         if agent is not None:
             raise typer.BadParameter("--agent is supported only with --format text.")
-        from loro.agraph.generate import write_generated_graph
+        from loro.agraph.generate import write_ai_generated_graph, write_generated_graph
 
         try:
-            console.print(str(write_generated_graph(prompt, out, load_config())))
+            config = load_config()
+            path = (
+                write_generated_graph(prompt, out, config)
+                if no_ai
+                else write_ai_generated_graph(
+                    prompt,
+                    out,
+                    config,
+                    lambda request: _run_task(
+                        request,
+                        mode="plan",
+                        session_id=None,
+                        stream=False,
+                        agent_name=None,
+                    ).response,
+                )
+            )
+            console.print(str(path))
         except ValueError as error:
             raise typer.BadParameter(str(error)) from error
         return
@@ -1011,6 +1341,13 @@ def configure(
         typer.Option("--credential-ref", help="OS-keyring vault reference for the API key."),
     ] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
+    model_discovery: Annotated[
+        bool,
+        typer.Option(
+            "--discover-models/--no-discover-models",
+            help="Load the provider's current model catalog during interactive setup.",
+        ),
+    ] = True,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1026,13 +1363,43 @@ def configure(
         ]
         chosen_provider = _select_option("Provider", choices, default="mock")
     profile = get_provider_profile(chosen_provider)
+    discovered_models: tuple[str, ...] | None = None
+    if interactive and model_discovery:
+        try:
+            with console.status(f"Loading {profile.display_name} models..."):
+                catalog = discover_provider_models(
+                    profile.name,
+                    api_key_env=api_key_env,
+                    credential_ref=credential_ref,
+                    base_url=base_url,
+                )
+        except ModelDiscoveryError as error:
+            console.print(
+                f"[yellow]Live model discovery unavailable: {error} Using bundled choices.[/yellow]"
+            )
+        else:
+            discovered_models = catalog.models
+            console.print(
+                f"Loaded {len(catalog.models)} models from {catalog.source}.",
+                markup=False,
+            )
     chosen_model = model or (
-        _select_model("Primary model", profile, default=profile.default_model)
+        _select_model(
+            "Primary model",
+            profile,
+            default=profile.default_model,
+            models=discovered_models,
+        )
         if interactive
         else profile.default_model
     )
     chosen_small = small_model or (
-        _select_model("Small model", profile, default=profile.small_model)
+        _select_model(
+            "Small model",
+            profile,
+            default=profile.small_model,
+            models=discovered_models,
+        )
         if interactive
         else profile.small_model
     )
@@ -1154,6 +1521,13 @@ def setup_provider(
         typer.Option("--credential-ref", help="OS-keyring vault reference for the API key."),
     ] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="Provider base URL.")] = None,
+    model_discovery: Annotated[
+        bool,
+        typer.Option(
+            "--discover-models/--no-discover-models",
+            help="Load the provider's current model catalog during interactive setup.",
+        ),
+    ] = True,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
@@ -1167,6 +1541,7 @@ def setup_provider(
         api_key_env=api_key_env,
         credential_ref=credential_ref,
         base_url=base_url,
+        model_discovery=model_discovery,
         output=output,
     )
 
@@ -3073,6 +3448,7 @@ def config_summary() -> None:
         console.print(f"Credential vault ref: {config.model.credential_ref}")
     if config.model.base_url:
         console.print(f"Base URL: {config.model.base_url}")
+    console.print(f"Default agent profile: {config.agent_profiles.default_profile or 'none'}")
     console.print(f"Default permission: {config.permissions.default}")
     console.print(f"Policy version: {config.permissions.version}")
     console.print(f"Permission rules: {len(config.permissions.rules)}")
@@ -3842,7 +4218,7 @@ def docs_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_artifact(
@@ -3870,7 +4246,7 @@ def create_artifact(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     """Create an AI-drafted document, presentation, spreadsheet, or brief."""
@@ -3942,7 +4318,7 @@ def slides_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_artifact(
@@ -3967,7 +4343,7 @@ def sheets_analyze(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_artifact(
@@ -3992,7 +4368,7 @@ def sheets_create(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_artifact(
@@ -4017,7 +4393,7 @@ def brief_meeting(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_brief(
@@ -4040,7 +4416,7 @@ def brief_project(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_brief(
@@ -4063,7 +4439,7 @@ def brief_incident(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_brief(
@@ -4086,7 +4462,7 @@ def brief_executive(
         typer.Option("--allow-sensitive", help="Allow sensitive content if policy permits."),
     ] = False,
     no_ai: Annotated[
-        bool, typer.Option("--no-ai", help="Use the offline deterministic renderer.")
+        bool, typer.Option("--no-ai", help="Explicitly create an offline scaffold without AI.")
     ] = False,
 ) -> None:
     _create_and_print_brief(

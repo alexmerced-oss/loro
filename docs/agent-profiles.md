@@ -1,12 +1,15 @@
 # Open Agent Profiles
 
-Loro `0.13.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
+Loro `0.14.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
 provisional Level 3 against the supplied implementation guide; formal upstream certification is
 pending an immutable canonical schema and conformance-suite source.
 
 ## Create And Run
 
 ```bash
+loro setup profile
+# equivalent profile-focused entrypoint
+loro agents configure
 loro agents create reviewer --instructions "Review changes and cite concrete evidence."
 loro agents validate .loro/agents/reviewer.agent.yaml
 loro agents show reviewer
@@ -14,6 +17,29 @@ loro agents explain reviewer
 loro run --agent reviewer "Review README.md"
 loro plan --agent reviewer "Plan the smallest safe change"
 ```
+
+`loro setup profile` is the recommended interactive path. It creates a validated OAP v1 document
+and guides the profile name, description, system instructions, configured provider/model route,
+capability preset or custom tool allowlist, enabled Skills, MCP servers, memory access, workspace
+root, and learning/writeback mode. It then evaluates the profile against the resolved Loro policy
+and asks whether the profile should become the project default. The equivalent command under the
+profile namespace is `loro agents configure`. Each step explains whether the choice affects model
+behavior, tool availability, runtime permission, or the project policy ceiling.
+
+Profiles select only provider/model routes already present in Loro configuration. Run `loro
+configure` first to select a provider and dynamically discover its primary and small models, then
+re-run the profile wizard. Primary and small appear as separate choices only when their model IDs
+differ; configured tier routes appear as additional choices. This preserves the OAP authority
+rule: a profile can choose and narrow an authorized route, but cannot introduce credentials or a
+new provider endpoint.
+
+Web research currently means governed HTTP retrieval through `curl`, not a dedicated search-engine
+API. It requires three independent gates: `shell.run` in the profile tool allowlist, `web = "ask"`
+or `"allow"` at the project ceiling, and `curl` plus inherited networking in the selected shell
+sandbox. The web preset configures these gates after confirmation while keeping generic shell
+permission denied. A custom profile that includes `shell.run` asks separately about general shell
+commands and governed web retrieval, so enabling one does not silently enable the other. Managed
+configuration still applies last.
 
 `explain` is the authoritative local answer to what a profile can actually do. It prints the
 root-derived trust, inheritance lineage, selected model, effective tools, MCP servers, Skills,
@@ -114,6 +140,7 @@ supported. Conflicts reject instead of rebasing.
 ```toml
 [agent_profiles]
 enabled = true
+default_profile = "reviewer"
 managed_paths = ["/etc/loro/agents"]
 user_paths = ["~/.config/loro/agents"]
 project_paths = [".agents", ".loro/agents"]
@@ -129,8 +156,10 @@ state_path = ".loro/agent-state.json"
 proposal_path = ".loro/agent-proposals"
 ```
 
-Use `loro setup agents` to configure the local section. Managed configuration can set `writeback =
-"off"` and disable user or project roots. Existing config schema `1.0` files remain compatible
+Use `loro setup agents` to configure discovery and the writeback ceiling, or `loro setup profile`
+to author and optionally select a default profile. An explicit `--agent` always overrides the
+default for one command or REPL. Managed configuration can set `writeback = "off"`, clear the
+default, and disable user or project roots. Existing config schema `1.0` files remain compatible
 because this section is additive and defaults fail closed around writes.
 
 ## Evidence And Limitations

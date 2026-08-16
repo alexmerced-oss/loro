@@ -152,7 +152,11 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
     ),
     ToolSchema(
         name="artifact.create",
-        description="Generate a document, presentation, spreadsheet, or brief artifact.",
+        description=(
+            "Render a document, presentation, spreadsheet, or brief from final content you "
+            "author. Supply the fields for the selected kind; prompt-only calls are rejected "
+            "unless offline_scaffold is explicitly true."
+        ),
         parameters=_object(
             {
                 "kind": {
@@ -162,6 +166,24 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
                 "prompt": _STRING,
                 "output_dir": _STRING,
                 "brief_type": _STRING,
+                "title": _STRING,
+                "body_markdown": _STRING,
+                "slides": {
+                    "type": "array",
+                    "items": _object(
+                        {
+                            "title": _STRING,
+                            "bullets": {"type": "array", "items": _STRING},
+                        },
+                        ["title", "bullets"],
+                    ),
+                },
+                "columns": {"type": "array", "items": _STRING},
+                "rows": {"type": "array", "items": {"type": "array", "items": {}}},
+                "summary": _STRING,
+                "risks": {"type": "array", "items": _STRING},
+                "next_steps": {"type": "array", "items": _STRING},
+                "offline_scaffold": _BOOLEAN,
             },
             ["kind", "prompt"],
         ),
@@ -196,7 +218,7 @@ def tool_catalog(config: LoroConfig) -> list[ToolSchema]:
         disabled.add("memory.search")
     if not config.memory.shared.enabled:
         disabled.add("memory.shared_search")
-    if config.permissions.shell == "deny":
+    if config.permissions.shell == "deny" and config.permissions.web == "deny":
         disabled.add("shell.run")
     if config.permissions.edit == "deny":
         disabled.update({"file.read", "file.search", "file.write", "file.replace"})
