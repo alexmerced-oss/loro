@@ -2,6 +2,31 @@
 
 This guide gets a new user from installation to their first Loro agent task.
 
+After installation, run Loro's built-in orientation guide from the folder where you want to work:
+
+```bash
+loro get-started
+```
+
+The overview reads the effective configuration and shows readiness for the provider/model route,
+default profile, workspace boundary, web permission, memory, MCP and Skills, sandbox, and audit.
+It also provides a recommended first journey and focused guides that remain available in the CLI:
+
+```bash
+loro get-started --topic setup
+loro get-started --topic profiles
+loro get-started --topic repl
+loro get-started --topic prompts
+loro get-started --topic artifacts
+loro get-started --topic graphs
+loro get-started --topic memory
+loro get-started --topic tools
+loro get-started --topic governance
+```
+
+The guide is informational: it does not change configuration, invoke a model, or grant
+permissions. Run it again in another project folder to see that project's effective readiness.
+
 ## Install
 
 Install the CLI from PyPI:
@@ -32,6 +57,7 @@ For the fastest path, run the interactive provider wizard:
 
 ```bash
 loro configure
+loro setup profile
 loro config check --strict
 loro doctor
 ```

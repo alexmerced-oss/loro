@@ -64,14 +64,49 @@ def generation_prompt(kind: str, prompt: str, *, brief_type: str | None = None) 
         "spreadsheet": "kind, title, columns, rows; every row matches the columns",
         "brief": "kind, title, summary, risks, next_steps",
     }[kind]
+    requirements = {
+        "document": (
+            "Write the finished document in body_markdown with useful headings, developed "
+            "prose, and concrete details. Do not include TODOs, drafting instructions, or "
+            "placeholder sections."
+        ),
+        "presentation": (
+            "Create a coherent presentation whose slides develop the requested narrative. "
+            "Use specific, presentation-ready bullets rather than generic slide-writing advice."
+        ),
+        "spreadsheet": (
+            "Choose useful columns and populate meaningful rows from the request. Do not return "
+            "an empty template or rows that merely restate the prompt."
+        ),
+        "brief": (
+            "Write a decision-ready summary with request-specific risks and actionable next "
+            "steps. Do not return instructions for completing the brief later."
+        ),
+    }[kind]
     brief_note = f" The brief type is {brief_type}." if brief_type else ""
     return (
         f"Create a complete {kind} from the user's request below.{brief_note} "
         "Use substantive, accurate content rather than instructions about what to write. "
+        f"{requirements} "
         "Do not call tools. Return exactly one JSON object and no markdown fence. "
         f"The object fields are: {fields}. Set kind to {kind!r}. "
         "All prose and table values must be safe to present directly to the user.\n\n"
         f"USER REQUEST:\n{prompt.strip()}"
+    )
+
+
+def repair_generation_prompt(
+    kind: str,
+    prompt: str,
+    error: str,
+    *,
+    brief_type: str | None = None,
+) -> str:
+    return (
+        generation_prompt(kind, prompt, brief_type=brief_type)
+        + "\n\nYour previous draft was rejected by schema validation. Correct the entire draft and "
+        "return one replacement JSON object only. Validation problem: "
+        + error[:1200]
     )
 
 
@@ -110,7 +145,11 @@ def parse_generated_payload(content: str, *, expected_kind: str) -> ArtifactPayl
 
 
 def document_draft(payload: DocumentPayload) -> DocumentDraft:
-    return DocumentDraft(title=payload.title, markdown=payload.body_markdown.strip())
+    body = payload.body_markdown.strip()
+    lines = body.splitlines()
+    if lines and lines[0].strip().startswith("# "):
+        body = "\n".join(lines[1:]).lstrip()
+    return DocumentDraft(title=payload.title, markdown=body)
 
 
 def presentation_draft(payload: PresentationPayload) -> PresentationOutline:

@@ -9,7 +9,7 @@ from rich.console import Console
 
 from loro.agraph.document import GraphDocumentError, load_graph
 from loro.agraph.execute import GraphExecutionError, GraphExecutor
-from loro.agraph.generate import write_generated_graph
+from loro.agraph.generate import write_ai_generated_graph, write_generated_graph
 from loro.agraph.plan import build_plan
 from loro.agraph.policy import evaluate_policy
 from loro.agraph.store import GraphRunStore
@@ -17,6 +17,7 @@ from loro.agraph.validate import validate_graph
 from loro.config import load_config
 from loro.data_protection import DataProtectionEngine
 from loro.memory.proposals import MemoryProposal, MemoryProposalStore
+from loro.runtime import AgentRuntime
 
 graph_app = typer.Typer(help="Validate, govern, generate, and execute Agentic Graphs.")
 policy_app = typer.Typer(help="Explain managed Agentic Graph policy decisions.")
@@ -224,10 +225,25 @@ def graph_generate(
     output: Annotated[Path, typer.Option("--out", help="Output .agraph.yaml path.")] = Path(
         "generated.agraph.yaml"
     ),
+    no_ai: Annotated[
+        bool, typer.Option("--no-ai", help="Explicitly create an offline one-node skeleton.")
+    ] = False,
 ) -> None:
-    """Generate, validate, and policy-check an AGS graph skeleton."""
+    """Author, validate, and policy-check an AGS graph."""
+    config = load_config()
     try:
-        path = write_generated_graph(goal, output, load_config())
+        if no_ai:
+            path = write_generated_graph(goal, output, config)
+        else:
+            runtime = AgentRuntime(config)
+            path = write_ai_generated_graph(
+                goal,
+                output,
+                config,
+                lambda prompt: runtime.run(
+                    prompt, mode="plan", session_id=None
+                ).response,
+            )
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(str(path))

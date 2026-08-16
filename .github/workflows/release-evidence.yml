@@ -53,6 +53,7 @@ jobs:
           wheel=$(find dist -name 'loro_agent-*.whl' -print -quit)
           /tmp/loro-release-smoke/bin/python -m pip install "${wheel}[gateway]"
           /tmp/loro-release-smoke/bin/loro --version
+          /tmp/loro-release-smoke/bin/loro get-started --topic setup
           /tmp/loro-release-smoke/bin/loro doctor --help
           /tmp/loro-release-smoke/bin/loro config check --help
           /tmp/loro-release-smoke/bin/loro artifacts verify --help
@@ -78,7 +79,8 @@ jobs:
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro configure --provider mock
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro config check --strict
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro docs create \
-            "Release verification document" --output-dir /tmp/loro-release-artifacts
+            "Release verification document" --no-ai \
+            --output-dir /tmp/loro-release-artifacts
           provenance=$(find /tmp/loro-release-artifacts -name '*.provenance.json' -print -quit)
           test -n "$provenance"
           HOME=/tmp/loro-config-home /tmp/loro-release-smoke/bin/loro artifacts verify \

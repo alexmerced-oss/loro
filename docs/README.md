@@ -67,6 +67,7 @@ path to 1.0. Historical release documents are labeled as such.
 - [Loro 0.12.0 Release Plan](releases/0.12.0-plan.md)
 - [Loro 0.13.0 Release Notes](releases/0.13.0.md)
 - [Loro 0.13.0 Release Plan](releases/0.13.0-plan.md)
+- [Loro 0.14.0 Release Notes](releases/0.14.0.md)
 - [Loro 0.9.0 Release Notes](releases/0.9.0.md)
 - [Loro 0.8.0 Release Notes](releases/0.8.0.md)
 - [Loro 0.7.0 Release Notes](releases/0.7.0.md)

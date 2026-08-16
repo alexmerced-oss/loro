@@ -3,7 +3,7 @@
 ## Purpose
 
 Loro deliberately separates model-backed work from deterministic control-plane operations. This
-audit records the 0.13.0 command behavior so users know when a configured model is contacted.
+audit records the 0.14.0 command behavior so users know when a configured model is contacted.
 
 ## Model-Backed Commands
 
@@ -15,26 +15,40 @@ audit records the 0.13.0 command behavior so users know when a configured model 
 | `loro create docs|slides|sheets|brief` | Friendly aliases for the same governed AI artifact pipeline. |
 | `loro providers request`, `providers smoke --execute` | Exercise a selected provider/model directly for diagnostics. |
 
-Artifact commands use the configured model by default. `--no-ai` is the explicit offline path.
-The mock provider still traverses the runtime and then emits a deterministic substantive draft so
-tests and first-run evaluation do not require a network key.
+Artifact commands use the configured model by default. They parse the direct model response,
+request one corrected draft after schema failure, and do not write files until validation passes.
+The mock provider fails with a `loro configure` instruction instead of substituting generic
+content. `--no-ai` is the explicit offline-scaffold path.
+
+Graph generation follows the same fail-closed authoring contract: the model authors a small typed
+workflow, Loro compiles it into exact governed AGS, then validates schema and managed graph policy.
+Invalid workflow output receives one correction attempt and is written only after it passes. `graph
+generate --no-ai` and `plan --format agraph --no-ai` are the explicit deterministic skeleton paths.
 
 ## Deterministic Commands
 
 Configuration, identity, credentials, policy explanation, approvals, audit, safety, sessions,
 memory lifecycle, MCP transport, provider inspection, governed-data discovery, file wrappers, and
-shell wrappers do not invent model output. They configure, authorize, inspect, transport, or
-execute typed operations. Keeping these commands deterministic is part of Loro's governance and
-failure-analysis contract.
+shell wrappers do not invent model output. Interactive provider setup may issue a bounded,
+read-only model-catalog request; it never invokes a model. The profile wizard validates and writes
+OAP configuration without asking a model to author permissions or instructions. These commands
+configure, authorize, inspect, transport, or execute typed operations. Keeping them deterministic
+is part of Loro's governance and failure-analysis contract.
 
-`artifact.create` in the runtime tool registry is also a deterministic renderer: the agent is the
-AI author and the typed tool performs the governed write. Direct CLI artifact commands perform an
-AI drafting pass before calling that renderer.
+`loro get-started` is also deterministic and read-only. It summarizes the effective configuration
+for the current folder and prints workflow guidance without invoking a model, changing policy, or
+granting permissions.
+
+`artifact.create` in the runtime tool registry is a deterministic renderer: the calling agent must
+supply final kind-specific content such as `title` plus `body_markdown`, slides, rows, or brief
+sections. Prompt-only calls fail instead of producing placeholders. `offline_scaffold=true` is the
+explicit exception. Direct CLI artifact commands perform an AI drafting pass before calling the
+same renderer contract.
 
 ## Current Limits
 
-- Model catalogs change independently of Loro. The setup wizard offers profile defaults and a
-  custom model entry rather than claiming an exhaustive live catalog.
+- Provider catalog APIs vary in completeness and availability. The setup wizard reads the current
+  catalog when possible, then retains bundled and custom-entry fallback paths.
 - `sheets analyze` drafts an analysis workbook from prompt context; it does not yet parse an
   existing workbook as input.
 - Generated drafts are structurally validated, but factual accuracy still requires user review.

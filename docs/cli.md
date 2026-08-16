@@ -4,6 +4,8 @@
 
 ```bash
 loro --version
+loro get-started
+loro get-started --topic prompts
 loro
 loro repl --resume-session SESSION_ID
 loro doctor
@@ -20,6 +22,7 @@ loro setup polaris
 loro setup mcp
 loro setup gateway
 loro setup agents
+loro setup profile
 loro setup quickstart
 loro plan "Draft a rollout plan"
 loro run "Summarize the project"
@@ -30,21 +33,40 @@ loro graph run release.agraph.yaml --dry-run
 ```
 
 Plain `loro` opens a folder-oriented REPL with provider, model, agent, memory, and durable session
-metadata. Use `/status`, `/new`, `/resume ID`, `/agent NAME`, `/help`, or `/exit` inside it.
+metadata. Its responsive status panel keeps the ASCII parrot, workspace details, and live session,
+memory, sandbox, and audit markers together at wide and narrow terminal sizes. Use `/status`,
+`/new`, `/resume ID`, `/agent NAME`, `/help`, or `/exit` inside it. State-changing commands refresh
+the panel immediately. Assistant output streams as it arrives. Model-directed tools appear as
+concise start/completion events with safe argument previews and elapsed time, followed by a compact
+turn footer for steps, tool calls, token usage, stop state, and the shortened session ID. The REPL
+does not print the verbose batch-mode report used by `loro run`.
 
-`loro configure` and `loro setup provider` run the numbered AI provider and model wizard. The other setup
-commands guide identity, approvals, sandboxing, local memory, shared-memory, Polaris, and MCP configuration. `loro setup
-quickstart` runs the setup wizards in sequence and preserves existing sections in
-`.loro/config.local.toml`.
+`loro get-started` is the context-aware entry point for new and returning users. It summarizes
+the effective readiness of the current folder, gives a recommended first journey, and links nine
+focused terminal guides: `setup`, `profiles`, `repl`, `prompts`, `artifacts`, `graphs`, `memory`,
+`tools`, and `governance`. It is read-only and does not invoke a model or alter permissions.
+
+`loro configure` and `loro setup provider` run the numbered AI provider and model wizard. `loro
+setup profile` and `loro agents configure` create an OAP v1 profile through system-instruction,
+model-route, capability, tool, Skill, MCP, memory, workspace, and default-profile choices. The
+profile wizard explains each authority boundary and only selects configured model routes. Run
+plain `loro configure` to dynamically discover and change the primary/small routes before creating
+a profile; distinct primary/small routes and configured tiers then appear in its model menu. Web
+retrieval uses approval-gated `curl`, not a native search API, and the custom profile flow asks
+separately about generic shell and web permissions. The provider wizard discovers the provider's
+current models, with paging, search, bundled fallback choices, and `--no-discover-models` for
+offline setup. The other setup commands guide identity, approvals, sandboxing, local memory,
+shared-memory, Polaris, and MCP configuration. `loro setup quickstart` runs the setup wizards in
+sequence and preserves existing sections in `.loro/config.local.toml`.
 
 ## Complete Command Map
 
-This map reflects Loro 0.13.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.14.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
-loro agents: apply, create, digest, explain, forget, history, list, proposals, review, show, state, validate
+loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro agents: apply, configure, create, digest, explain, forget, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
 loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
@@ -65,7 +87,7 @@ loro providers: check, conformance, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
-loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, provider, quickstart, sandbox, shared-memory, skills
+loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, profile, provider, quickstart, sandbox, shared-memory, skills
 loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate
@@ -129,7 +151,7 @@ tool registry supports:
 - `memory.shared_search`: `{"query": "launch template", "tenant_id": "acme"}`
 - `shell.run`: `{"args": ["python", "-c", "print(123)"]}`
 - `polaris.readonly`: `{"args": ["catalogs", "list"]}`
-- `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide"}`
+- `artifact.create`: `{"kind": "document", "prompt": "Draft onboarding guide", "title": "Onboarding Guide", "body_markdown": "## Welcome\n\nFinal authored content."}`
 - `mcp.tools`: `{"server_id": "filesystem"}`
 - `mcp.call`: `{"server_id": "filesystem", "tool_name": "read_file", "arguments": {"path": "README.md"}}`
 - `mcp.resources`, `mcp.read`, `mcp.prompts`, and `mcp.prompt`
@@ -141,7 +163,9 @@ user-authored directives and direct `--yes` flags remain available only when non
 approvals are enabled. `deny` always blocks execution. File writes/replacements and artifact creation use the same
 safety scanner as CLI write commands. Polaris runtime calls require `[polaris].enabled = true`
 and are constrained to read-only operations. Artifact runtime calls support `document`,
-`presentation`, `spreadsheet`, and `brief`; they write provenance sidecars.
+`presentation`, `spreadsheet`, and `brief`; they require final kind-specific authored fields and
+write provenance sidecars. Prompt-only calls are rejected unless `offline_scaffold=true` is
+explicitly supplied.
 
 ## MCP
 
@@ -318,9 +342,12 @@ loro create docs "Create a practical guide to incident triage"
 
 These commands ask the configured model for a complete, typed draft, validate its JSON shape,
 scan generated content through the artifact data-protection surface, and then render Markdown,
-DOCX, PPTX, XLSX, or CSV files. `--no-ai` explicitly selects the deterministic offline renderer.
-Use `--output-dir` to choose where generated files go. The `sheets analyze` command currently
-creates an analysis workbook from prompt context; it does not ingest an existing workbook.
+DOCX, PPTX, XLSX, or CSV files. Invalid model output gets one correction attempt, and no artifact
+is written unless the draft validates. The `mock` provider fails with instructions to run `loro
+configure`; it never silently substitutes placeholder content. `--no-ai` explicitly selects the
+deterministic offline scaffold. Use `--output-dir` to choose where generated files go. The `sheets
+analyze` command currently creates an analysis workbook from prompt context; it does not ingest an
+existing workbook.
 
 ## Files And Shell
 

@@ -58,6 +58,33 @@ def test_runtime_executes_model_requested_tool(tmp_path, monkeypatch) -> None:
     assert "Tool results" in client.messages[1][-1].content
 
 
+def test_runtime_emits_stream_and_tool_lifecycle_events(tmp_path, monkeypatch) -> None:
+    note = tmp_path / "event-note.txt"
+    note.write_text("event data\n", encoding="utf-8")
+    events: list[tuple[str, dict]] = []
+    chunks: list[str] = []
+    runtime = AgentRuntime(_runtime_config(tmp_path, max_steps=1))
+
+    result = runtime.run(
+        f'Read this.\n@tool file.read {{"path": "{note}", "limit": 50}}',
+        mode="run",
+        on_token=chunks.append,
+        on_event=lambda event, payload: events.append((event, dict(payload))),
+    )
+
+    event_names = [event for event, _payload in events]
+    assert event_names == [
+        "tool.started",
+        "tool.completed",
+        "model.started",
+        "model.completed",
+    ]
+    assert events[0][1]["tool"] == "file.read"
+    assert events[1][1]["ok"] is True
+    assert "Mock response for" in "".join(chunks)
+    assert result.response in "".join(chunks)
+
+
 def test_runtime_executes_native_model_tool_call(tmp_path, monkeypatch) -> None:
     note = tmp_path / "native-note.txt"
     note.write_text("hello from a native tool call\n", encoding="utf-8")

@@ -3,6 +3,7 @@
   "cli": {
     "agents": [
       "apply",
+      "configure",
       "create",
       "digest",
       "explain",
@@ -84,6 +85,7 @@
       "serve",
       "setup"
     ],
+    "get-started": [],
     "graph": [
       "generate",
       "plan",
@@ -193,6 +195,7 @@
       "mcp-server",
       "memory",
       "polaris",
+      "profile",
       "provider",
       "quickstart",
       "sandbox",
@@ -225,13 +228,13 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:36716316a065f646855e9fcce63b5baf4366ae7ddac53844b2c173434337d9be",
-    "interoperability_matrix": "sha256:525606042bff18fde3d2600c89b514e894c11737b948c4df636afe033f9d7346",
-    "oap_conformance": "sha256:6af9a30c430caac64719234dac605c259ae3653c1a9c03a604fb3a0e84a97c1a",
+    "data_support_matrix": "sha256:ad96ef6e3071b12fe2f7a83990b3af3bf306dfe9fbaaad4885acc44300ce84e4",
+    "interoperability_matrix": "sha256:ac4db5a741748d2f2f902f812afac42aea74d241d6d87f100fab32ab41ff943a",
+    "oap_conformance": "sha256:5cb8c24845b5fe912d8481515553c004037d67b04a2d89d1b9ca3f01ce10c0a9",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:61cc7c7b38fd13c57823ef731ac1b2e10fd09c9a7963b70b8684816509b06a11",
+    "reference_deployment": "sha256:992ac1f54764ff2f4b729973f757701faa7d1270c8a63b65dcf2fd23c37ebeef",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:027f3cb7f2377e63c8067928f1a080ca906e5c097b892c865f92e5afdff3750f"
+    "support_matrix": "sha256:da546bc26801e56b992eaf79ace2589fb0bc3614a3c84e1fc06a2cf35e251d2d"
   },
   "experimental": {
     "extensions": [
@@ -271,7 +274,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.13.0",
+  "package_version": "0.14.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -287,7 +290,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.13",
+  "release_line": "0.14",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

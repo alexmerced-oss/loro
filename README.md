@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.13.0` is the current experimental feature release. The `0.10` deliberately limited stable
+Loro `0.14.0` is the current experimental feature release. The `0.10` deliberately limited stable
 core remains the stabilization baseline, while Open Agent Profile support joins the experimental
 surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
 gates.
@@ -29,14 +29,28 @@ python -m pip install "loro-agent[dev]"  # Development and test tools
 
 ## 60-Second Quick Start
 
-Loro ships with a provider setup wizard. Run it with no flags for an interactive setup:
+Start with the context-aware guide. It checks the current folder's provider, model, profile,
+workspace, web, memory, MCP, sandbox, and audit readiness, then recommends the next commands:
+
+```bash
+loro get-started
+loro get-started --topic setup
+```
+
+Loro ships with provider and profile setup wizards. Run them with no flags for interactive setup:
 
 ```bash
 loro configure
+loro setup profile
 loro config check --strict
 loro doctor
 loro
 ```
+
+The folder REPL opens with a responsive status panel that keeps Loro's ASCII parrot beside the
+current folder, provider, model, agent, session, memory, sandbox, and audit state. On narrow
+terminals the same information stacks inside one panel. Responses stream directly in a chat-style
+turn, while tool calls show concise activity and timing before a compact usage/session footer.
 
 Create a portable, governed AGS 1.0 plan when work needs explicit scheduling and approval:
 
@@ -59,9 +73,11 @@ Provider and gateway secrets can live in the operating-system credential vault, 
 named accounts for the same provider. Environment variables remain an override for automation. See
 the [Credential Vault](docs/credentials.md).
 
-The wizard presents numbered provider and model choices; select the custom-model entry when a
-new deployment or catalog entry is not bundled yet. For a no-key first run, choose the `mock`
-provider. That lets you verify the CLI,
+The wizard loads the selected provider's current model catalog, then presents numbered, searchable,
+paged model choices. Export the provider key before starting the wizard when its catalog requires
+authentication. If discovery is unavailable, Loro falls back to bundled choices and still offers a
+custom-model entry. Use `--no-discover-models` for a fully offline setup. For a no-key first run,
+choose the `mock` provider. That lets you verify the CLI,
 configuration loading, memory paths, artifact folders, and health checks before connecting a
 paid model provider.
 
@@ -128,7 +144,8 @@ loro setup quickstart
 - OS-keyring credential vault references with named provider and integration accounts.
 - Signed, identity-mapped Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways.
 - Experimental Open Agent Profile v1 named agents with fail-closed narrowing, untrusted state,
-  digest-bound proposals, and `/state`-only atomic writeback.
+  digest-bound proposals, `/state`-only atomic writeback, a complete profile wizard, and optional
+  default-profile selection.
 
 ## Configure A Provider
 
@@ -199,6 +216,7 @@ deployment-owned.
 ```bash
 loro plan "Create a release readiness checklist"
 loro run "Inspect README.md and suggest the next three improvements."
+loro setup profile
 loro agents create reviewer --instructions "Review changes and cite concrete evidence."
 loro agents explain reviewer
 loro run --agent reviewer "Review README.md"
@@ -258,7 +276,16 @@ loro data schema events --catalog prod --namespace analytics
 loro data explain-access events --catalog prod --namespace analytics --catalog-role reader
 ```
 
-Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another location. Each generated artifact also gets a `.provenance.json` sidecar.
+Artifact commands contact the configured model by default and require a complete, validated draft
+before writing any file. A malformed draft receives one correction attempt. If the resolved
+provider is `mock`, the command stops and directs you to `loro configure` instead of silently
+creating placeholder content. `--no-ai` is the explicit offline-scaffold mode.
+
+`loro graph generate` and `loro plan --format agraph` likewise author and validate a governed graph
+with the configured model. Add `--no-ai` only to request the conservative offline skeleton.
+
+Generated files are written to `artifacts/` by default. Use `--output-dir` to choose another
+location. Each generated artifact also gets a `.provenance.json` sidecar.
 
 Configuration can be layered from `.loro/config.toml`, `LORO_CONFIG`, and
 `LORO_CONFIG_CONTENT`. Enterprise-managed overlays can be supplied through

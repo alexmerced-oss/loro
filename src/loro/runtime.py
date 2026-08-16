@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
@@ -38,6 +38,7 @@ from loro.tool_schemas import canonical_tool_name, tool_catalog
 @dataclass(frozen=True)
 class AgentResult:
     summary: str
+    response: str
     mode: str
     session_id: str
     recalled_memories: list[str]
@@ -47,6 +48,9 @@ class AgentResult:
     steps: int
     usage: dict[str, int | float]
     emitted_outputs: dict[str, object]
+
+
+RuntimeEventHandler = Callable[[str, Mapping[str, Any]], None]
 
 
 class AgentRuntime:
@@ -98,6 +102,7 @@ class AgentRuntime:
         *,
         session_id: str | None = None,
         on_token: Callable[[str], None] | None = None,
+        on_event: RuntimeEventHandler | None = None,
     ) -> AgentResult:
         self.usage = UsageBudget(self.config.runtime, self.config.model)
         self.tools.graph_outputs = {}
@@ -180,7 +185,7 @@ class AgentRuntime:
                 budget=error.budget,
                 usage=self.usage.payload(),
             )
-        tool_executions.extend(self._execute_tool_calls(initial_calls, step=0))
+        tool_executions.extend(self._execute_tool_calls(initial_calls, step=0, on_event=on_event))
 
         initial_content = _initial_model_prompt(
             prompt=prompt,
@@ -235,6 +240,7 @@ class AgentRuntime:
         for step in step_range:
             steps = step
             try:
+                _emit_runtime_event(on_event, "model.started", {"step": step})
                 model_started = monotonic()
                 self.usage.before_model(messages)
                 model_response = (
@@ -276,6 +282,14 @@ class AgentRuntime:
                 step=step,
                 latency_ms=round((monotonic() - model_started) * 1000, 3),
                 usage=self.usage.payload(),
+            )
+            _emit_runtime_event(
+                on_event,
+                "model.completed",
+                {
+                    "step": step,
+                    "latency_ms": round((monotonic() - model_started) * 1000, 3),
+                },
             )
             try:
                 tool_calls = [
@@ -321,7 +335,11 @@ class AgentRuntime:
                     usage=self.usage.payload(),
                 )
                 break
-            step_executions = self._execute_tool_calls(tool_calls, step=step)
+            step_executions = self._execute_tool_calls(
+                tool_calls,
+                step=step,
+                on_event=on_event,
+            )
             tool_executions.extend(step_executions)
             messages.append(
                 ModelMessage(
@@ -424,6 +442,7 @@ class AgentRuntime:
         )
         return AgentResult(
             summary=summary,
+            response=model_response_content,
             mode=mode,
             session_id=record.session_id,
             recalled_memories=recalled_memories,
@@ -566,11 +585,23 @@ class AgentRuntime:
         )
         return result.records
 
-    def _execute_tool_calls(self, calls: list[ToolCall], *, step: int) -> list[ToolExecution]:
+    def _execute_tool_calls(
+        self,
+        calls: list[ToolCall],
+        *,
+        step: int,
+        on_event: RuntimeEventHandler | None = None,
+    ) -> list[ToolExecution]:
         executions: list[ToolExecution] = []
         for call in calls:
+            _emit_runtime_event(
+                on_event,
+                "tool.started",
+                {"tool": call.name, "args": call.args, "step": step},
+            )
             started = monotonic()
             execution = self.tools.execute(call)
+            latency_ms = round((monotonic() - started) * 1000, 3)
             executions.append(execution)
             self.audit.write(
                 "runtime.tool_executed",
@@ -578,8 +609,18 @@ class AgentRuntime:
                 ok=execution.ok,
                 step=step,
                 tool_identity=_tool_identity_payload(self.identity),
-                latency_ms=round((monotonic() - started) * 1000, 3),
+                latency_ms=latency_ms,
                 **execution.metadata,
+            )
+            _emit_runtime_event(
+                on_event,
+                "tool.completed",
+                {
+                    "tool": execution.call.name,
+                    "ok": execution.ok,
+                    "step": step,
+                    "latency_ms": latency_ms,
+                },
             )
         return executions
 
@@ -602,6 +643,8 @@ def _initial_model_prompt(
     instructions = (
         "You are Loro, a CLI agent harness. "
         "Use tool directives only when you need tool results. "
+        "Never claim that a Loro command or option exists unless it appears in provided context "
+        "or you verify it with an available tool. "
         'Tool directive format: @tool {"name": "file.read", "args": {"path": "README.md"}}. '
         "When the task is complete, respond without tool directives."
     )
@@ -770,6 +813,15 @@ def _stream_completion(
         chunks.append(chunk)
         on_token(chunk)
     return ModelResponse(content="".join(chunks))
+
+
+def _emit_runtime_event(
+    handler: RuntimeEventHandler | None,
+    event_type: str,
+    payload: Mapping[str, Any],
+) -> None:
+    if handler is not None:
+        handler(event_type, payload)
 
 
 def _tool_calls_from_model_response(calls: list[ModelToolCall]) -> list[ToolCall]:
