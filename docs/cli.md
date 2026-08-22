@@ -61,7 +61,7 @@ sequence and preserves existing sections in `.loro/config.local.toml`.
 
 ## Complete Command Map
 
-This map reflects Loro 0.15.1. Run `loro COMMAND --help` or
+This map reflects Loro 0.15.2. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text

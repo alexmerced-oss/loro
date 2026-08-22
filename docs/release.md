@@ -132,9 +132,9 @@ Release `0.14.0` adds live provider model discovery, a complete profile wizard, 
 tool activity, model-authored artifact enforcement, AI-compiled executable graphs, and the
 context-aware `get-started` guide. See [Loro 0.14.0](releases/0.14.0.md).
 
-Release `0.15.1` adds the optional local Web UI with durable multi-conversation chat,
+Release `0.15.2` adds the optional local Web UI with durable multi-conversation chat,
 profile-backed bots, governed profile/default-setting editing, streamed execution, approvals,
-cancellation, and hardened local serving. See [Loro 0.15.1](releases/0.15.1.md).
+cancellation, and hardened local serving. See [Loro 0.15.2](releases/0.15.2.md).
 
 ## Documentation
 

@@ -256,7 +256,7 @@ def test_run_handle_approval_and_cancel() -> None:
 
 def test_web_cli_help_and_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["web", "--help"])
+    result = runner.invoke(app, ["web", "--help"], terminal_width=160)
     assert result.exit_code == 0
     assert "--no-open" in result.output
     monkeypatch.chdir(tmp_path)

@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.15.1` is the current experimental feature release. The `0.10` deliberately limited stable
+Loro `0.15.2` is the current experimental feature release. The `0.10` deliberately limited stable
 core remains the stabilization baseline, while Open Agent Profile support joins the experimental
 surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
 gates.

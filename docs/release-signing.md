@@ -15,16 +15,16 @@ Verify a checked-out release tag:
 
 ```bash
 git config gpg.ssh.allowedSignersFile docs/keys/allowed_signers
-git verify-tag v0.15.1
-git show --no-patch --format=fuller v0.15.1
+git verify-tag v0.15.2
+git show --no-patch --format=fuller v0.15.2
 ```
 
 Then verify downloaded files and the CI identity:
 
 ```bash
 sha256sum --check SHA256SUMS
-gh attestation verify loro_agent-0.15.1-py3-none-any.whl --repo alexmerced-oss/loro
-gh attestation verify loro_agent-0.15.1.tar.gz --repo alexmerced-oss/loro
+gh attestation verify loro_agent-0.15.2-py3-none-any.whl --repo alexmerced-oss/loro
+gh attestation verify loro_agent-0.15.2.tar.gz --repo alexmerced-oss/loro
 ```
 
 The public key committed in the same repository is a reproducible verification input, not an
