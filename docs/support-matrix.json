@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.14",
+  "release_line": "0.15",
   "stability": "stabilization",
   "python": {
     "supported": ["3.11", "3.12", "3.13", "3.14"]
@@ -22,7 +22,7 @@
   },
   "extensions": {
     "supported": ["agent-skills", "claude-skill-import", "pi-skill-import"],
-    "experimental": ["mcp", "agentic-graphs", "open-agent-profile-v1"]
+    "experimental": ["mcp", "agentic-graphs", "open-agent-profile-v1", "local-webui"]
   },
   "remote_gateways": {
     "experimental": ["slack", "discord", "telegram", "teams", "signal-bridge", "generic"]

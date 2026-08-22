@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.14.0` is the current experimental feature release. The `0.10` deliberately limited stable
+Loro `0.15.0` is the current experimental feature release. The `0.10` deliberately limited stable
 core remains the stabilization baseline, while Open Agent Profile support joins the experimental
 surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
 gates.
@@ -24,6 +24,7 @@ python -m pip install "loro-agent[data]" # Postgres, Iceberg, and PyArrow suppor
 python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
 python -m pip install "loro-agent[mcp]"  # MCP client support
 python -m pip install "loro-agent[gateway]" # Discord and signed chat gateway support
+python -m pip install "loro-agent[webui]" # Local multi-conversation Web UI
 python -m pip install "loro-agent[dev]"  # Development and test tools
 ```
 
@@ -46,6 +47,18 @@ loro config check --strict
 loro doctor
 loro
 ```
+
+Prefer a browser workspace? The optional local Web UI uses the same governed runtime and starts
+only when explicitly requested:
+
+```bash
+python -m pip install "loro-agent[webui]"
+loro web
+```
+
+It provides durable conversations, profile-backed bots, safe profile editing, streaming tool
+activity and approvals, and default provider/model/profile settings. See the
+[Local Web UI guide](docs/webui.md).
 
 The folder REPL opens with a responsive status panel that keeps Loro's ASCII parrot beside the
 current folder, provider, model, agent, session, memory, sandbox, and audit state. On narrow
@@ -146,6 +159,8 @@ loro setup quickstart
 - Experimental Open Agent Profile v1 named agents with fail-closed narrowing, untrusted state,
   digest-bound proposals, `/state`-only atomic writeback, a complete profile wizard, and optional
   default-profile selection.
+- An optional loopback-first React Web UI with append-only conversations, profile-backed bots,
+  streamed runs and approvals, profile revision pinning, and redacted workspace settings.
 
 ## Configure A Provider
 

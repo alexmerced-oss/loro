@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.14",
+  "release_line": "0.15",
   "reference_stack": {
     "postgres": "16-alpine",
     "apache_polaris": "1.6.0",

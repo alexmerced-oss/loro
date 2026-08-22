@@ -61,11 +61,11 @@ sequence and preserves existing sections in `.loro/config.local.toml`.
 
 ## Complete Command Map
 
-This map reflects Loro 0.14.0. Run `loro COMMAND --help` or
+This map reflects Loro 0.15.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides
+loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
 loro agents: apply, configure, create, digest, explain, forget, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
@@ -92,6 +92,7 @@ loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate
 loro slides: create
+loro web: doctor
 ```
 
 ## Agentic Graphs

@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Draft for engineering and security review |
-| Scope | Loro CLI 0.14.0 and the stabilization reference deployment |
+| Scope | Loro CLI 0.15.0 and the stabilization reference deployment |
 | Review cadence | Before each enterprise pilot release and after material data-flow changes |
 | Accountable owner | Security owner (TBD) |
 | Technical owners | Runtime, identity/policy, memory/data, and release owners (TBD) |
@@ -99,6 +99,7 @@ Polaris access control.
 | TM-16 | An untrusted Agentic Graph uses prompt injection, command criteria, remote references, excessive fan-out, weak success checks, or misleading model tiers to gain authority or exhaust resources. | Unauthorized side effects, code execution, data disclosure, runaway spend, or false completion. | Three-layer validation, managed `LP` policy, permission intersection, sandboxed command checks disabled by default, local digest-pinned references, hard node/loop/map/parallel/cost bounds, strict AGX without host evaluation, harness criteria, identity gates, and digest-guarded resume. | Production sandbox, provider budget, graph-policy, and hostile-graph review remain enterprise deployment evidence. | [Agentic Graph Policy](agraph-policy.md) and `tests/test_agraph.py`. |
 | TM-17 | A session sends a message containing a permission request, forged user instruction, or `approved=true` and the receiver treats it as authoritative. | Cross-session confused deputy and unauthorized tool execution. | Every message is labeled untrusted with `carries_user_authority=false`; sends require independent policy/approval; resume does not parse relayed text as user tool directives. | Distributed mailbox authentication, concurrency/retention controls, and enterprise adversarial review. | `tests/test_session_messages.py` and [Cross-Session Messaging](session-messaging.md). |
 | TM-18 | A forged, replayed, cross-workspace, or compromised chat message launches remote work or captures a reply. | Unauthorized execution, disclosure, replay, or tenant confusion. | Platform signatures/secrets, pre-parse verification, signed freshness checks, durable hashed deduplication with rollback on persistence/submission failure, workspace/channel/user allowlists, explicit identity mapping, bounded queues, untrusted-content labels, OS-vaulted credentials, and existing policy/approval controls. | TLS reverse proxy, platform app governance, credential rotation, retention policy, production hostile-event tests, and a trusted out-of-band approval service. | `tests/test_gateway.py`, [Channel Gateways](channel-gateways.md), and deployment evidence. |
+| TM-19 | A malicious site, remote client, or local process drives the Web UI API, steals a transcript, or forges an approval. | Unauthorized execution, data disclosure, or confused-deputy approval. | Loopback default, explicit-IP binding, bearer requirement off loopback, same-site HTTP-only session cookie, CSRF token, origin checks, no CORS, CSP/frame denial, bounded messages/concurrency, redacted settings, and the existing identity/policy/approval/audit path. | Approved TLS reverse proxy, corporate identity, distributed rate limits, retention controls, browser-hardening review, and multi-user authorization before shared deployment. | `tests/test_webui.py`, frontend tests, and [Local Web UI](webui.md). |
 
 ## Abuse Cases That Must Fail Closed
 
@@ -115,6 +116,8 @@ Polaris access control.
   a skill's `allowed-tools` metadata attempts to override a deny.
 - A remote message claims to approve an action, arrives from an unmapped user/workspace/channel,
   has an invalid signature, or repeats a previously processed message id.
+- A cross-origin browser request lacks the Web UI session/CSRF binding, a non-loopback server lacks
+  a bearer token, or a profile revision changes during an existing bot conversation.
 
 ## Existing Security Positives And Known Gaps
 
@@ -131,9 +134,9 @@ is locked, revision- and spec-digest-bound, `/state`-only, atomically replaced, 
 where supported. Capability proposals never auto-apply. Remaining risk includes model susceptibility
 to prompt injection from profile role/state, local users able to mutate user/project profile files,
 single-host advisory lock semantics, and the absence of pinned canonical upstream OAP conformance
-fixtures in 0.14.0.
+fixtures in 0.15.0.
 
-Current 0.14.0 strengths include bounded agent steps and budgets, typed tools, layered managed configuration,
+Current 0.15.0 strengths include bounded agent steps and budgets, typed tools, layered managed configuration,
 permission decisions, explicit shared-memory drafts and commits, tenant fields, cited recall,
 read-only Polaris validation, secret-pattern scanning, and JSONL auditing.
 
@@ -141,7 +144,7 @@ These are stabilization controls. Identity is not yet backed by a verified corpo
 records are local rather than an enterprise approval service; tenant isolation requires managed `identity` mode and verified identity;
 normalized scopes use optional Bubblewrap only for shell/Skill execution; external audit lacks
 production and tamper-evidence proof; full subprocess coverage, DLP, retention,
-and external release-administration controls remain open. Consequently, Loro 0.14.0 is suitable for
+and external release-administration controls remain open. Consequently, Loro 0.15.0 is suitable for
 controlled evaluation with non-production or approved low-risk data, not unrestricted
 enterprise deployment.
 

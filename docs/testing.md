@@ -197,3 +197,26 @@ agents, and Pi TypeScript extensions are fixtures only and are never imported or
 Manual compatibility verification also accepted the locally installed Claude `embedded-captions`,
 `hyperframes`, and `pr-to-video` skills plus eight standalone skills from the official
 `badlogic/pi-skills` repository. Network-fetched repositories are not required by hermetic CI.
+
+## Local Web UI
+
+The Web UI has independent backend and frontend checks:
+
+```bash
+pytest -q tests/test_webui.py
+
+cd webui
+npm ci
+npm run build
+npm test
+```
+
+The Python suite covers versioned conversation persistence, append-only transcripts, CSRF and
+bearer enforcement, mock-model SSE runs, profile creation and revision updates, effective bot
+configuration, settings writes, approval decisions, cancellation, static application delivery,
+and CLI discovery. Tests use a mock provider, isolated sessions, disabled audit delivery, and an
+isolated SQLite database; they do not contact a remote model.
+
+The frontend suite compiles strict TypeScript and verifies the primary conversation workspace.
+The production build writes hashed assets into `src/loro/webui/static`. Package validation must
+confirm those assets are present in both the wheel and source distribution.

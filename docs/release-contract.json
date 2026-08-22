@@ -225,22 +225,26 @@
     ],
     "slides": [
       "create"
+    ],
+    "web": [
+      "doctor"
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:ad96ef6e3071b12fe2f7a83990b3af3bf306dfe9fbaaad4885acc44300ce84e4",
-    "interoperability_matrix": "sha256:ac4db5a741748d2f2f902f812afac42aea74d241d6d87f100fab32ab41ff943a",
-    "oap_conformance": "sha256:5cb8c24845b5fe912d8481515553c004037d67b04a2d89d1b9ca3f01ce10c0a9",
+    "data_support_matrix": "sha256:0a157b3eb2f76bced5d82e5dc74133c0edb2496c3cc9160a8f54a7e93265a38a",
+    "interoperability_matrix": "sha256:c694b8043c046d906e7f9d25e2212a4c59cc1d13e74c7167c0e44016ae25ddbc",
+    "oap_conformance": "sha256:ff95d742cfcf1de4e23674e2c2bbc1fc8381efbe5fdfb27aae242aba263a9a8f",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:992ac1f54764ff2f4b729973f757701faa7d1270c8a63b65dcf2fd23c37ebeef",
+    "reference_deployment": "sha256:c81ed14e4ba665ff5cdd87f8c34d910595fb30760c9b9b29e3eb516105c5bba3",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:da546bc26801e56b992eaf79ace2589fb0bc3614a3c84e1fc06a2cf35e251d2d"
+    "support_matrix": "sha256:87b64300f85e7d22a902a0e7b278a234992c735a35a5d43fd7f4a1f134e1d368"
   },
   "experimental": {
     "extensions": [
       "mcp",
       "agentic-graphs",
-      "open-agent-profile-v1"
+      "open-agent-profile-v1",
+      "local-webui"
     ],
     "governed_data": [
       "polaris-cli",
@@ -274,7 +278,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.14.0",
+  "package_version": "0.15.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -290,7 +294,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.14",
+  "release_line": "0.15",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

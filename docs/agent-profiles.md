@@ -1,6 +1,6 @@
 # Open Agent Profiles
 
-Loro `0.14.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
+Loro `0.15.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
 provisional Level 3 against the supplied implementation guide; formal upstream certification is
 pending an immutable canonical schema and conformance-suite source.
 

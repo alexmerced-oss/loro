@@ -51,7 +51,7 @@ jobs:
         run: |
           python -m venv /tmp/loro-release-smoke
           wheel=$(find dist -name 'loro_agent-*.whl' -print -quit)
-          /tmp/loro-release-smoke/bin/python -m pip install "${wheel}[gateway]"
+          /tmp/loro-release-smoke/bin/python -m pip install "${wheel}[gateway,webui]"
           /tmp/loro-release-smoke/bin/loro --version
           /tmp/loro-release-smoke/bin/loro get-started --topic setup
           /tmp/loro-release-smoke/bin/loro doctor --help
@@ -59,6 +59,10 @@ jobs:
           /tmp/loro-release-smoke/bin/loro artifacts verify --help
           /tmp/loro-release-smoke/bin/loro credentials --help
           /tmp/loro-release-smoke/bin/loro gateway --help
+          /tmp/loro-release-smoke/bin/loro web --help
+          cd /tmp
+          /tmp/loro-release-smoke/bin/loro web doctor
+          cd "${GITHUB_WORKSPACE}"
           /tmp/loro-release-smoke/bin/loro audit query --help
           /tmp/loro-release-smoke/bin/loro audit collect --help
           /tmp/loro-release-smoke/bin/loro audit metrics --help

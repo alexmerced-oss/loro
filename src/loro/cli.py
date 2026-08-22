@@ -163,6 +163,7 @@ from loro.skill_compat import (
 from loro.skills import SkillError, SkillRegistry
 from loro.tools.files import FileTools
 from loro.tools.shell import ShellTools
+from loro.webui.cli import web_app
 
 app = typer.Typer(
     name="loro",
@@ -221,6 +222,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(operations_app, name="operations")
 app.add_typer(artifacts_app, name="artifacts")
+app.add_typer(web_app, name="web")
 app.add_typer(agents_app, name="agents")
 setup_app.command("agents")(setup_agents)
 setup_app.command("profile")(profile_wizard)

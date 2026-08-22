@@ -11,6 +11,8 @@ Loro is a Python CLI agent harness for enterprise coding, governed data access, 
 ```mermaid
 flowchart LR
   User["Enterprise user"] --> CLI["Loro CLI / TUI"]
+  Browser["Local browser"] --> WebUI["Optional Web UI / API"]
+  WebUI --> Runtime
   Chat["Signed chat platforms / bridges"] --> Gateway["Bounded channel gateway"]
   Gateway --> CLI
   Vault["OS credential service"] --> Models
@@ -74,6 +76,8 @@ flowchart LR
 - `loro.agent_profiles`: provisional OAP v1 profile models, safe loading, discovery trust,
   deterministic digests, effective-policy narrowing, untrusted state rendering, proposals, and
   locked `/state`-only durable writeback.
+- `loro.webui`: optional loopback-first API, append-only SQLite conversation store, bounded run
+  manager, trusted approval broker, profile/settings services, and packaged React application.
 
 `loro.mcp` provides a typed registry, lazy official-SDK adapter, stdio and Streamable HTTP
 transports, modern/classic lifecycle normalization, tools/resources/prompts, CLI diagnostics,
