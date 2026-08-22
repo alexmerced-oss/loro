@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.15.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.15.1` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
 general availability because several production and organization-owned controls require evidence
@@ -49,7 +49,7 @@ AI-compiled executable graphs, and the context-aware `get-started` command. It p
 stable boundary and provisional OAP classification. Its pre-release validation run passed 614
 tests with 5 environment-dependent skips and 75.50% repository branch-aware coverage.
 
-The 0.15.0 feature release adds the optional local Web UI with durable multi-conversation chat,
+The 0.15.1 feature release adds the optional local Web UI with durable multi-conversation chat,
 profile-backed bots, governed profile and default-setting editors, streamed runtime events,
 approval handling, cancellation, and authenticated non-loopback operation. It reuses the same
 AgentRuntime, profile resolution, managed-policy narrowing, and configuration overlays as the
