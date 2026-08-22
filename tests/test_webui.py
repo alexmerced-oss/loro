@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -258,7 +259,8 @@ def test_web_cli_help_and_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     runner = CliRunner()
     result = runner.invoke(app, ["web", "--help"], terminal_width=160)
     assert result.exit_code == 0
-    assert "--no-open" in result.output
+    plain_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--no-open" in "".join(plain_output.split())
     monkeypatch.chdir(tmp_path)
     doctor = runner.invoke(app, ["web", "doctor"])
     assert doctor.exit_code == 0
