@@ -164,6 +164,13 @@ found.
 
 ## Reconnecting To A Run
 
+This applies to both chat replies and graph runs. Each executes on its own thread and records its
+result whether or not a browser is watching, and each streams an append-only event log from a
+cursor, so losing the connection loses the *view* of a turn rather than the turn.
+
+### Graph Runs
+
+
 A graph run outlives the page watching it, and the event stream is cursor-based so that a
 reconnecting browser can ask for exactly what it has not seen. That was only half-built: the client
 requested `after=-1` every time and never tracked the cursor, and its `onerror` handler closed the
@@ -181,6 +188,24 @@ can reattach to. On mount the Graphs view adopts any run still in progress and r
 beginning, because the board has no state from a run it never watched. A run waiting on an approval
 is reported as such, and replaying its `gate.requested` event re-renders the prompt, so a reattached
 run is not left stuck behind a gate nobody can answer.
+
+### Chat Replies
+
+The chat stream was cursor-capable on the server and the client ignored it: it never sent `after`,
+never reconnected, and could not find its run after a reload. Reloading mid-reply therefore lost the
+live view of a reply that was still arriving, and the transcript only caught up once the run
+finished and the conversation was refetched.
+
+The client now tracks each event's sequence and resumes from it, retrying a bounded number of times
+before reporting the connection lost. `GET /api/conversations/{id}/active-run` reports the run a
+conversation is still executing, so a reloaded page finds the reply it lost; only an unfinished run
+is offered, because a finished one already wrote its message and replaying it would show the answer
+twice. An approval still awaiting a decision is reported in the snapshot, so a reattached run is not
+left waiting on a question nobody can see.
+
+Run handles are kept for reattachment, not as history, and nothing ever removed them: a long
+session accumulated every run it had executed along with that run's whole event log. Finished
+handles are now evicted past a cap, and a run still going is never evicted however old it is.
 
 ## Governance
 

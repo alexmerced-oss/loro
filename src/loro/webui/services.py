@@ -268,6 +268,11 @@ class ApprovalDecision:
     resolved: bool = False
 
 
+# Handles are kept so a browser can reattach after a reload, not as history.
+# Without a cap a long session accumulates every run and its whole event log.
+MAX_RETAINED_RUNS = 50
+
+
 class RunHandle:
     def __init__(
         self, run_id: str, conversation_id: str, *, allow_session_scope: bool = True
@@ -280,6 +285,23 @@ class RunHandle:
         self.finished = False
         self.allow_session_scope = allow_session_scope
         self.approvals: dict[str, ApprovalDecision] = {}
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.condition:
+            return {
+                "run_id": self.run_id,
+                "conversation_id": self.conversation_id,
+                "cursor": len(self.events),
+                "finished": self.finished,
+                "cancelled": self.cancelled.is_set(),
+                # A reattaching browser must re-render an outstanding approval,
+                # or the run sits waiting on a question nobody can see.
+                "awaiting_approval": [
+                    request_id
+                    for request_id, decision in self.approvals.items()
+                    if not decision.resolved
+                ],
+            }
 
     def publish(self, event: str, **payload: Any) -> None:
         with self.condition:
@@ -377,6 +399,7 @@ class RunManager:
             allow_session_scope=allow_session_scope,
         )
         self.handles[run_id] = handle
+        self._evict()
         self.store.create_run(conversation_id, run_id)
         handle.publish("run.started", run_id=run_id, message=user_message)
         thread = threading.Thread(
@@ -554,6 +577,40 @@ class RunManager:
         if handle is None:
             raise KeyError(f"Active run not found: {run_id}")
         return handle
+
+    def active_for(self, conversation_id: str) -> RunHandle | None:
+        """The run a reloading browser should reattach to.
+
+        A reconnecting tab knows which conversation it was in, not the run id
+        it lost, so the lookup has to work from the conversation. Only a run
+        still going qualifies: a finished one already wrote its reply into the
+        conversation, and replaying it would show the answer twice.
+        """
+        with self.lock:
+            live = [
+                handle
+                for handle in self.handles.values()
+                if handle.conversation_id == conversation_id and not handle.finished
+            ]
+        # Insertion-ordered, so the last one is the newest.
+        return live[-1] if live else None
+
+    def _evict(self) -> None:
+        """Forget finished runs once the cap is passed.
+
+        Handles are held so a browser can reattach after a reload, not as
+        history: the conversation store is what persists. Nothing ever removed
+        them, so a long session accumulated every run it had executed along
+        with that run's whole event log.
+        """
+        if len(self.handles) <= MAX_RETAINED_RUNS:
+            return
+        finished = [
+            run_id for run_id, handle in self.handles.items() if handle.finished
+        ]
+        # Never evict a run still going, however old: it still has a reader coming.
+        for run_id in finished[: len(self.handles) - MAX_RETAINED_RUNS]:
+            self.handles.pop(run_id, None)
 
     def cancel(self, run_id: str) -> None:
         handle = self.get(run_id)

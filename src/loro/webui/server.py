@@ -423,6 +423,13 @@ def create_app(
         except Exception as error:
             raise translate(error) from error
 
+    @app.get("/api/conversations/{conversation_id}/active-run")
+    async def active_run(conversation_id: str) -> dict[str, Any]:
+        # A browser that reloaded mid-turn knows its conversation, not the run
+        # id it lost; this is how it finds the live handle again.
+        handle = runs.active_for(conversation_id)
+        return {"run": handle.snapshot() if handle is not None else None}
+
     @app.get("/api/runs/{run_id}")
     async def get_run(run_id: str) -> dict[str, Any]:
         try:

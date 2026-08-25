@@ -90,11 +90,41 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   return response.json();
 }
 
+export type RunSnapshot = {
+  run_id: string;
+  conversation_id: string;
+  cursor: number;
+  finished: boolean;
+  cancelled: boolean;
+  awaiting_approval: string[];
+};
+
+/** The run this conversation is still executing, if the server holds one. */
+export async function activeRun(conversationId: string): Promise<RunSnapshot | null> {
+  const found = await request<{ run: RunSnapshot | null }>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/active-run`,
+  );
+  return found.run;
+}
+
+/**
+ * Read a run's event stream.
+ *
+ * `after` is the last sequence this browser saw. Passing it is what makes a
+ * dropped connection or a page reload resume rather than lose the turn: the
+ * server replays everything past the cursor. `onCursor` reports each sequence
+ * as it arrives so a caller can reconnect from the right place.
+ */
 export async function streamRun(
   runId: string,
   onEvent: (event: string, data: any) => void,
+  options: { after?: number; onCursor?: (sequence: number) => void; signal?: AbortSignal } = {},
 ): Promise<void> {
-  const response = await fetch(`/api/runs/${runId}/events`, { headers: headers() });
+  const after = options.after ?? -1;
+  const response = await fetch(`/api/runs/${runId}/events?after=${after}`, {
+    headers: headers(),
+    signal: options.signal,
+  });
   if (!response.ok) throw await responseError(response);
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Streaming is unavailable in this browser.");
@@ -109,6 +139,8 @@ export async function streamRun(
       buffer = buffer.slice(boundary + 2);
       const event = block.match(/^event: (.+)$/m)?.[1];
       const data = block.match(/^data: (.+)$/m)?.[1];
+      const id = block.match(/^id: (\d+)$/m)?.[1];
+      if (id !== undefined) options.onCursor?.(Number(id));
       if (event && data) onEvent(event, JSON.parse(data));
       boundary = buffer.indexOf("\n\n");
     }

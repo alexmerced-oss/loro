@@ -5,13 +5,18 @@ import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { initialize, request, streamRun } from "./api";
+import { activeRun, initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
 type View = "chat" | "graphs" | "bots" | "profiles" | "governance" | "settings";
 type Approval = { runId: string; request_id: string; action: string; target: string; arguments_preview: string; scopes: string[] };
 
 const icons: Record<View, string> = { chat: "⌁", graphs: "⌘", bots: "◉", profiles: "◇", governance: "⚖", settings: "⚙" };
+
+// Bounded: a server that has actually gone away should say so rather than
+// leave the transcript reconnecting forever.
+const MAX_RECONNECTS = 5;
+const RECONNECT_DELAY_MS = 1200;
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeChoice>(initTheme);
@@ -203,6 +208,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     return () => window.removeEventListener("loro:new-conversation", open);
   }, [onNew]);
   const [approval, setApproval] = useState<Approval | null>(null);
+  const [notice, setNotice] = useState("");
+  const [resumed, setResumed] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
   const active = conversations.find((item) => item.id === activeId);
 
@@ -216,6 +223,61 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [messages, streaming, approval]);
 
+  /**
+   * Watch a run to completion, resuming if the connection drops.
+   *
+   * Split out of `send` because starting a turn is not the only way to end up
+   * watching one: a browser that reloads mid-reply, or whose connection drops,
+   * has to pick the same stream back up. Every event carries its sequence, so
+   * a reconnect asks for exactly what it has not seen.
+   */
+  const watch = useCallback(
+    async (id: string, from: number) => {
+      let seen = from;
+      let attempts = 0;
+      setRunId(id);
+      try {
+        for (;;) {
+          try {
+            await streamRun(
+              id,
+              (eventName, data) => {
+                if (eventName === "assistant.delta") setStreaming((current) => current + data.content);
+                if (eventName === "approval.requested") setApproval({ ...data, runId: id });
+                if (eventName === "approval.resolved") setApproval(null);
+                // A group hands off between speakers mid-run; label the live
+                // bubble and flush the finished reply so each voice stays a
+                // separate message.
+                if (eventName === "speaker.started") setSpeaker(String(data.profile || ""));
+                if (eventName === "speaker.finished") { setSpeaker(""); void refresh(); }
+                if (["run.failed", "run.cancelled"].includes(eventName)) setError(data.error);
+              },
+              { after: seen, onCursor: (sequence) => { seen = sequence; } },
+            );
+            return;
+          } catch (reason) {
+            // A dropped connection is not a dead run: it keeps going and still
+            // records its reply, so resume from the cursor instead of losing
+            // the rest of the answer. Bounded, so a server that has actually
+            // gone away says so rather than retrying forever.
+            attempts += 1;
+            if (attempts > MAX_RECONNECTS) throw reason;
+            setNotice(`Reconnecting to this reply (${attempts}/${MAX_RECONNECTS})…`);
+            await new Promise((resolve) => window.setTimeout(resolve, RECONNECT_DELAY_MS));
+          }
+        }
+      } finally {
+        setNotice("");
+        setRunId(null);
+        setStreaming("");
+        setSpeaker("");
+        setApproval(null);
+        await Promise.all([loadMessages(), refresh()]);
+      }
+    },
+    [loadMessages, refresh, setError],
+  );
+
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!activeId || !draft.trim() || runId) return;
@@ -225,19 +287,32 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     setStreaming("");
     try {
       const started = await request<{ run_id: string }>(`/api/conversations/${activeId}/messages`, { method: "POST", body: JSON.stringify({ content }) });
-      setRunId(started.run_id);
-      await streamRun(started.run_id, (eventName, data) => {
-        if (eventName === "assistant.delta") setStreaming((current) => current + data.content);
-        if (eventName === "approval.requested") setApproval({ ...data, runId: started.run_id });
-        // A group hands off between speakers mid-run; label the live bubble and
-        // flush the finished reply so each voice stays a separate message.
-        if (eventName === "speaker.started") setSpeaker(String(data.profile || ""));
-        if (eventName === "speaker.finished") { setSpeaker(""); void refresh(); }
-        if (["run.failed", "run.cancelled"].includes(eventName)) setError(data.error);
-      });
-    } catch (reason) { setError(String(reason)); }
-    finally { setRunId(null); setStreaming(""); setApproval(null); await Promise.all([loadMessages(), refresh()]); }
+      await watch(started.run_id, -1);
+    } catch (reason) { setError(String(reason)); setRunId(null); setStreaming(""); }
   }
+
+  // Reattach to a reply that was still arriving when this view last went away.
+  useEffect(() => {
+    if (!activeId || runId) return;
+    let abandoned = false;
+    (async () => {
+      try {
+        const live = await activeRun(activeId);
+        if (abandoned || !live || live.finished) return;
+        setResumed(true);
+        setStreaming("");
+        // From the start: this browser has no state from a run it never watched.
+        await watch(live.run_id, -1);
+      } catch {
+        /* nothing in flight is the normal case, not an error worth showing */
+      } finally {
+        if (!abandoned) setResumed(false);
+      }
+    })();
+    return () => { abandoned = true; };
+    // Deliberately keyed on the conversation only: this is recovery on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   async function decide(decision: "approve" | "deny", scope: "once" | "session" = "once") {
     if (!approval) return;
@@ -285,6 +360,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
         {!active && <EmptyChat onNew={() => onNew()} />}
         {active && !messages.length && !streaming && <div className="welcome-message"><div className="avatar">🦜</div><h2>What are we working on?</h2><p>Ask a question, inspect this workspace, or start a governed task.</p><div className="prompt-grid">{["Summarize this project", "What should I work on next?", "Review the current architecture"].map((prompt) => <button key={prompt} onClick={() => setDraft(prompt)}>{prompt}<span>↗</span></button>)}</div></div>}
         {messages.filter((item) => item.role !== "tool").map((message) => <MessageBubble key={message.id} message={message} />)}
+        {resumed && runId && <p className="run-resumed" role="status">Picked this reply back up. It kept going while the view was away.</p>}
+        {notice && <p className="run-resumed" role="status">{notice}</p>}
         {streaming && <div className="message assistant"><div className="message-label">{speaker || "Loro"} <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
         <p className="sr-only" role="status">{runId ? "Loro is working." : approval ? "Approval required." : ""}</p>
         {approval && <div className="approval-card"><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide("deny")}>Deny</button><button onClick={() => decide("approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide("approve", "session")}>For session</button>}</div></div>}

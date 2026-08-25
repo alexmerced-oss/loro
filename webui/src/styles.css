@@ -652,3 +652,4 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .first-run-key code{background:var(--c-0e1310);border:1px solid var(--c-26302a);border-radius:4px;padding:1px 5px;font:11px 'DM Mono'}
 .first-run-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .first-run-note{color:var(--c-6e7f73);font-size:11px;margin:4px 0 0}
+.run-resumed{align-self:center;margin:0 auto;font-size:11px;color:var(--c-8d9b91);border:1px solid var(--c-29332c);background:var(--c-111713);border-radius:99px;padding:6px 14px;width:fit-content}
