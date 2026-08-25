@@ -1,3 +1,4 @@
+import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initialize, request, streamRun } from "./api";
@@ -9,6 +10,7 @@ type Approval = { runId: string; request_id: string; action: string; target: str
 const icons: Record<View, string> = { chat: "⌁", bots: "◉", profiles: "◇", settings: "⚙" };
 
 export default function App() {
+  const [theme, setTheme] = useState<ThemeChoice>(initTheme);
   const [view, setView] = useState<View>("chat");
   const [workspace, setWorkspace] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -66,6 +68,21 @@ export default function App() {
           ))}
         </nav>
         <div className="workspace" title={workspace}><span className="status-dot" />Local workspace<br/><small>{workspace.split("/").pop()}</small></div>
+        <button
+          className="theme-toggle"
+          type="button"
+          onClick={() => {
+            const choice = nextTheme(theme);
+            setTheme(choice);
+            applyTheme(choice);
+            storeTheme(choice);
+          }}
+          aria-label={`Theme: ${themeLabel(theme)}. Activate to change.`}
+          title={`Theme: ${themeLabel(theme)}`}
+        >
+          <span aria-hidden="true">{themeGlyph(theme)}</span>
+          <i>{themeLabel(theme)}</i>
+        </button>
       </aside>
       <main className="main-panel">
         {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
