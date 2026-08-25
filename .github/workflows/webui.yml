@@ -1,0 +1,97 @@
+name: Web UI
+
+# The Web UI bundle is built by Vite into src/loro/webui/static/, committed,
+# and shipped inside the wheel. Nothing verified it, so editing App.tsx without
+# running `npm run build` published a release whose UI silently predated its own
+# source. This workflow makes that a failing check instead of a user report.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "webui/**"
+      - "src/loro/webui/**"
+      - ".github/workflows/webui.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      # `npm ci` refuses to run against a lockfile that disagrees with
+      # package.json, which is the check that keeps the pins honest.
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Type-check and unit-test
+        run: npx vitest run
+
+      - name: Rebuild the bundle
+        run: npm run build
+
+      - name: Fail if the committed bundle is stale
+        run: |
+          if ! git diff --quiet -- ../src/loro/webui/static; then
+            echo "::error::The committed Web UI bundle does not match the current source."
+            echo "Run 'npm run build' in webui/ and commit src/loro/webui/static/."
+            git diff --stat -- ../src/loro/webui/static
+            exit 1
+          fi
+          echo "Committed bundle matches the source."
+
+  # The bundle is only useful if the server can actually serve it. This starts
+  # the real command against a temp project and asserts the page and the
+  # token-gated API behave, which is the check that would have caught a
+  # start-up crash.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Loro with Web UI support
+        run: python -m pip install -e ".[webui]"
+
+      - name: Serve a temp workspace and check the gate
+        run: |
+          set -euo pipefail
+          workspace="$(mktemp -d)"
+          cd "$workspace"
+          COLUMNS=200 loro web --port 8765 --no-open > serve.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 40); do
+            grep -q "Loro Web UI:" serve.log && break
+            sleep 0.5
+          done
+
+          token="$(grep -oP 'token=\K[A-Za-z0-9_-]+' serve.log | head -1)"
+          test -n "$token" || { echo "no launch token was printed"; cat serve.log; exit 1; }
+
+          index="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)"
+          denied="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/session)"
+          allowed="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" http://127.0.0.1:8765/api/session)"
+
+          echo "index=$index denied=$denied allowed=$allowed"
+          test "$index" = "200"
+          test "$denied" = "401"
+          test "$allowed" = "200"

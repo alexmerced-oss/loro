@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import ipaddress
 import os
+import secrets
 import threading
 import webbrowser
 from pathlib import Path
@@ -46,6 +47,14 @@ def serve(
         raise typer.BadParameter(
             "Non-loopback Web UI binding requires --auth-token-env with a non-empty token."
         )
+    # A loopback bind used to be unauthenticated. Origin and CSRF checks stop a
+    # hostile web page, but any other local process or user on a shared machine
+    # could read the API directly. Mint a per-launch token so the browser is
+    # admitted by the URL and nothing else is.
+    minted_token = False
+    if not auth_token:
+        auth_token = secrets.token_urlsafe(32)
+        minted_token = True
     try:
         import uvicorn
     except ImportError as error:
@@ -55,9 +64,11 @@ def serve(
     from loro.webui.server import create_app
 
     url = f"http://{host}:{port}"
+    launch_url = f"{url}/?token={auth_token}" if minted_token else url
     if not no_open:
-        threading.Timer(0.7, lambda: webbrowser.open(url)).start()
-    console.print(f"Loro Web UI: {url}")
+        threading.Timer(0.7, lambda: webbrowser.open(launch_url)).start()
+    # soft_wrap keeps the token on one line; a wrapped URL cannot be copied.
+    console.print(f"Loro Web UI: {launch_url}", soft_wrap=True, highlight=False)
     uvicorn.run(
         create_app(
             project_root=Path.cwd(), database_path=database, auth_token=auth_token

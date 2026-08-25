@@ -1,24 +1,75 @@
 let csrfToken = "";
 
+const AUTH_STORAGE_KEY = "loro-auth-token";
+
+/**
+ * `loro web` mints a per-launch token and opens the browser at `/?token=...`.
+ * Capture it once, keep it for subsequent requests, and strip it from the
+ * address bar so it does not survive in history, bookmarks, or a shared
+ * screenshot.
+ */
+function captureLaunchToken(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get("token");
+  if (!token) return;
+  localStorage.setItem(AUTH_STORAGE_KEY, token);
+  url.searchParams.delete("token");
+  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+}
+
+captureLaunchToken();
+
 function headers(json = false): HeadersInit {
   const result: Record<string, string> = {};
   if (json) result["Content-Type"] = "application/json";
   if (csrfToken) result["X-Loro-CSRF"] = csrfToken;
-  const auth = localStorage.getItem("loro-auth-token");
+  const auth = localStorage.getItem(AUTH_STORAGE_KEY);
   if (auth) result.Authorization = `Bearer ${auth}`;
   return result;
 }
 
 async function responseError(response: Response): Promise<Error> {
-  let message = `${response.status} ${response.statusText}`;
+  // The body can only be consumed once. Reading it as JSON and then falling
+  // back to text() threw "body stream already read", which replaced every
+  // real server message with a browser TypeError.
+  let body = "";
   try {
-    const value = await response.json();
-    message = value.detail || message;
+    body = await response.text();
   } catch {
-    const text = await response.text();
-    if (text) message = text;
+    body = "";
   }
-  return new Error(message);
+
+  let detail = body.trim();
+  if (detail.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(detail);
+      detail = String(parsed.detail || parsed.error || detail);
+    } catch {
+      /* not JSON after all; keep the raw text */
+    }
+  }
+
+  // Named states for the cases a user can actually act on.
+  if (response.status === 401) {
+    return new Error(
+      "This workspace needs the launch token. Reopen the URL that `loro web` printed, " +
+        "or restart it to mint a new one.",
+    );
+  }
+  if (response.status === 403) {
+    return new Error(
+      detail.toLowerCase().includes("origin")
+        ? "Request blocked: it did not come from this workspace's own page."
+        : "Session expired. Reload the page to start a new one.",
+    );
+  }
+  if (response.status === 404) return new Error(detail || "That record no longer exists.");
+  if (response.status === 409) return new Error(detail || "Someone else changed this first. Reload and try again.");
+  if (response.status >= 500) {
+    return new Error(detail || "Loro hit an internal error. Check the terminal running `loro web`.");
+  }
+  return new Error(detail || `${response.status} ${response.statusText}`);
 }
 
 export async function initialize(): Promise<{ workspace: string }> {
