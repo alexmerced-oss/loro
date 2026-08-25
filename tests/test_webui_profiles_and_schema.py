@@ -185,3 +185,126 @@ def test_importing_a_duplicate_name_is_refused(workspace: Path) -> None:
     service.create(_profile("reviewer"))
     with pytest.raises(ValueError, match="already exists"):
         service.import_document(_profile("reviewer"))
+
+
+# --- group conversations -----------------------------------------------------
+
+
+class _FakeResult:
+    """Stands in for a runtime result."""
+
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.stop_reason = "stop"
+        self.usage = {"total_tokens": 1}
+        self.steps = 1
+        self.session_id = "session-1"
+
+
+def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
+    """Drive RunManager against a stubbed runtime, so no model is called."""
+    from loro.webui import services
+    from loro.webui.conversations import ConversationStore
+
+    seen: list[str] = []
+
+    class _FakeRuntime:
+        def __init__(self, _config, **kwargs) -> None:
+            self.profile = kwargs.get("profile")
+
+        def run(self, prompt, **kwargs):
+            # Record which profile spoke and what it could see.
+            seen.append(prompt)
+            name = getattr(self.profile, "name", None) or "default"
+            return _FakeResult(f"reply from {name}")
+
+    monkeypatch.setattr(services, "AgentRuntime", _FakeRuntime)
+    monkeypatch.setattr(
+        services, "build_effective_profile", lambda resolved, config: resolved
+    )
+
+    class _Resolved:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.spec_digest = f"digest-{name}"
+
+    class _Registry:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def load(self, name: str):
+            return _Resolved(name)
+
+    monkeypatch.setattr(services, "AgentProfileRegistry", _Registry)
+    monkeypatch.setattr(services, "load_config", lambda *_: _config_stub())
+
+    store = ConversationStore(tmp_path / "webui.sqlite3")
+    manager = services.RunManager(tmp_path, store)
+    conversation = store.create_conversation(
+        workspace=str(tmp_path),
+        participants=participants,
+        participant_digests={name: f"digest-{name}" for name in participants},
+    )
+    handle = manager.start(conversation["id"], "What should we ship?")
+    for _ in range(200):
+        if handle.finished:
+            break
+        import time
+
+        time.sleep(0.05)
+    return store, conversation, handle, seen
+
+
+def _config_stub():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        agent_profiles=SimpleNamespace(default_profile=None, project_paths=[".agents"]),
+        safety=SimpleNamespace(),
+        approvals=SimpleNamespace(allow_session_scope=True),
+        model=SimpleNamespace(provider="mock", model="mock-agent"),
+    )
+
+
+def test_every_participant_speaks_once_per_turn(monkeypatch, tmp_path: Path) -> None:
+    store, conversation, handle, _ = _run_group(
+        monkeypatch, tmp_path, ["reviewer", "release-notes"]
+    )
+
+    assert handle.finished
+    replies = [
+        message
+        for message in store.list_messages(conversation["id"])
+        if message["role"] == "assistant"
+    ]
+    assert [message["metadata"]["profile"] for message in replies] == [
+        "reviewer",
+        "release-notes",
+    ]
+
+
+def test_a_later_speaker_sees_what_the_earlier_one_said(monkeypatch, tmp_path: Path) -> None:
+    """Otherwise a group is just two monologues."""
+    _, _, _, prompts = _run_group(monkeypatch, tmp_path, ["reviewer", "release-notes"])
+
+    assert len(prompts) == 2
+    assert "reply from reviewer" not in prompts[0]
+    assert "reply from reviewer" in prompts[1]
+
+
+def test_a_solo_conversation_is_unchanged(monkeypatch, tmp_path: Path) -> None:
+    """The single-profile path must not gain group behaviour."""
+    from loro.webui import services
+    from loro.webui.conversations import ConversationStore
+
+    store, conversation, handle, prompts = _run_group(monkeypatch, tmp_path, [])
+    assert isinstance(store, ConversationStore)
+    assert isinstance(handle, services.RunHandle)
+    assert len(prompts) == 1
+
+    replies = [
+        message
+        for message in store.list_messages(conversation["id"])
+        if message["role"] == "assistant"
+    ]
+    assert len(replies) == 1

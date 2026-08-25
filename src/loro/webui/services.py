@@ -388,6 +388,30 @@ class RunManager:
         thread.start()
         return handle
 
+    def _resolve_profile(
+        self,
+        config: Any,
+        name: str,
+        pinned_digest: str | None,
+    ) -> Any:
+        """Load a profile, refusing it if its contract changed mid-conversation.
+
+        Pinning matters as much for a group member as for a solo bot: a profile
+        that gains authority after the conversation started must not quietly
+        start using it.
+        """
+        resolved = AgentProfileRegistry(
+            config.agent_profiles,
+            cwd=self.project_root,
+            safety=config.safety,
+        ).load(name)
+        if pinned_digest and resolved.spec_digest != pinned_digest:
+            raise ValueError(
+                f"The profile {name} changed after this conversation started. "
+                "Start a new conversation to use the new revision."
+            )
+        return build_effective_profile(resolved, config)
+
     def _execute(
         self,
         handle: RunHandle,
@@ -398,76 +422,113 @@ class RunManager:
         try:
             with self.semaphore:
                 config = load_config(self.project_root)
-                profile = None
-                profile_name = conversation["profile_name"]
-                if profile_name:
-                    resolved = AgentProfileRegistry(
-                        config.agent_profiles,
-                        cwd=self.project_root,
-                        safety=config.safety,
-                    ).load(profile_name)
-                    if resolved.spec_digest != conversation["profile_spec_digest"]:
-                        raise ValueError(
-                            "The bot profile changed after this conversation started. "
-                            "Start a new conversation to use the new revision."
-                        )
-                    profile = build_effective_profile(resolved, config)
-                runtime = AgentRuntime(
-                    config,
-                    approval_provider=handle.approval_provider,
-                    profile=profile,
-                    _profile_cwd=self.project_root,
-                )
-                contextual_prompt = _conversation_prompt(previous, prompt)
+                roster = self._participants(conversation)
+                is_group = len(conversation.get("participants") or []) > 0
+                digests = conversation.get("participant_digests") or {}
 
-                def on_token(chunk: str) -> None:
+                def on_event_for(speaker: str | None):
+                    def on_event(event: str, payload: Mapping[str, Any]) -> None:
+                        handle.check_cancelled()
+                        safe_payload = dict(payload)
+                        if speaker:
+                            safe_payload.setdefault("profile", speaker)
+                        handle.publish(event, **safe_payload)
+                        if event.startswith("tool."):
+                            self.store.add_message(
+                                handle.conversation_id,
+                                role="tool",
+                                content=json.dumps(safe_payload, sort_keys=True, default=str),
+                                metadata={"event": event, "profile": speaker or ""},
+                            )
+
+                    return on_event
+
+                def on_token_for(speaker: str | None):
+                    def on_token(chunk: str) -> None:
+                        handle.check_cancelled()
+                        handle.publish("assistant.delta", content=chunk, profile=speaker or "")
+
+                    return on_token
+
+                # A solo conversation keeps exactly its previous behaviour: one
+                # speaker, the conversation's own session, session id recorded on
+                # the first turn. A group runs each participant in order, and each
+                # one sees what the earlier speakers just said.
+                transcript = list(previous)
+                last_result = None
+                last_message = None
+
+                for index, speaker in enumerate(roster or [None]):
                     handle.check_cancelled()
-                    handle.publish("assistant.delta", content=chunk)
-
-                def on_event(event: str, payload: Mapping[str, Any]) -> None:
-                    handle.check_cancelled()
-                    safe_payload = dict(payload)
-                    handle.publish(event, **safe_payload)
-                    if event.startswith("tool."):
-                        self.store.add_message(
-                            handle.conversation_id,
-                            role="tool",
-                            content=json.dumps(safe_payload, sort_keys=True, default=str),
-                            metadata={"event": event},
+                    profile = None
+                    if speaker:
+                        pinned = (
+                            digests.get(speaker)
+                            if is_group
+                            else conversation.get("profile_spec_digest")
                         )
+                        profile = self._resolve_profile(config, speaker, pinned)
 
-                result = runtime.run(
-                    contextual_prompt,
-                    mode="run",
-                    session_id=conversation["session_id"] if previous else None,
-                    on_token=on_token,
-                    on_event=on_event,
-                )
-                if not previous:
-                    self.store.set_session_id(handle.conversation_id, result.session_id)
-                assistant = self.store.add_message(
-                    handle.conversation_id,
-                    role="assistant",
-                    content=result.response,
-                    metadata={
+                    if is_group:
+                        handle.publish("speaker.started", profile=speaker, index=index)
+
+                    runtime = AgentRuntime(
+                        config,
+                        approval_provider=handle.approval_provider,
+                        profile=profile,
+                        _profile_cwd=self.project_root,
+                    )
+                    # Group members get a fresh session each turn and read the
+                    # transcript instead, so one member's hidden context never
+                    # leaks into another's.
+                    session_id = None
+                    if not is_group and previous:
+                        session_id = conversation["session_id"]
+
+                    result = runtime.run(
+                        _conversation_prompt(transcript, prompt),
+                        mode="run",
+                        session_id=session_id,
+                        on_token=on_token_for(speaker if is_group else None),
+                        on_event=on_event_for(speaker if is_group else None),
+                    )
+                    if not is_group and not previous:
+                        self.store.set_session_id(handle.conversation_id, result.session_id)
+
+                    metadata: dict[str, Any] = {
                         "stop_reason": result.stop_reason,
                         "usage": result.usage,
                         "steps": result.steps,
-                    },
-                )
+                    }
+                    if speaker:
+                        metadata["profile"] = speaker
+                    last_message = self.store.add_message(
+                        handle.conversation_id,
+                        role="assistant",
+                        content=result.response,
+                        metadata=metadata,
+                    )
+                    last_result = result
+                    # The next speaker reads this reply as part of the transcript.
+                    transcript = [*transcript, last_message]
+
+                    if is_group:
+                        handle.publish("speaker.finished", profile=speaker, message=last_message)
+
+                assert last_result is not None and last_message is not None
                 self.store.finish_run(
                     handle.run_id,
                     status="completed",
-                    stop_reason=result.stop_reason,
+                    stop_reason=last_result.stop_reason,
                     provider=config.model.provider,
                     model=config.model.model,
-                    usage=result.usage,
+                    usage=last_result.usage,
                 )
                 handle.publish(
                     "run.completed",
-                    message=assistant,
-                    stop_reason=result.stop_reason,
-                    usage=result.usage,
+                    message=last_message,
+                    stop_reason=last_result.stop_reason,
+                    usage=last_result.usage,
                 )
         except RunCancelled as error:
             self.store.finish_run(handle.run_id, status="cancelled", error=str(error))

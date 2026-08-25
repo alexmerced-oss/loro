@@ -55,6 +55,7 @@ class ConversationStore:
                     profile_revision INTEGER,
                     profile_spec_digest TEXT,
                     participants TEXT,
+                    participant_digests TEXT,
                     session_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -100,15 +101,22 @@ class ConversationStore:
                 )
 
             # v1 -> v2: group conversations. `participants` holds a JSON list of
-            # profile names; a single-profile conversation leaves it NULL and
+            # profile names and `participant_digests` the spec digest each one
+            # was pinned to. A single-profile conversation leaves both NULL and
             # keeps using profile_name, so existing rows stay valid untouched.
+            #
+            # Added per column rather than as one block: a database part-way
+            # through this migration must be able to finish it on the next open.
             if version < 2:
                 columns = {
                     str(item["name"])
                     for item in connection.execute("PRAGMA table_info(conversations)")
                 }
-                if "participants" not in columns:
-                    connection.execute("ALTER TABLE conversations ADD COLUMN participants TEXT")
+                for column in ("participants", "participant_digests"):
+                    if column not in columns:
+                        connection.execute(
+                            f"ALTER TABLE conversations ADD COLUMN {column} TEXT"
+                        )
                 connection.execute("UPDATE webui_schema SET version = ?", (SCHEMA_VERSION,))
 
     def create_conversation(
@@ -120,6 +128,7 @@ class ConversationStore:
         profile_revision: int | None = None,
         profile_spec_digest: str | None = None,
         participants: list[str] | None = None,
+        participant_digests: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         conversation_id = str(uuid4())
         now = _now()
@@ -128,8 +137,8 @@ class ConversationStore:
             connection.execute(
                 """INSERT INTO conversations(
                     id,title,status,workspace,profile_name,profile_revision,profile_spec_digest,
-                    participants,session_id,created_at,updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    participants,participant_digests,session_id,created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     conversation_id,
                     normalized_title,
@@ -139,6 +148,7 @@ class ConversationStore:
                     profile_revision,
                     profile_spec_digest,
                     json.dumps(participants) if participants else None,
+                    json.dumps(participant_digests) if participant_digests else None,
                     conversation_id,
                     now,
                     now,
@@ -322,6 +332,16 @@ def _row(row: sqlite3.Row) -> dict[str, Any]:
             payload["participants"] = []
     elif "participants" in payload:
         payload["participants"] = []
+
+    raw_digests = payload.get("participant_digests")
+    if raw_digests:
+        try:
+            parsed = json.loads(raw_digests)
+            payload["participant_digests"] = parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            payload["participant_digests"] = {}
+    elif "participant_digests" in payload:
+        payload["participant_digests"] = {}
     return payload
 
 

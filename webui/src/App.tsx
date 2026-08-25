@@ -68,11 +68,16 @@ export default function App() {
     })();
   }, [refreshConversations, refreshProfiles]);
 
-  async function newConversation(profileName?: string) {
+  async function newConversation(profileName?: string, participants?: string[]) {
     try {
+      const roster = participants?.filter(Boolean) ?? [];
       const conversation = await request<Conversation>("/api/conversations", {
         method: "POST",
-        body: JSON.stringify({ profile_name: profileName || null }),
+        body: JSON.stringify(
+          roster.length
+            ? { participants: roster, title: `Group: ${roster.join(", ")}` }
+            : { profile_name: profileName || null },
+        ),
       });
       await refreshConversations();
       setActiveId(conversation.id);
@@ -156,6 +161,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
+  const [speaker, setSpeaker] = useState("");
   const [listOpen, setListOpen] = useState(false);
 
   // Cmd/Ctrl+Shift+N is registered globally; the handler lives here because
@@ -192,6 +198,10 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
       await streamRun(started.run_id, (eventName, data) => {
         if (eventName === "assistant.delta") setStreaming((current) => current + data.content);
         if (eventName === "approval.requested") setApproval({ ...data, runId: started.run_id });
+        // A group hands off between speakers mid-run; label the live bubble and
+        // flush the finished reply so each voice stays a separate message.
+        if (eventName === "speaker.started") setSpeaker(String(data.profile || ""));
+        if (eventName === "speaker.finished") { setSpeaker(""); void refresh(); }
         if (["run.failed", "run.cancelled"].includes(eventName)) setError(data.error);
       });
     } catch (reason) { setError(String(reason)); }
@@ -244,7 +254,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
         {!active && <EmptyChat onNew={() => onNew()} />}
         {active && !messages.length && !streaming && <div className="welcome-message"><div className="avatar">🦜</div><h2>What are we working on?</h2><p>Ask a question, inspect this workspace, or start a governed task.</p><div className="prompt-grid">{["Summarize this project", "What should I work on next?", "Review the current architecture"].map((prompt) => <button key={prompt} onClick={() => setDraft(prompt)}>{prompt}<span>↗</span></button>)}</div></div>}
         {messages.filter((item) => item.role !== "tool").map((message) => <MessageBubble key={message.id} message={message} />)}
-        {streaming && <div className="message assistant"><div className="message-label">Loro <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
+        {streaming && <div className="message assistant"><div className="message-label">{speaker || "Loro"} <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
         <p className="sr-only" role="status">{runId ? "Loro is working." : approval ? "Approval required." : ""}</p>
         {approval && <div className="approval-card"><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide("deny")}>Deny</button><button onClick={() => decide("approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide("approve", "session")}>For session</button>}</div></div>}
       </div>
@@ -254,14 +264,66 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
 }
 
 function MessageBubble({ message }: { message: Message }) {
-  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? "Loro" : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{String(message.metadata.stop_reason)} · {String((message.metadata.usage as any)?.total_tokens || 0)} tokens</div>}</div>;
+  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? (String(message.metadata?.profile || "") || "Loro") : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{String(message.metadata.stop_reason)} · {String((message.metadata.usage as any)?.total_tokens || 0)} tokens</div>}</div>;
 }
 
 function EmptyChat({ onNew }: { onNew: () => void }) { return <div className="welcome-message"><div className="avatar">🦜</div><h2>Your local agent workspace</h2><p>Create a conversation to begin.</p><button className="primary-action" onClick={onNew}>New conversation</button></div>; }
 
-function BotsView({ profiles, onChat }: { profiles: Profile[]; onChat: (profile?: string) => void }) {
-  return <div className="page"><PageHeader eyebrow="Profile-backed assistants" title="Bots" description="Each bot carries a reviewed identity, model route, and authority ceiling." />
-    <div className="bot-grid">{profiles.map((profile, index) => <article className="bot-card" key={profile.name}><div className={`bot-mark tone-${index % 4}`}>{profile.name.slice(0, 2).toUpperCase()}</div><div className="bot-title"><div><h2>{profile.name}</h2><p>{profile.description || "A governed Loro assistant."}</p></div><span className={`trust ${profile.trust}`}>{profile.trust}</span></div><div className="capability-row"><span>{profile.provider}/{profile.model}</span><span>{profile.tool_count} tools</span><span>{profile.skill_count} skills</span></div>{profile.adjustment_count > 0 && <p className="adjustment">◇ {profile.adjustment_count} managed policy adjustment{profile.adjustment_count === 1 ? "" : "s"}</p>}<button className="chat-bot" onClick={() => onChat(profile.name)}>Chat with {profile.name}<span>↗</span></button></article>)}</div>
+function BotsView({ profiles, onChat }: {
+  profiles: Profile[];
+  onChat: (profile?: string, participants?: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+
+  function toggle(name: string) {
+    setSelected((current) =>
+      current.includes(name)
+        ? current.filter((item) => item !== name)
+        : current.length >= 5
+          ? current
+          : [...current, name],
+    );
+  }
+
+  return <div className="page"><PageHeader
+      eyebrow="Profile-backed assistants"
+      title="Bots"
+      description="Talk to any profile on its own, or pick several and put them in a room together."
+    />
+    {selected.length > 0 && (
+      <div className="group-bar" role="status">
+        <div>
+          <b>{selected.length} selected</b>
+          <span>{selected.join(" · ")}</span>
+        </div>
+        <div className="group-bar-actions">
+          <button className="secondary-action" type="button" onClick={() => setSelected([])}>Clear</button>
+          <button className="primary-action" type="button" disabled={selected.length < 2}
+                  onClick={() => { onChat(undefined, selected); setSelected([]); }}>
+            Start group chat
+          </button>
+        </div>
+        {selected.length < 2 && <small className="group-hint">Pick at least two profiles for a group.</small>}
+        {selected.length === 5 && <small className="group-hint">Five is the maximum.</small>}
+      </div>
+    )}
+    <div className="bot-grid">{profiles.map((profile, index) => {
+      const picked = selected.includes(profile.name);
+      return <article className={`bot-card ${picked ? "picked" : ""}`} key={profile.name}>
+        <div className="bot-card-head">
+          <div className={`bot-mark tone-${index % 4}`}>{profile.name.slice(0, 2).toUpperCase()}</div>
+          <label className="bot-pick">
+            <input type="checkbox" checked={picked} onChange={() => toggle(profile.name)}
+                   aria-label={`Add ${profile.name} to a group chat`} />
+            <span>Group</span>
+          </label>
+        </div>
+        <div className="bot-title"><div><h2>{profile.name}</h2><p>{profile.description || "A governed Loro assistant."}</p></div><span className={`trust ${profile.trust}`}>{profile.trust}</span></div>
+        <div className="capability-row"><span>{profile.provider}/{profile.model}</span><span>{profile.tool_count} tools</span><span>{profile.skill_count} skills</span></div>
+        {profile.adjustment_count > 0 && <p className="adjustment">◇ {profile.adjustment_count} managed policy adjustment{profile.adjustment_count === 1 ? "" : "s"}</p>}
+        <button className="chat-bot" onClick={() => onChat(profile.name)}>Chat with {profile.name}<span>↗</span></button>
+      </article>;
+    })}</div>
     {!profiles.length && <EmptyPanel title="No bots configured" detail="Create a profile to give a bot its role, tools, and limits." />}
   </div>;
 }

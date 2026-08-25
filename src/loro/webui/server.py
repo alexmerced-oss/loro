@@ -14,12 +14,13 @@ from pydantic import BaseModel, Field
 from loro.agent_profiles import AgentProfileRegistry
 from loro.config import load_config
 from loro.webui.conversations import ConversationStore
-from loro.webui.services import ProfileService, RunManager, SettingsService
+from loro.webui.services import MAX_GROUP_PARTICIPANTS, ProfileService, RunManager, SettingsService
 
 
 class ConversationCreate(BaseModel):
     title: str = Field(default="New conversation", max_length=200)
     profile_name: str | None = None
+    participants: list[str] = Field(default_factory=list, max_length=5)
 
 
 class ConversationUpdate(BaseModel):
@@ -271,13 +272,34 @@ def create_app(
     async def create_conversation(payload: ConversationCreate) -> dict[str, Any]:
         try:
             config = load_config(root)
+            registry = AgentProfileRegistry(
+                config.agent_profiles, cwd=root, safety=config.safety
+            )
+
+            # A group names several profiles. Pin each one's spec digest now, so
+            # a profile that changes mid-conversation is refused rather than
+            # quietly speaking with different authority.
+            roster = [name for name in (payload.participants or []) if name]
+            if roster:
+                if len(roster) > MAX_GROUP_PARTICIPANTS:
+                    raise ValueError(
+                        f"A group conversation allows at most {MAX_GROUP_PARTICIPANTS} profiles."
+                    )
+                if len(set(roster)) != len(roster):
+                    raise ValueError("Each profile can join a group only once.")
+                digests = {name: registry.load(name).spec_digest for name in roster}
+                return store.create_conversation(
+                    title=payload.title,
+                    workspace=str(root),
+                    participants=roster,
+                    participant_digests=digests,
+                )
+
             selected = payload.profile_name or config.agent_profiles.default_profile
             revision = None
             digest = None
             if selected:
-                resolved = AgentProfileRegistry(
-                    config.agent_profiles, cwd=root, safety=config.safety
-                ).load(selected)
+                resolved = registry.load(selected)
                 revision = resolved.document.metadata.revision
                 digest = resolved.spec_digest
             return store.create_conversation(

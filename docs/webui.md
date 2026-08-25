@@ -138,6 +138,22 @@ The initial form exposes descriptions and role instructions plus the effective m
 Skills, memory stores, and policy adjustments. The API accepts the complete validated profile
 document, allowing future form controls to expand without defining another profile format.
 
+## Bots And Group Conversations
+
+The Bots view is a roster of every profile you can talk to, each showing the model route it will
+actually use, its tool and skill counts, and any managed policy adjustments. Chat with one on its
+own, or tick two to five and start a group.
+
+In a group every participant speaks once per turn, in the order you picked them, and each one reads
+what the earlier speakers just said, so the result is a conversation rather than parallel
+monologues. Replies are attributed to the profile that produced them, and tool activity carries the
+same attribution.
+
+Each participant's spec digest is pinned when the group is created. A profile that changes after
+the conversation starts is refused rather than quietly speaking with different authority, exactly
+as for a single-profile bot. Group members also run with a fresh session each turn and read the
+transcript instead, so one member's hidden context never leaks into another's.
+
 ## Portable Identities
 
 A profile can be exported as a portable Open Agent Profile document and imported into another
