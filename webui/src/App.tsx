@@ -1,3 +1,4 @@
+import { Markdown } from "./Markdown";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
@@ -164,11 +165,13 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     </section>
     <section className="chat-stage">
       <header className="chat-header"><div><small>{active?.profile_name ? "BOT CONVERSATION" : "CONVERSATION"}</small><h1>{active?.title || "Start a conversation"}</h1></div>{active?.profile_name && <span className="profile-chip">{active.profile_name} · r{active.profile_revision}</span>}</header>
-      <div className="transcript" ref={transcript}>
+      <div className="transcript" ref={transcript} role="log" aria-label="Conversation transcript"
+           aria-live="polite" aria-relevant="additions text" aria-busy={Boolean(runId)}>
         {!active && <EmptyChat onNew={() => onNew()} />}
         {active && !messages.length && !streaming && <div className="welcome-message"><div className="avatar">🦜</div><h2>What are we working on?</h2><p>Ask a question, inspect this workspace, or start a governed task.</p><div className="prompt-grid">{["Summarize this project", "What should I work on next?", "Review the current architecture"].map((prompt) => <button key={prompt} onClick={() => setDraft(prompt)}>{prompt}<span>↗</span></button>)}</div></div>}
         {messages.filter((item) => item.role !== "tool").map((message) => <MessageBubble key={message.id} message={message} />)}
-        {streaming && <div className="message assistant"><div className="message-label">Loro <span className="live-dot" /></div><div className="message-content">{streaming}</div></div>}
+        {streaming && <div className="message assistant"><div className="message-label">Loro <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
+        <p className="sr-only" role="status">{runId ? "Loro is working." : approval ? "Approval required." : ""}</p>
         {approval && <div className="approval-card"><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide("deny")}>Deny</button><button onClick={() => decide("approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide("approve", "session")}>For session</button>}</div></div>}
       </div>
       {active && <form className="composer" onSubmit={send}><textarea aria-label="Message" rows={2} placeholder={`Message ${active.profile_name || "Loro"}…`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} disabled={Boolean(runId)} /><div className="composer-footer"><span>Enter to send · Shift+Enter for a new line</span>{runId ? <button type="button" className="stop" onClick={() => request(`/api/runs/${runId}/cancel`, { method: "POST" })}>■ Stop</button> : <button disabled={!draft.trim()} aria-label="Send message">↑</button>}</div></form>}
@@ -177,7 +180,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
 }
 
 function MessageBubble({ message }: { message: Message }) {
-  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? "Loro" : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.content}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{String(message.metadata.stop_reason)} · {String((message.metadata.usage as any)?.total_tokens || 0)} tokens</div>}</div>;
+  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? "Loro" : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{String(message.metadata.stop_reason)} · {String((message.metadata.usage as any)?.total_tokens || 0)} tokens</div>}</div>;
 }
 
 function EmptyChat({ onNew }: { onNew: () => void }) { return <div className="welcome-message"><div className="avatar">🦜</div><h2>Your local agent workspace</h2><p>Create a conversation to begin.</p><button className="primary-action" onClick={onNew}>New conversation</button></div>; }
