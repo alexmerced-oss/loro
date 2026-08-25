@@ -57,8 +57,9 @@ loro web
 ```
 
 It provides durable conversations, profile-backed bots, safe profile editing, streaming tool
-activity and approvals, and default provider/model/profile settings. See the
-[Local Web UI guide](docs/webui.md).
+activity and approvals, and default provider/model/profile settings. Assistant replies render as
+markdown, and each launch prints a URL carrying a fresh access token, so the API is closed to other
+local processes. See the [Local Web UI guide](docs/webui.md).
 
 The folder REPL opens with a responsive status panel that keeps Loro's ASCII parrot beside the
 current folder, provider, model, agent, session, memory, sandbox, and audit state. On narrow
@@ -160,7 +161,8 @@ loro setup quickstart
   digest-bound proposals, `/state`-only atomic writeback, a complete profile wizard, and optional
   default-profile selection.
 - An optional loopback-first React Web UI with append-only conversations, profile-backed bots,
-  streamed runs and approvals, profile revision pinning, and redacted workspace settings.
+  streamed runs and approvals, profile revision pinning, and redacted workspace settings. Every
+  launch is token-gated, and rendered markdown never evaluates raw HTML from model output.
 
 ## Configure A Provider
 

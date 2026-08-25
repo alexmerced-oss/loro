@@ -57,6 +57,15 @@ CLI. The Web UI remains experimental and does not expand the 0.10 stable boundar
 validation run passed 624 tests with 4 environment-dependent skips and 75.58% repository
 branch-aware coverage.
 
+Unreleased work on that Web UI closes three gaps found after 0.15.2. Assistant markdown is now
+rendered rather than shown as literal `**` markers and backticks, without a raw-HTML pass, so
+untrusted model output cannot introduce elements or `javascript:` links. Loopback binding is
+token-gated per launch, matching MagAgent, which closes the API to other local processes and other
+users on a shared machine. And the committed frontend bundle is now verified in CI: the `Web UI`
+workflow reinstalls from the lockfile, runs the unit tests, rebuilds, and fails when the shipped
+assets no longer match their source, which previously could ship a UI older than its own code.
+Frontend dependencies moved from `latest` to exact pins so the bundle is reproducible.
+
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and
 validity checks are unavailable under the repository's current GitHub plan, so repository-owned

@@ -25,6 +25,18 @@ loro web doctor
 process runs only while the command is active; installing the extra does not create a daemon or
 enable remote access.
 
+Every launch mints a fresh access token and prints it as part of the URL:
+
+```text
+Loro Web UI: http://127.0.0.1:8765/?token=<per-launch-token>
+```
+
+The browser stores that token for the origin and removes it from the address bar, so it does not
+survive in history, bookmarks, or a screenshot. Opening the bare address without a token shows an
+explanation rather than an empty workspace. The token is not persisted by the server: restarting
+`loro web` invalidates the previous one, and any tab still holding it will ask you to reopen the
+printed URL.
+
 ## Conversations
 
 The Chat view provides multiple durable conversations. Each conversation has an append-only
@@ -112,13 +124,20 @@ server ceiling of four. Cancellation interrupts at the next streaming or runtime
 The default Web UI is a local operator surface, not a production multi-user service.
 
 - Loopback binding is the default.
-- A non-loopback IP is rejected unless `--auth-token-env` names a non-empty bearer token.
+- Every launch is token-gated, including on loopback. Origin and CSRF checks already stop a hostile
+  web page; the token additionally keeps other local processes and other users on a shared machine
+  out of the API.
+- A non-loopback IP is rejected unless `--auth-token-env` names a non-empty bearer token, which
+  then replaces the minted one.
 - State-changing requests require a strict same-site session cookie and CSRF header.
 - Requests with a mismatched `Origin` are rejected.
 - CORS is not enabled.
 - CSP, frame denial, no-sniff, and no-referrer headers are applied.
 - API message size, database text, history context, and concurrency are bounded.
 - Credentials and unrestricted environment data are not exposed.
+- Assistant markdown is rendered without a raw-HTML pass. Model output is untrusted because it can
+  quote a hostile file, a scraped page, or a tool result, so embedded markup stays visible text,
+  links open with `noopener`, and a `javascript:` or `data:` URL never becomes an anchor.
 - All consequential actions still pass through Loro permission, approval, sandbox, safety, and
   audit controls.
 
@@ -153,9 +172,9 @@ The React/TypeScript source lives in `webui/`. The compiled assets are packaged 
 
 ```bash
 cd webui
-npm install
-npm run build
-npm test
+npm ci            # exact, lockfile-pinned; `npm install` may drift the pins
+npx vitest run
+npm run build     # writes ../src/loro/webui/static
 
 cd ..
 python -m pip install -e ".[dev,webui]"
@@ -163,6 +182,13 @@ pytest -q tests/test_webui.py
 ruff check src/loro/webui tests/test_webui.py
 loro web doctor
 ```
+
+The compiled bundle is committed. **Any change under `webui/src` must be rebuilt and the result
+committed in the same change**, or the shipped UI silently predates its own source. The `Web UI`
+workflow enforces this: it reinstalls from the lockfile, runs the unit tests, rebuilds, and fails
+when `src/loro/webui/static` differs from what the current source produces. A second job starts
+`loro web` against a temporary workspace and asserts that the page is served and that the API is
+token-gated.
 
 Release verification must also build a wheel, inspect that the static HTML/CSS/JavaScript assets
 are present, install it into a clean environment with the `webui` extra, and check `/api/status`
