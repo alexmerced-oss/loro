@@ -201,6 +201,10 @@ class _FakeResult:
         self.session_id = "session-1"
 
 
+# Waiting on a background thread, not measuring it.
+GROUP_RUN_TIMEOUT_SECONDS = 60
+
+
 def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
     """Drive RunManager against a stubbed runtime, so no model is called."""
     from loro.webui import services
@@ -246,12 +250,15 @@ def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
         participant_digests={name: f"digest-{name}" for name in participants},
     )
     handle = manager.start(conversation["id"], "What should we ship?")
-    for _ in range(200):
-        if handle.finished:
-            break
-        import time
+    # The run finishes on its own thread. How long that takes depends on machine
+    # load and says nothing about the properties under test, so the wait is
+    # generous: a ten-second cap failed under full-suite load.
+    import time
 
-        time.sleep(0.05)
+    deadline = time.monotonic() + GROUP_RUN_TIMEOUT_SECONDS
+    while time.monotonic() < deadline and not handle.finished:
+        time.sleep(0.02)
+    assert handle.finished, "the group run never finished; the stub runtime may have raised"
     return store, conversation, handle, seen
 
 
