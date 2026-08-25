@@ -267,6 +267,40 @@ function BotsView({ profiles, onChat }: { profiles: Profile[]; onChat: (profile?
 }
 
 function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; refresh: () => Promise<void>; setError: (error: string) => void }) {
+  const importInput = useRef<HTMLInputElement>(null);
+
+  /** Download the selected identity as a portable OAP document. */
+  async function exportProfile(name: string) {
+    try {
+      const payload = await request<{ filename: string; document: unknown }>(`/api/profiles/${name}/export`);
+      const body = JSON.stringify(payload.document, null, 2);
+      const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = payload.filename.replace(/\.ya?ml$/, ".json");
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }
+
+  /** Adopt an OAP document from a file as a project profile. */
+  async function importProfile(file: File) {
+    try {
+      const text = await file.text();
+      const document = JSON.parse(text);
+      await request("/api/profiles/import", { method: "POST", body: JSON.stringify({ document }) });
+      await refresh();
+    } catch (reason) {
+      setError(
+        String(reason).includes("JSON")
+          ? "That file is not a JSON agent profile. Export one first to see the shape."
+          : String(reason),
+      );
+    }
+  }
+
   const [selected, setSelected] = useState<string | null>(profiles[0]?.name || null);
   const [document, setDocument] = useState<any>(null);
   const [effective, setEffective] = useState<any>(null);
@@ -291,7 +325,14 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
     try { await request("/api/profiles", { method: "POST", body: JSON.stringify(payload) }); await refresh(); setSelected(name); setCreating(false); } catch (reason) { setError(String(reason)); }
   }
 
-  return <div className="page"><PageHeader eyebrow="Open Agent Profiles" title="Profiles" description="Shape bot behavior while Loro keeps managed policy authoritative." action={<button onClick={() => setCreating(true)}>＋ New profile</button>} />
+  return <div className="page"><PageHeader eyebrow="Open Agent Profiles" title="Profiles" description="Shape bot behavior while Loro keeps managed policy authoritative." action={<div className="profile-actions">
+      <input ref={importInput} type="file" accept=".json,.yaml,.yml,application/json" hidden
+             onChange={(event) => { const file = event.target.files?.[0]; if (file) void importProfile(file); event.target.value = ""; }} />
+      <button className="secondary-action" type="button" onClick={() => importInput.current?.click()}>↑ Import</button>
+      <button className="secondary-action" type="button" disabled={!selected}
+              onClick={() => selected && void exportProfile(selected)}>↓ Export</button>
+      <button onClick={() => setCreating(true)}>＋ New profile</button>
+    </div>} />
     {creating && <div className="modal-backdrop"><form className="modal" onSubmit={create}><button type="button" className="modal-close" onClick={() => setCreating(false)}>×</button><small>NEW PROFILE</small><h2>Create a bot identity</h2><label>Name<input name="name" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="release-reviewer" /></label><label>Description<input name="description" placeholder="Reviews releases for evidence and risk" /></label><label>Instructions<textarea name="instructions" rows={5} defaultValue="Be helpful, precise, and cite concrete evidence." /></label><button>Create profile</button></form></div>}
     <div className="profile-layout"><aside className="profile-list">{profiles.map((profile) => <button key={profile.name} className={selected === profile.name ? "selected" : ""} onClick={() => setSelected(profile.name)}><span className="mini-mark">{profile.name.slice(0, 1).toUpperCase()}</span><span><b>{profile.name}</b><small>r{profile.revision} · {profile.trust}</small></span>{profile.default && <i>default</i>}</button>)}</aside>
       {current && document && <form className="profile-editor" onSubmit={save}><div className="editor-heading"><div><small>{current.trust.toUpperCase()} PROFILE</small><h2>{current.name}</h2></div><span className="digest" title={current.spec_digest}>digest {current.spec_digest.slice(0, 8)}</span></div>

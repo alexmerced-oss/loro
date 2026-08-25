@@ -134,6 +134,54 @@ class ProfileService:
         self._write_validated(resolved.source_path, document, previous=previous)
         return self.get(name)
 
+    def export(self, name: str) -> dict[str, Any]:
+        """The profile as a portable OAP document.
+
+        Runtime state and learned facts are deliberately excluded: an exported
+        profile is an identity to share, not a snapshot of one machine's
+        session history, and learned state is untrusted context elsewhere.
+        """
+        resolved = self._registry().load(name)
+        document = resolved.document.model_dump(mode="json", by_alias=True, exclude_none=True)
+        document.pop("state", None)
+        document.pop("history", None)
+        metadata = dict(document.get("metadata") or {})
+        metadata.pop("effectiveTrust", None)
+        document["metadata"] = metadata
+        return {
+            "name": name,
+            "filename": f"{name}.agent.yaml",
+            "document": document,
+        }
+
+    def import_document(
+        self, payload: Mapping[str, Any], *, rename: str | None = None
+    ) -> dict[str, Any]:
+        """Adopt an OAP document from a file as a project profile.
+
+        Imported identities are validated exactly like created ones, and any
+        inbound state or history is dropped: a shared profile must not carry
+        another workspace's learned claims into this one.
+        """
+        raw = dict(payload)
+        raw.pop("state", None)
+        raw.pop("history", None)
+        raw.pop("source", None)
+        raw.pop("editable", None)
+        raw.pop("spec_digest", None)
+
+        metadata = dict(raw.get("metadata") or {})
+        if rename:
+            metadata["name"] = rename
+        metadata.pop("effectiveTrust", None)
+        # An import starts this workspace's revision history at 1.
+        metadata["revision"] = 1
+        raw["metadata"] = metadata
+
+        if not metadata.get("name"):
+            raise ValueError("The profile document has no metadata.name.")
+        return self.create(raw)
+
     def _write_validated(
         self, path: Path, document: AgentProfileModel, *, previous: str | None
     ) -> None:
@@ -276,6 +324,9 @@ class RunHandle:
             raise RunCancelled("Run cancelled by user.")
 
 
+MAX_GROUP_PARTICIPANTS = 5
+
+
 class RunManager:
     def __init__(
         self,
@@ -290,6 +341,14 @@ class RunManager:
         self.handles: dict[str, RunHandle] = {}
         self.active_conversations: set[str] = set()
         self.lock = threading.Lock()
+
+    def _participants(self, conversation: dict[str, Any]) -> list[str]:
+        """Profiles that speak in one turn, in order."""
+        roster = [str(name) for name in (conversation.get("participants") or []) if str(name)]
+        if roster:
+            return roster[:MAX_GROUP_PARTICIPANTS]
+        single = conversation.get("profile_name")
+        return [str(single)] if single else []
 
     def start(self, conversation_id: str, content: str) -> RunHandle:
         prompt = content.strip()

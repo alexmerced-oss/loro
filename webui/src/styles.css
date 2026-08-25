@@ -575,3 +575,4 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .graph-draft-save{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .graph-draft-save input{background:var(--c-17150f);border:1px solid var(--c-705e37);border-radius:7px;color:var(--c-e7eee9);padding:8px 10px;font:11px 'DM Mono';min-width:210px}
 @media(max-width:900px){.graph-author-row{grid-template-columns:1fr}}
+.profile-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}

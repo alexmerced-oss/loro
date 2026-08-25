@@ -41,6 +41,11 @@ class GraphRunRequest(BaseModel):
     dry_run: bool = False
 
 
+class ProfileImport(BaseModel):
+    document: dict[str, Any]
+    rename: str | None = Field(default=None, max_length=120)
+
+
 class GraphSaveRequest(BaseModel):
     path: str = Field(min_length=1, max_length=500)
     document: dict[str, Any]
@@ -439,6 +444,20 @@ def create_app(
                 "name": document.metadata.name,
                 "revision": document.metadata.revision,
             }
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.get("/api/profiles/{name}/export")
+    async def export_profile(name: str) -> dict[str, Any]:
+        try:
+            return profiles.export(name)
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.post("/api/profiles/import", status_code=201)
+    async def import_profile(payload: ProfileImport) -> dict[str, Any]:
+        try:
+            return profiles.import_document(payload.document, rename=payload.rename)
         except Exception as error:
             raise translate(error) from error
 

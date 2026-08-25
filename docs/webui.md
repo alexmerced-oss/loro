@@ -138,6 +138,18 @@ The initial form exposes descriptions and role instructions plus the effective m
 Skills, memory stores, and policy adjustments. The API accepts the complete validated profile
 document, allowing future form controls to expand without defining another profile format.
 
+## Portable Identities
+
+A profile can be exported as a portable Open Agent Profile document and imported into another
+workspace. Export deliberately strips runtime state and revision history: an exported profile is an
+identity to share, not a snapshot of one machine's session. Import applies the same validation as
+creation, drops any inbound state or history, and starts the receiving workspace's revision history
+at 1, so a shared profile cannot carry another workspace's learned claims into this one.
+
+Each profile declares its own provider and model. The Profiles list shows the *effective* route
+after managed resolution, which is what the profile will actually use; the declared route stays in
+the document and travels with an export.
+
 ## Default Settings
 
 The Settings view can update the default provider, primary model, small model, and default profile.

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _STATUSES = {"active", "archived"}
 _ROLES = {"user", "assistant", "tool", "system-event"}
 
@@ -54,6 +54,7 @@ class ConversationStore:
                     profile_name TEXT,
                     profile_revision INTEGER,
                     profile_spec_digest TEXT,
+                    participants TEXT,
                     session_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -88,11 +89,27 @@ class ConversationStore:
                 connection.execute(
                     "INSERT INTO webui_schema(version) VALUES (?)", (SCHEMA_VERSION,)
                 )
-            elif int(row["version"]) != SCHEMA_VERSION:
+                return
+
+            version = int(row["version"])
+            if version > SCHEMA_VERSION:
                 raise RuntimeError(
                     "Unsupported Web UI database schema "
-                    f"{row['version']}; expected {SCHEMA_VERSION}."
+                    f"{version}; expected {SCHEMA_VERSION}. This database was written by a newer "
+                    "Loro. Upgrade, or point --database at a different file."
                 )
+
+            # v1 -> v2: group conversations. `participants` holds a JSON list of
+            # profile names; a single-profile conversation leaves it NULL and
+            # keeps using profile_name, so existing rows stay valid untouched.
+            if version < 2:
+                columns = {
+                    str(item["name"])
+                    for item in connection.execute("PRAGMA table_info(conversations)")
+                }
+                if "participants" not in columns:
+                    connection.execute("ALTER TABLE conversations ADD COLUMN participants TEXT")
+                connection.execute("UPDATE webui_schema SET version = ?", (SCHEMA_VERSION,))
 
     def create_conversation(
         self,
@@ -102,6 +119,7 @@ class ConversationStore:
         profile_name: str | None = None,
         profile_revision: int | None = None,
         profile_spec_digest: str | None = None,
+        participants: list[str] | None = None,
     ) -> dict[str, Any]:
         conversation_id = str(uuid4())
         now = _now()
@@ -110,8 +128,8 @@ class ConversationStore:
             connection.execute(
                 """INSERT INTO conversations(
                     id,title,status,workspace,profile_name,profile_revision,profile_spec_digest,
-                    session_id,created_at,updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    participants,session_id,created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     conversation_id,
                     normalized_title,
@@ -120,6 +138,7 @@ class ConversationStore:
                     profile_name,
                     profile_revision,
                     profile_spec_digest,
+                    json.dumps(participants) if participants else None,
                     conversation_id,
                     now,
                     now,
@@ -289,7 +308,21 @@ class ConversationStore:
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+    payload = dict(row)
+    # `participants` is stored as JSON so a group conversation keeps its roster
+    # in one column; readers always see a list.
+    raw = payload.get("participants")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            payload["participants"] = (
+                [str(item) for item in parsed] if isinstance(parsed, list) else []
+            )
+        except (TypeError, ValueError):
+            payload["participants"] = []
+    elif "participants" in payload:
+        payload["participants"] = []
+    return payload
 
 
 def _message_row(row: sqlite3.Row) -> dict[str, Any]:

@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from loro.approvals import ApprovalRequest
 from loro.cli import app
-from loro.webui.conversations import ConversationStore
+from loro.webui.conversations import SCHEMA_VERSION, ConversationStore
 from loro.webui.server import create_app
 from loro.webui.services import RunHandle
 
@@ -273,9 +273,17 @@ def test_web_database_schema_is_versioned(tmp_path: Path) -> None:
     import sqlite3
 
     with sqlite3.connect(path) as connection:
-        assert connection.execute("SELECT version FROM webui_schema").fetchone()[0] == 1
+        version = connection.execute("SELECT version FROM webui_schema").fetchone()[0]
         columns = connection.execute("PRAGMA table_info(messages)").fetchall()
+        conversation_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(conversations)")
+        }
+    # Pinned to the module rather than a literal, so a future migration updates
+    # this test by changing one constant instead of hunting for a stray number.
+    assert version == SCHEMA_VERSION
     assert {item[1] for item in columns} >= {"conversation_id", "role", "metadata_json"}
+    # v2 added group rosters.
+    assert "participants" in conversation_columns
 
 
 def test_tool_event_metadata_is_json_serializable(tmp_path: Path) -> None:
