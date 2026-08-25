@@ -207,6 +207,32 @@ Run handles are kept for reattachment, not as history, and nothing ever removed 
 session accumulated every run it had executed along with that run's whole event log. Finished
 handles are now evicted past a cap, and a run still going is never evicted however old it is.
 
+## Memory
+
+Loro keeps three related things: local memories written for this workspace, a queue of proposals the
+agent has raised for a human to decide, and governed shared memory behind a Postgres or Iceberg
+backend. None of it was reachable from the browser, so the memory shaping every reply was invisible
+and the proposal queue could only be reviewed from a terminal.
+
+**Proposals** is the review queue and the only screen here that changes anything. Accepting a local
+proposal writes a local memory; accepting a shared one stages a shared-memory draft rather than
+committing it, because committing to a governed backend is a separate, deliberate step, and the
+result says so and names the command. Both use the same defaults `loro memory accept-proposal` uses,
+so accepting here and accepting there put a draft in the same place.
+
+**Declining is new.** There was no way to decline a proposal anywhere: the CLI only accepts, so the
+queue could only grow and a proposal you did not want stayed pending forever. Declining writes
+nothing to memory. Every decision, either way, is written to the audit record.
+
+Deciding a proposal twice is refused by name rather than silently applied, because two open tabs is
+a race and not a fault, and each proposal reports whether it can still be decided so the UI does not
+offer buttons that would be rejected.
+
+**Local memories** lists and searches what this workspace remembers, newest first, bounded and
+reporting when the list was cut. **Shared memory** searches the governed backend and shows the
+citation each record carries, which is how a shared memory is referred to elsewhere. An unreachable
+backend explains itself instead of rendering as an empty result.
+
 ## Governance
 
 The Governance view is the evidence surface, and it is entirely read-only.

@@ -90,6 +90,12 @@ readiness `loro get-started` does and can select a provider and model, but never
 credential: keys stay in the environment or the OS keyring, and it reports only whether one was
 found and which variable it expects.
 
+A Memory view exposes the last subsystem the browser could not see. Local memories, the proposal
+queue, and governed shared memory were all terminal-only, so the memory shaping every reply was
+invisible from the interface that displayed those replies. Accepting a proposal writes a local
+memory or stages a shared draft exactly as the CLI does, and declining one is newly possible at all:
+the CLI only accepts, so the queue could previously only grow. Both decisions are audited.
+
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and
 validity checks are unavailable under the repository's current GitHub plan, so repository-owned

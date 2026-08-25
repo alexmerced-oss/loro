@@ -83,6 +83,12 @@ class GateDecision(BaseModel):
     approved: bool
 
 
+class MemoryRejection(BaseModel):
+    # Optional: a declined proposal is more useful in the audit record with a
+    # reason, but requiring one would just get an empty string typed in.
+    reason: str = ""
+
+
 class SettingsUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
@@ -150,6 +156,7 @@ def create_app(
     graphs = GraphService(root)
 
     from loro.webui.governance import GovernanceService
+    from loro.webui.memory import MemoryService
     from loro.webui.onboarding import OnboardingService
 
     onboarding = OnboardingService(root)
@@ -172,6 +179,39 @@ def create_app(
 
 
     governance = GovernanceService(root)
+    memory = MemoryService(root)
+
+    @app.get("/api/memory/overview")
+    async def memory_overview() -> dict[str, Any]:
+        return memory.overview()
+
+    @app.get("/api/memory/memories")
+    async def memory_list(q: str = "", limit: int = 50) -> dict[str, Any]:
+        return memory.memories(q, limit)
+
+    @app.get("/api/memory/proposals")
+    async def memory_proposals(status: str = "") -> dict[str, Any]:
+        return memory.proposals(status)
+
+    @app.post("/api/memory/proposals/{proposal_id}/accept")
+    async def memory_accept(proposal_id: str) -> dict[str, Any]:
+        try:
+            return memory.accept(proposal_id)
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.post("/api/memory/proposals/{proposal_id}/reject")
+    async def memory_reject(
+        proposal_id: str, payload: MemoryRejection | None = None
+    ) -> dict[str, Any]:
+        try:
+            return memory.reject(proposal_id, payload.reason if payload else "")
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.get("/api/memory/shared")
+    async def memory_shared(q: str = "", tenant_id: str = "", limit: int = 20) -> dict[str, Any]:
+        return memory.shared_search(q, tenant_id=tenant_id, limit=limit)
 
     @app.get("/api/governance/status")
     async def governance_status() -> dict[str, Any]:

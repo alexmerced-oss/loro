@@ -1,5 +1,6 @@
 import { FirstRun } from "./FirstRun";
 import { GovernanceView } from "./GovernanceView";
+import { MemoryView } from "./MemoryView";
 import { GraphsView } from "./GraphsView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
@@ -8,10 +9,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { activeRun, initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
-type View = "chat" | "graphs" | "bots" | "profiles" | "governance" | "settings";
+type View = "chat" | "graphs" | "bots" | "profiles" | "memory" | "governance" | "settings";
 type Approval = { runId: string; request_id: string; action: string; target: string; arguments_preview: string; scopes: string[] };
 
-const icons: Record<View, string> = { chat: "⌁", graphs: "⌘", bots: "◉", profiles: "◇", governance: "⚖", settings: "⚙" };
+const icons: Record<View, string> = { chat: "⌁", graphs: "⌘", bots: "◉", profiles: "◇", memory: "❖", governance: "⚖", settings: "⚙" };
 
 // Bounded: a server that has actually gone away should say so rather than
 // leave the transcript reconnecting forever.
@@ -43,8 +44,9 @@ export default function App() {
     { key: "2", mod: true, describe: "Go to Graphs", run: () => setView("graphs") },
     { key: "3", mod: true, describe: "Go to Bots", run: () => setView("bots") },
     { key: "4", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
-    { key: "5", mod: true, describe: "Go to Governance", run: () => setView("governance") },
-    { key: "6", mod: true, describe: "Go to Settings", run: () => setView("settings") },
+    { key: "5", mod: true, describe: "Go to Memory", run: () => setView("memory") },
+    { key: "6", mod: true, describe: "Go to Governance", run: () => setView("governance") },
+    { key: "7", mod: true, describe: "Go to Settings", run: () => setView("settings") },
     { key: "/", describe: "Show keyboard shortcuts", run: () => setShowShortcuts(true) },
     { key: "Escape", describe: "Close a dialog or clear an error", run: () => {
         setShowShortcuts(false);
@@ -173,6 +175,7 @@ export default function App() {
         {view === "graphs" && <GraphsView setError={setError} />}
         {view === "bots" && <BotsView profiles={profiles} onChat={newConversation} />}
         {view === "profiles" && <ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} />}
+        {view === "memory" && <MemoryView setError={setError} />}
         {view === "governance" && <GovernanceView setError={setError} />}
         {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} />}
       </main>
