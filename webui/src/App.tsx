@@ -153,6 +153,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
+  const [listOpen, setListOpen] = useState(false);
 
   // Cmd/Ctrl+Shift+N is registered globally; the handler lives here because
   // this is where onNew is in scope.
@@ -218,11 +219,13 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     await refresh();
   }
 
-  return <div className="chat-layout">
+  return <div className={`chat-layout ${listOpen ? "list-open" : ""}`}>
+      <button className="list-scrim" type="button" aria-label="Hide conversations"
+              onClick={() => setListOpen(false)} tabIndex={listOpen ? 0 : -1} />
     <section className="conversation-list">
       <div className="section-heading"><div><small>Workspace</small><h2>Conversations</h2></div><button className="icon-button" onClick={() => onNew()} aria-label="New conversation">＋</button></div>
       <div className="conversation-items">
-        {conversations.map((item) => <button key={item.id} className={`conversation-row ${item.id === activeId ? "selected" : ""}`} onClick={() => setActiveId(item.id)}>
+        {conversations.map((item) => <button key={item.id} className={`conversation-row ${item.id === activeId ? "selected" : ""}`} onClick={() => { setActiveId(item.id); setListOpen(false); }}>
           <span className="conversation-icon">{item.profile_name ? "◉" : "⌁"}</span><span><b>{item.title}</b><small>{item.profile_name || "Loro default"} · {relativeTime(item.updated_at)}</small></span>
         </button>)}
         {!conversations.length && <div className="empty-small">No conversations yet.</div>}
@@ -230,7 +233,9 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
       {active && <div className="conversation-actions"><button onClick={() => rename(active)}>Rename</button><button onClick={() => archive(active.id)}>Archive</button><button className="danger" onClick={() => remove(active)}>Delete</button></div>}
     </section>
     <section className="chat-stage">
-      <header className="chat-header"><div><small>{active?.profile_name ? "BOT CONVERSATION" : "CONVERSATION"}</small><h1>{active?.title || "Start a conversation"}</h1></div>{active?.profile_name && <span className="profile-chip">{active.profile_name} · r{active.profile_revision}</span>}</header>
+      <header className="chat-header">
+        <button className="list-toggle" type="button" onClick={() => setListOpen(true)}
+                aria-label="Show conversations" aria-expanded={listOpen}>☰</button><div><small>{active?.profile_name ? "BOT CONVERSATION" : "CONVERSATION"}</small><h1>{active?.title || "Start a conversation"}</h1></div>{active?.profile_name && <span className="profile-chip">{active.profile_name} · r{active.profile_revision}</span>}</header>
       <div className="transcript" ref={transcript} role="log" aria-label="Conversation transcript"
            aria-live="polite" aria-relevant="additions text" aria-busy={Boolean(runId)}>
         {!active && <EmptyChat onNew={() => onNew()} />}

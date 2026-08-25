@@ -492,3 +492,20 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .shortcuts-sheet li{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:9px 2px;border-bottom:1px solid var(--c-29332c);font-size:12px}
 .shortcuts-sheet li:last-child{border-bottom:0}
 .shortcuts-sheet kbd{font:11px 'DM Mono',ui-monospace,monospace;border:1px solid var(--c-34433a);background:var(--c-0e1310);border-radius:5px;padding:3px 7px;white-space:nowrap}
+
+/* --- Small-screen conversation drawer ------------------------------------
+   Below 680px the conversation list was simply display:none, so a phone user
+   could talk in whatever conversation happened to be active but could not
+   switch or start one. It is now a dismissible drawer reached from the header. */
+.list-toggle{display:none;border:1px solid var(--c-29332c);background:var(--c-182019);color:var(--c-e7eee9);border-radius:8px;width:34px;height:34px;font-size:15px;margin-right:12px;flex:none}
+.list-scrim{display:none}
+
+@media(max-width:680px){
+  .chat-layout{position:relative}
+  .list-toggle{display:grid;place-items:center}
+  .chat-header{gap:0}
+  .conversation-list{display:flex;position:absolute;z-index:25;inset:0 auto 0 0;width:min(84vw,300px);transform:translateX(-102%);transition:transform .18s ease;box-shadow:14px 0 40px var(--c-0008)}
+  .chat-layout.list-open .conversation-list{transform:none}
+  .chat-layout.list-open .list-scrim{display:block;position:absolute;z-index:24;inset:0;width:100%;border:0;padding:0;background:var(--c-060806cc)}
+}
+@media(prefers-reduced-motion:reduce){.conversation-list{transition:none}}

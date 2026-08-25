@@ -37,6 +37,19 @@ explanation rather than an empty workspace. The token is not persisted by the se
 `loro web` invalidates the previous one, and any tab still holding it will ask you to reopen the
 printed URL.
 
+## Appearance And Keyboard
+
+The UI follows the operating system's light or dark setting. The control at the foot of the rail
+cycles between matching the system, forcing light, and forcing dark; the choice is stored per
+browser and applied before the first paint.
+
+Press `/` for the shortcut sheet. Cmd or Ctrl with `K` focuses the message box, with `Shift+N`
+starts a conversation, and with `1` through `4` switches views. An unmodified key never fires while
+a text field has focus, so typing `/` in the composer inserts a slash.
+
+Below 680px the conversation list becomes a drawer reached from the header, and closes once a
+conversation is chosen.
+
 ## Conversations
 
 The Chat view provides multiple durable conversations. Each conversation has an append-only
