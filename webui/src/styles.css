@@ -509,3 +509,54 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
   .chat-layout.list-open .list-scrim{display:block;position:absolute;z-index:24;inset:0;width:100%;border:0;padding:0;background:var(--c-060806cc)}
 }
 @media(prefers-reduced-motion:reduce){.conversation-list{transition:none}}
+
+/* --- Agentic Graphs ------------------------------------------------------- */
+.graphs-page{display:flex;flex-direction:column;gap:18px}
+.graph-actions{display:flex;gap:8px;align-items:center}
+.secondary-action{border:1px solid var(--c-34433a);background:var(--c-182019);color:var(--c-e7eee9);border-radius:7px;padding:9px 13px;font-weight:600;font-size:12px}
+.secondary-action:disabled,.primary-action:disabled{opacity:.4;cursor:default}
+.graph-picker{display:grid;gap:7px;max-width:620px}
+.graph-picker label{font:500 10px 'DM Mono';letter-spacing:.13em;text-transform:uppercase;color:var(--c-6e7f73)}
+.graph-picker select{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:7px;color:var(--c-e7eee9);padding:10px;font-size:13px}
+.graph-empty-hint{color:var(--c-8d9b91);font-size:12px;margin:0}
+.graph-errors{border:1px solid var(--c-a85353);background:var(--c-4c2626);color:var(--c-ffe6e6);border-radius:9px;padding:14px 16px;font-size:12.5px}
+.graph-errors ul{margin:8px 0 0;padding-left:18px;display:grid;gap:4px}
+.graph-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));border:1px solid var(--c-29332c);border-radius:10px;overflow:hidden}
+.graph-overview>div{padding:12px 14px;border-right:1px solid var(--c-29332c);display:grid;gap:5px}
+.graph-overview>div:last-child{border-right:0}
+.graph-overview small{font:500 9px 'DM Mono';letter-spacing:.13em;color:var(--c-6e7f73)}
+.graph-overview b{font-size:14px;overflow-wrap:anywhere}
+.graph-status{background:var(--c-19221c)}
+.graph-objective{color:var(--c-a9b8ae);font-size:13px;max-width:70ch;margin:0}
+.graph-digest{font:10px 'DM Mono';color:var(--c-6e7f73);margin:0;overflow-wrap:anywhere}
+.gate-card{border:1px solid var(--c-735f35);background:var(--c-292316);border-radius:10px;padding:16px}
+.gate-card small{font:10px 'DM Mono';color:var(--c-d8b76e);letter-spacing:.12em}
+.gate-card h3{font-size:15px;margin:9px 0 4px}
+.gate-card p{font-size:12px;color:var(--c-cabf9f);margin:0}
+.gate-card>div{display:flex;gap:8px;margin-top:14px}
+.graph-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.graph-lane{border:1px solid var(--c-29332c);border-radius:10px;background:var(--c-101512);padding:12px;display:grid;gap:9px;align-content:start;min-height:150px}
+.graph-lane header{display:flex;align-items:start;justify-content:space-between;gap:10px}
+.graph-lane header b{font-size:13px;display:block}
+.graph-lane header small{color:var(--c-8d9b91);font-size:10.5px;display:block;margin-top:2px}
+.lane-count{border:1px solid var(--c-29332c);border-radius:6px;padding:2px 7px;font:10px 'DM Mono'}
+.lane-empty{border:1px dashed var(--c-29332c);border-radius:8px;padding:18px;text-align:center;color:var(--c-6e7f73);font-size:11.5px}
+.graph-card{border:1px solid var(--c-2b3c31);background:var(--c-141b17);border-radius:9px;padding:12px;display:grid;gap:6px}
+.graph-card-top{display:flex;justify-content:space-between;gap:8px}
+.graph-card b{font-size:13px}
+.graph-card small{font:10px 'DM Mono';color:var(--c-8d9b91)}
+.graph-card p{font-size:11.5px;color:var(--c-a9b8ae);margin:0;line-height:1.5}
+.graph-card-foot{display:flex;flex-wrap:wrap;gap:8px;font:9.5px 'DM Mono';color:var(--c-6e7f73);border-top:1px solid var(--c-29332c);padding-top:7px;margin-top:2px}
+.chip{border:1px solid var(--c-29332c);border-radius:5px;padding:3px 6px;font:9px 'DM Mono';color:var(--c-89998e)}
+.chip.state-running{color:var(--c-d9bd74);border-color:var(--c-735f35)}
+.chip.state-succeeded{color:var(--c-9de7b1);border-color:var(--c-568167)}
+.chip.state-failed{color:var(--c-f2b8b8);border-color:var(--c-a85353)}
+.graph-log{border:1px solid var(--c-29332c);border-radius:9px;padding:12px 14px;background:var(--c-0e1310)}
+.graph-log small{font:10px 'DM Mono';letter-spacing:.12em;color:var(--c-6e7f73)}
+.graph-log pre{margin:8px 0 0;font:11px/1.6 'DM Mono';color:var(--c-a9b8ae);max-height:220px;overflow:auto;white-space:pre-wrap}
+@media(max-width:900px){.graph-board{grid-template-columns:1fr}}
+
+/* `.page` is a column flex container with its own scroll, so every fixed block
+   inside it must refuse to shrink or it collapses to its border. */
+.graphs-page>*{flex:none}
+.graphs-page .graph-board{flex:none}

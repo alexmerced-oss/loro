@@ -1,3 +1,4 @@
+import { GraphsView } from "./GraphsView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
@@ -5,10 +6,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
-type View = "chat" | "bots" | "profiles" | "settings";
+type View = "chat" | "graphs" | "bots" | "profiles" | "settings";
 type Approval = { runId: string; request_id: string; action: string; target: string; arguments_preview: string; scopes: string[] };
 
-const icons: Record<View, string> = { chat: "⌁", bots: "◉", profiles: "◇", settings: "⚙" };
+const icons: Record<View, string> = { chat: "⌁", graphs: "⌘", bots: "◉", profiles: "◇", settings: "⚙" };
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeChoice>(initTheme);
@@ -31,9 +32,10 @@ export default function App() {
         window.dispatchEvent(new CustomEvent("loro:new-conversation"));
       } },
     { key: "1", mod: true, describe: "Go to Chat", run: () => setView("chat") },
-    { key: "2", mod: true, describe: "Go to Bots", run: () => setView("bots") },
-    { key: "3", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
-    { key: "4", mod: true, describe: "Go to Settings", run: () => setView("settings") },
+    { key: "2", mod: true, describe: "Go to Graphs", run: () => setView("graphs") },
+    { key: "3", mod: true, describe: "Go to Bots", run: () => setView("bots") },
+    { key: "4", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
+    { key: "5", mod: true, describe: "Go to Settings", run: () => setView("settings") },
     { key: "/", describe: "Show keyboard shortcuts", run: () => setShowShortcuts(true) },
     { key: "Escape", describe: "Close a dialog or clear an error", run: () => {
         setShowShortcuts(false);
@@ -128,6 +130,7 @@ export default function App() {
           </div>
         )}
         {view === "chat" && <ChatView conversations={conversations} activeId={activeId} setActiveId={setActiveId} profiles={profiles} onNew={newConversation} refresh={refreshConversations} setError={setError} />}
+        {view === "graphs" && <GraphsView setError={setError} />}
         {view === "bots" && <BotsView profiles={profiles} onChat={newConversation} />}
         {view === "profiles" && <ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} />}
         {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} />}

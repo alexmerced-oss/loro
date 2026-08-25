@@ -1,0 +1,184 @@
+"""Agentic Graph support for the local Web UI.
+
+Loro is an AGS level 3 harness whose graph runtime was unreachable from its own
+UI. These cover discovery, planning, and the confinement rules, without running
+a real model.
+"""
+
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from loro.webui.graphs import GraphService, confined_path, discover
+
+GRAPH = textwrap.dedent(
+    """
+    ags_version: "1.0"
+    kind: AgenticGraph
+    id: demo/pipeline
+    title: Demo pipeline
+    objective: Prove the plan surface.
+
+    entrypoints: [first]
+
+    nodes:
+      first:
+        title: First card
+        description: Do the first thing.
+        intelligence:
+          tier: standard
+        requirements:
+          tools: [file_read]
+          permissions: ["fs:read:**"]
+        success:
+          summary: It happened.
+          criteria:
+            - id: done
+              kind: file_exists
+              description: A file exists.
+              path: out.md
+
+      gate:
+        title: Human check
+        type: gate
+        description: A maintainer confirms before the run continues.
+        depends_on: [first]
+        gate:
+          mode: approve
+          prompt: Confirm before continuing.
+          roles: [maintainer]
+    """
+).strip()
+
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    (tmp_path / "release.agraph.yaml").write_text(GRAPH, encoding="utf-8")
+    return tmp_path
+
+
+def test_discovery_finds_graph_documents(workspace: Path) -> None:
+    found = discover(workspace)
+    assert [item["path"] for item in found] == ["release.agraph.yaml"]
+
+
+def test_discovery_skips_dependency_and_vcs_directories(workspace: Path) -> None:
+    for noisy in ("node_modules", ".git", "__pycache__", ".venv"):
+        directory = workspace / noisy
+        directory.mkdir()
+        (directory / "buried.agraph.yaml").write_text(GRAPH, encoding="utf-8")
+
+    assert [item["path"] for item in discover(workspace)] == ["release.agraph.yaml"]
+
+
+def test_discovery_is_depth_bounded(workspace: Path) -> None:
+    deep = workspace.joinpath(*[f"level{index}" for index in range(8)])
+    deep.mkdir(parents=True)
+    (deep / "deep.agraph.yaml").write_text(GRAPH, encoding="utf-8")
+
+    assert [item["path"] for item in discover(workspace)] == ["release.agraph.yaml"]
+
+
+def test_plan_reports_nodes_gates_and_digest(workspace: Path) -> None:
+    summary = GraphService(workspace).plan("release.agraph.yaml")
+
+    assert summary["ok"] is True
+    assert summary["graph_id"] == "demo/pipeline"
+    assert summary["title"] == "Demo pipeline"
+    assert summary["node_count"] == 2
+    assert summary["gates"] == ["gate"]
+    assert summary["digest"].startswith("sha256-")
+
+    ids = [node["id"] for node in summary["nodes"]]
+    assert ids == ["first", "gate"]
+
+    first, gate = summary["nodes"]
+    assert first["type"] == "task"
+    assert first["tier"] == "standard"
+    assert first["depends_on"] == []
+    assert gate["type"] == "gate"
+    assert gate["depends_on"] == ["first"]
+    # Every card starts in the To-do lane until a run moves it.
+    assert {node["state"] for node in summary["nodes"]} == {"pending"}
+
+
+def test_plan_reports_findings_for_an_invalid_graph(workspace: Path) -> None:
+    (workspace / "broken.agraph.yaml").write_text(
+        "ags_version: '1.0'\nkind: AgenticGraph\nid: broken\nnodes: {}\n", encoding="utf-8"
+    )
+    summary = GraphService(workspace).plan("broken.agraph.yaml")
+
+    assert summary["ok"] is False
+    assert any(finding.get("severity") == "error" for finding in summary["findings"])
+
+
+def test_a_missing_graph_is_reported_rather_than_crashing(workspace: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        GraphService(workspace).plan("nope.agraph.yaml")
+
+
+def test_starting_an_invalid_graph_is_refused_before_a_worker_is_taken(workspace: Path) -> None:
+    (workspace / "broken.agraph.yaml").write_text(
+        "ags_version: '1.0'\nkind: AgenticGraph\nid: broken\nnodes: {}\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError):
+        GraphService(workspace).start("broken.agraph.yaml")
+
+
+# --- confinement -------------------------------------------------------------
+
+
+def test_paths_outside_the_workspace_are_refused(workspace: Path) -> None:
+    for escape in ("../outside.agraph.yaml", "../../etc/passwd", "/etc/passwd"):
+        with pytest.raises(ValueError):
+            confined_path(workspace, escape)
+
+
+def test_a_nested_path_inside_the_workspace_is_allowed(workspace: Path) -> None:
+    nested = workspace / "flows"
+    nested.mkdir()
+    (nested / "inner.agraph.yaml").write_text(GRAPH, encoding="utf-8")
+
+    resolved = confined_path(workspace, "flows/inner.agraph.yaml")
+    assert resolved.is_file()
+    assert workspace.resolve() in resolved.parents
+
+
+def test_service_refuses_an_escaping_path(workspace: Path) -> None:
+    with pytest.raises(ValueError):
+        GraphService(workspace).plan("../escape.agraph.yaml")
+
+
+# --- gates -------------------------------------------------------------------
+
+
+def test_a_gate_decision_reaches_the_waiting_run(workspace: Path) -> None:
+    from loro.webui.graphs import GateRequest, GraphRunHandle
+
+    handle = GraphRunHandle("run-1", "release.agraph.yaml")
+    handle.gate = GateRequest(request_id="gate-1", prompt="Confirm?", roles=["maintainer"])
+
+    assert handle.decide_gate("gate-1", approved=True) is True
+    assert handle.gate.decided.is_set()
+    assert handle.gate.approved is True
+
+    # A stale or duplicate decision must not resolve anything twice.
+    assert handle.decide_gate("gate-1", approved=False) is False
+    assert handle.decide_gate("other", approved=True) is False
+
+
+def test_events_replay_from_a_cursor(workspace: Path) -> None:
+    """A reconnecting browser must not lose events it already missed."""
+    from loro.webui.graphs import GraphRunHandle
+
+    handle = GraphRunHandle("run-2", "release.agraph.yaml")
+    handle.publish("run.started", run_id="run-2")
+    handle.publish("node.started", node_id="first")
+    handle.publish("node.finished", node_id="first", status="succeeded")
+
+    assert [event["seq"] for event in handle.since(-1)] == [0, 1, 2]
+    assert [event["type"] for event in handle.since(0)] == ["node.started", "node.finished"]
+    assert handle.since(2) == []

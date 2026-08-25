@@ -66,6 +66,11 @@ workflow reinstalls from the lockfile, runs the unit tests, rebuilds, and fails 
 assets no longer match their source, which previously could ship a UI older than its own code.
 Frontend dependencies moved from `latest` to exact pins so the bundle is reproducible.
 
+The Web UI also gained a Graphs view, closing the largest gap between the CLI and the browser: Loro
+implements AGS conformance level 3, and none of that runtime was previously reachable from its own
+interface. It discovers, validates, plans, and runs graphs through the same governed executor, holds
+human gates for an explicit decision, and streams node transitions from a replayable cursor.
+
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and
 validity checks are unavailable under the repository's current GitHub plan, so repository-owned

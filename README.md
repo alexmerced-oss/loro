@@ -57,7 +57,8 @@ loro web
 ```
 
 It provides durable conversations, profile-backed bots, safe profile editing, streaming tool
-activity and approvals, and default provider/model/profile settings. Assistant replies render as
+activity and approvals, an Agentic Graph view that validates, plans and runs AGS 1.0 workflows with
+human gates held for an explicit decision, and default provider/model/profile settings. Assistant replies render as
 markdown, and each launch prints a URL carrying a fresh access token, so the API is closed to other
 local processes. See the [Local Web UI guide](docs/webui.md).
 

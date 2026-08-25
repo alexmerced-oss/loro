@@ -36,6 +36,15 @@ class ApprovalResolve(BaseModel):
     scope: Literal["once", "session"] = "once"
 
 
+class GraphRunRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    dry_run: bool = False
+
+
+class GateDecision(BaseModel):
+    approved: bool
+
+
 class SettingsUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
@@ -97,6 +106,78 @@ def create_app(
         if isinstance(error, PermissionError):
             return HTTPException(status_code=403, detail=str(error))
         return HTTPException(status_code=400, detail=str(error))
+
+    from loro.webui.graphs import GraphService
+
+    graphs = GraphService(root)
+
+    @app.get("/api/graphs")
+    async def list_graphs() -> list[dict[str, Any]]:
+        return graphs.list_graphs()
+
+    @app.get("/api/graphs/plan")
+    async def plan_graph(path: str) -> dict[str, Any]:
+        try:
+            return graphs.plan(path)
+        except (ValueError, FileNotFoundError) as error:
+            raise translate(error) from error
+
+    @app.get("/api/graphs/runs")
+    async def graph_history() -> list[dict[str, Any]]:
+        return graphs.history()
+
+    @app.post("/api/graphs/runs", status_code=202)
+    async def start_graph(payload: GraphRunRequest) -> dict[str, str]:
+        try:
+            handle = graphs.start(payload.path, dry_run=payload.dry_run)
+        except (ValueError, FileNotFoundError) as error:
+            raise translate(error) from error
+        return {"run_id": handle.run_id}
+
+    @app.get("/api/graphs/runs/{run_id}/events")
+    async def graph_events(run_id: str, after: int = -1):
+        try:
+            handle = graphs.handle(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Unknown graph run.") from error
+
+        async def generate():
+            # Replay from the cursor first, so a reconnecting browser misses
+            # nothing, then poll in the same shape as the chat run stream.
+            cursor = max(-1, after)
+            quiet_cycles = 0
+            while True:
+                available = handle.since(cursor)
+                for event in available:
+                    cursor = int(event["seq"])
+                    yield (
+                        f"id: {cursor}\nevent: {event['type']}\n"
+                        f"data: {json.dumps(event, default=str)}\n\n"
+                    )
+                    if event["type"] == "run.closed":
+                        return
+                if not available:
+                    quiet_cycles += 1
+                    if quiet_cycles >= 300:
+                        quiet_cycles = 0
+                        yield ": keepalive\n\n"
+                    await asyncio.sleep(0.05)
+                else:
+                    quiet_cycles = 0
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/api/graphs/runs/{run_id}/gates/{request_id}", status_code=202)
+    async def resolve_gate(run_id: str, request_id: str, payload: GateDecision) -> dict[str, bool]:
+        try:
+            handle = graphs.handle(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Unknown graph run.") from error
+        return {"ok": handle.decide_gate(request_id, payload.approved)}
 
     @app.get("/api/session")
     async def web_session(request: Request, response: Response) -> dict[str, str]:

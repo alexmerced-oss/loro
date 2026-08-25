@@ -50,6 +50,23 @@ a text field has focus, so typing `/` in the composer inserts a slash.
 Below 680px the conversation list becomes a drawer reached from the header, and closes once a
 conversation is chosen.
 
+## Agentic Graphs
+
+The Graphs view lists every `.agraph.yaml`, `.agraph.yml`, and `.agraph.json` in the workspace,
+validates the one you select, and shows its plan as a dependency board: node count, maximum
+parallelism, worst-case executions, cost ceiling, and the document digest. Invalid graphs report
+their findings instead of offering a Run button.
+
+Running goes through the same `GraphExecutor` the CLI drives, so identity, permission policy,
+sandbox profiles, budgets, and the audit log all apply unchanged. Cards move between **To do**,
+**Current work**, and **Done** as the run progresses, and the event stream is cursor-based, so a
+reconnecting browser replays what it missed rather than losing it.
+
+Human gates are the one place the browser participates in execution: a gate pauses the run and waits
+for an explicit Approve or Reject rather than being auto-approved. An unanswered gate times out
+after thirty minutes so it cannot pin a worker indefinitely. Discovery is bounded to four directory
+levels and skips dependency and VCS directories, and every path is confined to the workspace.
+
 ## Conversations
 
 The Chat view provides multiple durable conversations. Each conversation has an append-only
