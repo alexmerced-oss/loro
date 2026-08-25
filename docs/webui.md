@@ -233,6 +233,28 @@ reporting when the list was cut. **Shared memory** searches the governed backend
 citation each record carries, which is how a shared memory is referred to elsewhere. An unreachable
 backend explains itself instead of rendering as an empty result.
 
+## Accessibility
+
+An audit pass over every view in both themes turned up four defects.
+
+**Contrast.** Small muted text sat between 2.6:1 and 4.4:1 against its actual background, below the
+4.5:1 AA threshold for text that size, across roughly twenty distinct labels. The tokens were
+recomputed as the nearest value along the lightness axis that clears the threshold on the
+least-contrasting surface each is used on, in both themes.
+
+**Chips rendered as browser defaults in dark mode.** A `<button class="chip">` set no background, so
+it fell back to the user agent's grey, which does not follow the theme: light grey text on light
+grey at 2.6:1. The background is now explicit.
+
+**Fields lost their focus ring.** Inputs set `outline:0` for their resting state at a specificity
+that also defeated `:focus-visible`, so a keyboard user could not tell which field was focused.
+Buttons were unaffected; only fields were.
+
+**Chips were 18px tall,** below the 24px minimum for a pointer target.
+
+The audit is re-run against a live server rather than asserted in unit tests, because the properties
+that matter here are computed styles against real backgrounds.
+
 ## Governance
 
 The Governance view is the evidence surface, and it is entirely read-only.
