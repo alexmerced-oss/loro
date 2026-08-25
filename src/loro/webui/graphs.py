@@ -14,12 +14,15 @@ than being auto-approved.
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
 from uuid import uuid4
+
+import yaml
 
 from loro.agraph.document import load_graph
 from loro.agraph.plan import build_plan
@@ -128,6 +131,67 @@ def describe(project_root: Path, raw_path: str) -> dict[str, Any]:
     }
 
 
+BLANK_NODE_TEMPLATE: dict[str, Any] = {
+    "type": "task",
+    "description": "Describe the outcome this card must produce.",
+    "intelligence": {"tier": "standard"},
+    "requirements": {"tools": ["file_read"], "permissions": ["fs:read:**"]},
+    "success": {
+        "summary": "The card produced its stated outcome.",
+        "criteria": [
+            {
+                "id": "summary_present",
+                "kind": "human",
+                "description": "A reviewer confirms the outcome.",
+                "prompt": "Did this card produce the outcome described above?",
+            }
+        ],
+    },
+}
+
+
+def blank_document(title: str = "New workflow") -> dict[str, Any]:
+    """A minimal valid graph with one card, ready to edit in the board."""
+    slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in title.lower()).strip("-")
+    first = dict(BLANK_NODE_TEMPLATE)
+    first["title"] = "First card"
+    return {
+        "ags_version": "1.0",
+        "kind": "AgenticGraph",
+        "id": f"workspace/{slug or 'workflow'}",
+        "title": title,
+        "objective": "Describe what finishing this workflow means.",
+        "entrypoints": ["card_1"],
+        "nodes": {"card_1": first},
+    }
+
+
+def new_card(document: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Append a card to `document`, wired after the current last node."""
+    nodes = dict(document.get("nodes") or {})
+    index = len(nodes) + 1
+    while f"card_{index}" in nodes:
+        index += 1
+    node_id = f"card_{index}"
+    node = dict(BLANK_NODE_TEMPLATE)
+    node["title"] = f"New card {index}"
+    # Chain onto the last declared node so the graph stays a connected DAG.
+    if nodes:
+        node["depends_on"] = [list(nodes)[-1]]
+    nodes[node_id] = node
+    document["nodes"] = nodes
+    if not document.get("entrypoints"):
+        document["entrypoints"] = [node_id]
+    return node_id, document
+
+
+def serialise(document: dict[str, Any], suffix: str = ".yaml") -> str:
+    """Render a graph for download. JSON and YAML are the same data model."""
+    if suffix.endswith(".json"):
+        return json.dumps(document, indent=2, sort_keys=False)
+    return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+
+
 @dataclass
 class GateRequest:
     request_id: str
@@ -193,6 +257,87 @@ class GraphService:
 
     def plan(self, raw_path: str) -> dict[str, Any]:
         return describe(self.project_root, raw_path)
+
+    def document(self, raw_path: str) -> dict[str, Any]:
+        """The raw graph, for editing or export."""
+        path = confined_path(self.project_root, raw_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"No graph at {raw_path}")
+        config = load_config(self.project_root)
+        return dict(load_graph(path, max_bytes=config.agraph.max_document_bytes).data)
+
+    def save(self, raw_path: str, document: dict[str, Any]) -> dict[str, Any]:
+        """Validate, then write. An invalid graph is never persisted."""
+        if not isinstance(document, dict):
+            raise ValueError("A graph document must be an object.")
+        path = confined_path(self.project_root, raw_path)
+        if not any(path.name.endswith(suffix) for suffix in GRAPH_SUFFIXES):
+            raise ValueError("Graph files must end in .agraph.yaml, .agraph.yml, or .agraph.json")
+
+        # Validate the exact bytes that will be persisted, by staging them
+        # first: serialising and then validating the in-memory dict could pass
+        # while the written file fails to load.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_name(f".{path.stem}.staged{path.suffix}")
+        config = load_config(self.project_root)
+        try:
+            staged.write_text(serialise(document, path.suffix), encoding="utf-8")
+            loaded = load_graph(staged, max_bytes=config.agraph.max_document_bytes)
+            report = validate_graph(loaded)
+            if not report.ok:
+                messages = [f.message for f in report.findings if f.severity == "error"]
+                raise ValueError("; ".join(messages) or "The graph is not valid.")
+            staged.replace(path)
+        finally:
+            staged.unlink(missing_ok=True)
+        return self.plan(raw_path)
+
+    def blank(self, title: str = "New workflow") -> dict[str, Any]:
+        return blank_document(title)
+
+    def add_card(self, document: dict[str, Any]) -> dict[str, Any]:
+        node_id, updated = new_card(dict(document))
+        return {"node_id": node_id, "document": updated}
+
+    def generate(self, goal: str, *, use_ai: bool = True) -> dict[str, Any]:
+        """Draft a graph from a goal.
+
+        This delegates to the same pipeline `loro graph generate` uses, so the
+        model is prompted with the bundled agentic-graph skill's contract, the
+        managed step ceiling is enforced, and an invalid draft gets one
+        correction round rather than silently degrading. The model returns a
+        workflow draft that Loro compiles into a governed graph; it does not
+        hand back an AGS document directly.
+        """
+        goal = goal.strip()
+        if not goal:
+            raise ValueError("Describe what the graph should accomplish.")
+
+        config = load_config(self.project_root)
+        if not config.agraph.allow_generation:
+            raise ValueError("Agentic Graph generation is disabled by managed policy.")
+
+        from loro.agraph.generate import write_ai_generated_graph, write_generated_graph
+
+        # Both writers persist to a file, so stage inside the workspace and read
+        # it back: nothing lands in the project until the user saves the draft.
+        staged = self.project_root / f".loro-draft-{uuid4().hex[:8]}.agraph.yaml"
+        try:
+            if not use_ai or config.model.provider == "mock":
+                write_generated_graph(goal, staged, config)
+            else:
+                from loro.runtime import AgentRuntime
+
+                runtime = AgentRuntime(config)
+                write_ai_generated_graph(
+                    goal,
+                    staged,
+                    config,
+                    lambda prompt: runtime.run(prompt, mode="plan", session_id=None).response,
+                )
+            return dict(load_graph(staged, max_bytes=config.agraph.max_document_bytes).data)
+        finally:
+            staged.unlink(missing_ok=True)
 
     def history(self, limit: int = 25) -> list[dict[str, Any]]:
         config = load_config(self.project_root)

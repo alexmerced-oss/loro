@@ -182,3 +182,83 @@ def test_events_replay_from_a_cursor(workspace: Path) -> None:
     assert [event["seq"] for event in handle.since(-1)] == [0, 1, 2]
     assert [event["type"] for event in handle.since(0)] == ["node.started", "node.finished"]
     assert handle.since(2) == []
+
+
+# --- authoring ---------------------------------------------------------------
+
+
+def test_blank_document_is_valid_and_saveable(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    document = service.blank("Promo audit")
+
+    assert document["kind"] == "AgenticGraph"
+    assert list(document["nodes"]) == ["card_1"]
+
+    saved = service.save("flows/promo.agraph.yaml", document)
+    assert saved["ok"] is True
+    assert saved["node_count"] == 1
+
+
+def test_added_cards_chain_into_a_connected_graph(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    document = service.blank("Chained")
+    for _ in range(3):
+        document = service.add_card(document)["document"]
+
+    assert list(document["nodes"]) == ["card_1", "card_2", "card_3", "card_4"]
+    assert document["nodes"]["card_4"]["depends_on"] == ["card_3"]
+
+    # A chained board must still validate, or "add card" would produce junk.
+    assert service.save("chained.agraph.yaml", document)["ok"] is True
+
+
+def test_save_refuses_an_invalid_document(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    with pytest.raises(ValueError):
+        service.save("broken.agraph.yaml", {"kind": "AgenticGraph", "nodes": {}})
+    assert not (tmp_path / "broken.agraph.yaml").exists()
+
+
+def test_save_refuses_a_non_graph_suffix(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    with pytest.raises(ValueError):
+        service.save("notes.txt", service.blank())
+
+
+def test_a_rejected_save_leaves_no_staging_file(tmp_path: Path) -> None:
+    """The staged file must never survive a failed validation."""
+    service = GraphService(tmp_path)
+    with pytest.raises(ValueError):
+        service.save("broken.agraph.yaml", {"kind": "AgenticGraph", "nodes": {}})
+    assert list(tmp_path.glob(".*staged*")) == []
+
+
+def test_document_round_trips_through_save(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    document = service.add_card(service.blank("Round trip"))["document"]
+    service.save("round.agraph.yaml", document)
+
+    reloaded = service.document("round.agraph.yaml")
+    assert list(reloaded["nodes"]) == list(document["nodes"])
+    assert reloaded["title"] == "Round trip"
+
+
+def test_serialise_emits_both_encodings(tmp_path: Path) -> None:
+    from loro.webui.graphs import serialise
+
+    document = GraphService(tmp_path).blank()
+    assert serialise(document, ".yaml").startswith("ags_version:")
+    assert serialise(document, ".json").lstrip().startswith("{")
+
+
+def test_deterministic_generation_needs_no_provider(tmp_path: Path) -> None:
+    document = GraphService(tmp_path).generate("Ship the thing", use_ai=False)
+    assert document["kind"] == "AgenticGraph"
+    assert document["nodes"]
+    # Nothing is written until the user saves the draft.
+    assert list(tmp_path.glob("*.agraph.*")) == []
+
+
+def test_generation_rejects_an_empty_goal(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        GraphService(tmp_path).generate("   ")

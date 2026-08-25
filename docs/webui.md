@@ -62,6 +62,24 @@ sandbox profiles, budgets, and the audit log all apply unchanged. Cards move bet
 **Current work**, and **Done** as the run progresses, and the event stream is cursor-based, so a
 reconnecting browser replays what it missed rather than losing it.
 
+Cards are a Kanban: every node starts in **Pending**, moves to **In progress** while the executor
+works it, and lands in **Complete** when it finishes, whichever way it finished.
+
+There are three ways to get a graph onto the board:
+
+- **Load a file.** Any `.agraph.yaml`, `.agraph.yml`, or `.agraph.json` in the workspace.
+- **Start blank.** One card to begin with, then *Add card* appends more, each chained onto the last
+  so the board stays a connected DAG. Nothing is written until you name the file and save; an
+  invalid draft is refused rather than persisted.
+- **Generate from a goal.** Describe the outcome and the configured model drafts the workflow. This
+  runs the same pipeline as `loro graph generate`, so the model is prompted with the bundled
+  `agentic-graph` skill's contract, the managed step ceiling applies, and an invalid draft gets one
+  correction round. The model returns a workflow draft that Loro compiles into a governed graph; it
+  never hands back an AGS document directly. `--no-ai` deterministic generation needs no provider.
+
+*Export* downloads the current graph, saved or draft, as a JSON document you can keep, share, or
+commit.
+
 Human gates are the one place the browser participates in execution: a gate pauses the run and waits
 for an explicit Approve or Reject rather than being auto-approved. An unanswered gate times out
 after thirty minutes so it cannot pin a worker indefinitely. Discovery is bounded to four directory

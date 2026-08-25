@@ -41,6 +41,24 @@ class GraphRunRequest(BaseModel):
     dry_run: bool = False
 
 
+class GraphSaveRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    document: dict[str, Any]
+
+
+class GraphBlankRequest(BaseModel):
+    title: str = Field(default="New workflow", min_length=1, max_length=200)
+
+
+class GraphCardRequest(BaseModel):
+    document: dict[str, Any]
+
+
+class GraphGenerateRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=4000)
+    use_ai: bool = True
+
+
 class GateDecision(BaseModel):
     approved: bool
 
@@ -120,6 +138,40 @@ def create_app(
         try:
             return graphs.plan(path)
         except (ValueError, FileNotFoundError) as error:
+            raise translate(error) from error
+
+    @app.get("/api/graphs/document")
+    async def graph_document(path: str) -> dict[str, Any]:
+        """The raw graph, for editing in the board or exporting to a file."""
+        try:
+            return {"path": path, "document": graphs.document(path)}
+        except (ValueError, FileNotFoundError) as error:
+            raise translate(error) from error
+
+    @app.post("/api/graphs/document")
+    async def save_graph(payload: GraphSaveRequest) -> dict[str, Any]:
+        try:
+            return graphs.save(payload.path, payload.document)
+        except (ValueError, FileNotFoundError) as error:
+            raise translate(error) from error
+
+    @app.post("/api/graphs/blank")
+    async def blank_graph(payload: GraphBlankRequest) -> dict[str, Any]:
+        return {"document": graphs.blank(payload.title)}
+
+    @app.post("/api/graphs/card")
+    async def add_graph_card(payload: GraphCardRequest) -> dict[str, Any]:
+        try:
+            return graphs.add_card(payload.document)
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.post("/api/graphs/generate")
+    async def generate_graph_document(payload: GraphGenerateRequest) -> dict[str, Any]:
+        """Draft a graph from a goal, using the bundled agentic-graph skill."""
+        try:
+            return {"document": graphs.generate(payload.goal, use_ai=payload.use_ai)}
+        except ValueError as error:
             raise translate(error) from error
 
     @app.get("/api/graphs/runs")

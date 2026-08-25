@@ -43,15 +43,19 @@ type Plan = {
 
 type Gate = { request_id: string; prompt: string; roles: string[] };
 
+/**
+ * Every card starts pending, moves to in progress while the executor works it,
+ * and lands in complete when it finishes, whichever way it finished.
+ */
 const LANES: { id: string; title: string; note: string; states: string[] }[] = [
-  { id: "todo", title: "To do", note: "Waiting for the run or its dependencies", states: ["pending", "blocked", "ready", ""] },
-  { id: "current", title: "Current work", note: "Actively executing", states: ["running", "active"] },
-  { id: "done", title: "Done", note: "Finished, with the outcome", states: ["succeeded", "failed", "skipped", "cancelled"] },
+  { id: "pending", title: "Pending", note: "Not started yet", states: ["pending", "blocked", "ready", ""] },
+  { id: "progress", title: "In progress", note: "Being worked right now", states: ["running", "active"] },
+  { id: "complete", title: "Complete", note: "Finished, with the outcome", states: ["succeeded", "failed", "skipped", "cancelled"] },
 ];
 
 function laneFor(node: GraphNode): string {
   const state = (node.state || "").toLowerCase();
-  return LANES.find((lane) => lane.states.includes(state))?.id ?? "todo";
+  return LANES.find((lane) => lane.states.includes(state))?.id ?? "pending";
 }
 
 function Card({ node }: { node: GraphNode }) {
@@ -86,6 +90,10 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
   const [status, setStatus] = useState("Ready");
   const [gate, setGate] = useState<Gate | null>(null);
   const [log, setLog] = useState<string[]>([]);
+  const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  const [draftPath, setDraftPath] = useState("");
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState("");
   const stream = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -124,8 +132,11 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
   );
 
   useEffect(() => {
+    // An unsaved draft owns the board. Without this guard, clearing `path`
+    // when a draft is adopted re-runs loadPlan("") and wipes the draft's cards.
+    if (draft) return;
     void loadPlan(path);
-  }, [path, loadPlan]);
+  }, [path, loadPlan, draft]);
 
   const start = useCallback(
     async (dryRun: boolean) => {
@@ -198,6 +209,126 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
     [path, runId, setError],
   );
 
+  /** Show a freshly drafted document on the board without saving it yet. */
+  const adoptDraft = useCallback((document: Record<string, unknown>, note: string) => {
+    setDraft(document);
+    setPlan(null);
+    const raw = (document.nodes ?? {}) as Record<string, Record<string, unknown>>;
+    setNodes(
+      Object.entries(raw).map(([id, node]) => ({
+        id,
+        title: String(node.title ?? id),
+        type: String(node.type ?? "task"),
+        description: String(node.description ?? ""),
+        depends_on: (node.depends_on as string[]) ?? [],
+        profile: String(node["x-agent-profile"] ?? ""),
+        tier: String((node.intelligence as { tier?: string } | undefined)?.tier ?? ""),
+        state: "pending",
+      })),
+    );
+    setStatus(note);
+  }, []);
+
+  async function startBlank() {
+    setBusy("blank");
+    try {
+      const created = await request<{ document: Record<string, unknown> }>("/api/graphs/blank", {
+        method: "POST",
+        body: JSON.stringify({ title: "New workflow" }),
+      });
+      adoptDraft(created.document, "Unsaved draft");
+      setDraftPath("workflow.agraph.yaml");
+      setPath("");
+    } catch (problem) {
+      setError((problem as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function addCard() {
+    const document = draft ?? (path ? await request<{ document: Record<string, unknown> }>(
+      `/api/graphs/document?path=${encodeURIComponent(path)}`,
+    ).then((data) => data.document) : null);
+    if (!document) return;
+    setBusy("card");
+    try {
+      const updated = await request<{ node_id: string; document: Record<string, unknown> }>(
+        "/api/graphs/card",
+        { method: "POST", body: JSON.stringify({ document }) },
+      );
+      adoptDraft(updated.document, "Unsaved draft");
+      if (!draftPath) setDraftPath(path || "workflow.agraph.yaml");
+    } catch (problem) {
+      setError((problem as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function generate() {
+    if (!goal.trim()) return;
+    setBusy("generate");
+    setStatus("Drafting…");
+    try {
+      const created = await request<{ document: Record<string, unknown> }>("/api/graphs/generate", {
+        method: "POST",
+        body: JSON.stringify({ goal, use_ai: true }),
+      });
+      adoptDraft(created.document, "Unsaved draft");
+      setDraftPath(draftPath || "workflow.agraph.yaml");
+      setPath("");
+    } catch (problem) {
+      setError((problem as Error).message);
+      setStatus("Ready");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveDraft() {
+    if (!draft || !draftPath.trim()) return;
+    setBusy("save");
+    try {
+      const saved = await request<Plan>("/api/graphs/document", {
+        method: "POST",
+        body: JSON.stringify({ path: draftPath.trim(), document: draft }),
+      });
+      setDraft(null);
+      setPlan(saved);
+      setNodes(saved.nodes);
+      setStatus("Saved");
+      const found = await request<GraphFile[]>("/api/graphs");
+      setFiles(found);
+      setPath(saved.path);
+    } catch (problem) {
+      setError((problem as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /** Export the current graph as a file the user can keep or share. */
+  async function exportGraph() {
+    try {
+      const document =
+        draft ??
+        (await request<{ document: Record<string, unknown> }>(
+          `/api/graphs/document?path=${encodeURIComponent(path)}`,
+        ).then((data) => data.document));
+      const name = (draftPath || path || "workflow.agraph.yaml").split("/").pop()!;
+      const body = JSON.stringify(document, null, 2);
+      const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = name.replace(/\.ya?ml$/, ".json");
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (problem) {
+      setError((problem as Error).message);
+    }
+  }
+
   async function decide(approved: boolean) {
     if (!runId || !gate) return;
     try {
@@ -233,6 +364,65 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
           </button>
         </div>
       </div>
+
+      <section className="graph-author">
+        <div className="graph-author-head">
+          <small>BUILD A GRAPH</small>
+          <p>Start from a file, from a blank board, or from a goal the model turns into a draft.</p>
+        </div>
+        <div className="graph-author-row">
+          <label className="sr-only" htmlFor="graphGoal">What should this graph accomplish?</label>
+          <textarea
+            id="graphGoal"
+            rows={2}
+            placeholder="Audit promotion handling, add regression tests, and draft release notes…"
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+          />
+          <div className="graph-author-buttons">
+            <button className="primary-action" type="button" onClick={() => void generate()}
+                    disabled={Boolean(busy) || !goal.trim()}>
+              {busy === "generate" ? "Drafting…" : "✦ Generate with AI"}
+            </button>
+            <button className="secondary-action" type="button" onClick={() => void startBlank()} disabled={Boolean(busy)}>
+              ＋ Blank graph
+            </button>
+            <button className="secondary-action" type="button" onClick={() => void addCard()}
+                    disabled={Boolean(busy) || (!draft && !path)}>
+              ＋ Add card
+            </button>
+            <button className="secondary-action" type="button" onClick={() => void exportGraph()}
+                    disabled={Boolean(busy) || (!draft && !path)}>
+              ↓ Export
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {draft && (
+        <section className="graph-draft" role="status">
+          <div>
+            <b>Unsaved draft</b>
+            <span>{nodes.length} card{nodes.length === 1 ? "" : "s"}. Nothing is written until you save.</span>
+          </div>
+          <div className="graph-draft-save">
+            <label className="sr-only" htmlFor="draftPath">Save as</label>
+            <input
+              id="draftPath"
+              value={draftPath}
+              placeholder="workflow.agraph.yaml"
+              onChange={(event) => setDraftPath(event.target.value)}
+            />
+            <button className="primary-action" type="button" onClick={() => void saveDraft()}
+                    disabled={busy === "save" || !draftPath.trim()}>
+              {busy === "save" ? "Saving…" : "Save graph"}
+            </button>
+            <button className="secondary-action" type="button" onClick={() => { setDraft(null); void loadPlan(path); }}>
+              Discard
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="graph-picker">
         <label htmlFor="graphFile">Graph file</label>
@@ -288,7 +478,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         </div>
       )}
 
-      {plan && (
+      {(plan || draft) && (
         <div className="graph-board">
           {LANES.map((lane) => {
             const cards = nodes.filter((node) => laneFor(node) === lane.id);
@@ -302,7 +492,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
                   cards.map((node) => <Card key={node.id} node={node} />)
                 ) : (
                   <div className="lane-empty">
-                    {lane.id === "todo" ? "Choose a graph to see its jobs." : "Nothing here yet."}
+                    {lane.id === "pending" ? "Load a graph, start a blank one, or generate one from a goal." : "Nothing here yet."}
                   </div>
                 )}
               </section>

@@ -560,3 +560,18 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
    inside it must refuse to shrink or it collapses to its border. */
 .graphs-page>*{flex:none}
 .graphs-page .graph-board{flex:none}
+
+/* --- Graph authoring ------------------------------------------------------ */
+.graph-author{border:1px solid var(--c-29332c);border-radius:10px;background:var(--c-101512);padding:16px;display:grid;gap:12px}
+.graph-author-head small{font:500 10px 'DM Mono';letter-spacing:.13em;color:var(--c-6e7f73)}
+.graph-author-head p{margin:5px 0 0;color:var(--c-8d9b91);font-size:12.5px}
+.graph-author-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
+.graph-author-row textarea{width:100%;resize:vertical;background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:8px;color:var(--c-e7eee9);padding:10px;font-size:13px;outline:0}
+.graph-author-row textarea:focus{border-color:var(--c-568167)}
+.graph-author-buttons{display:flex;flex-wrap:wrap;gap:7px;align-content:start}
+.graph-draft{border:1px solid var(--c-735f35);background:var(--c-292316);border-radius:10px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.graph-draft b{display:block;font-size:13px}
+.graph-draft span{color:var(--c-cabf9f);font-size:11.5px}
+.graph-draft-save{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.graph-draft-save input{background:var(--c-17150f);border:1px solid var(--c-705e37);border-radius:7px;color:var(--c-e7eee9);padding:8px 10px;font:11px 'DM Mono';min-width:210px}
+@media(max-width:900px){.graph-author-row{grid-template-columns:1fr}}
