@@ -193,3 +193,45 @@ def _config_with_audit(path: Path, sink: str = "jsonl") -> Any:
         permissions=config.permissions,
         audit=SimpleNamespace(sink=sink, path=path),
     )
+
+
+def test_status_reads_the_identity_field_names_that_exist(workspace: Path) -> None:
+    """`IdentityContext` names these `subject` and `tenant`.
+
+    Reading `actor`/`tenant_id` found nothing, so a fully resolved identity
+    rendered as "—" in the panel whose entire job is saying who you are, while
+    the audit rows beneath it carried the actor perfectly well.
+    """
+    from types import SimpleNamespace
+
+    from loro.webui import governance as module
+
+    service = GovernanceService(workspace)
+    identity = SimpleNamespace(
+        subject="alexmerced",
+        tenant="default",
+        roles=("reviewer",),
+        organization="alexmerced-oss",
+        auth_method="os_user",
+    )
+    # The real object has no `actor` or `tenant_id`; that is the bug.
+    assert not hasattr(identity, "actor")
+    monkey = {
+        "diagnose_identity": lambda _c: SimpleNamespace(ok=True, issues=[]),
+        "resolve_identity": lambda _c: identity,
+    }
+    import loro.identity as identity_module
+
+    original = {name: getattr(identity_module, name) for name in monkey}
+    for name, value in monkey.items():
+        setattr(identity_module, name, value)
+    try:
+        status = service.status()
+    finally:
+        for name, value in original.items():
+            setattr(identity_module, name, value)
+
+    assert status["identity"]["actor"] == "alexmerced"
+    assert status["identity"]["tenant_id"] == "default"
+    assert status["identity"]["roles"] == ["reviewer"]
+    assert module.MAX_EVENTS > 0

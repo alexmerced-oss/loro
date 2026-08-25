@@ -141,6 +141,9 @@ and Memory with its proposal queue are reachable from the browser, chat replies 
 reconnect from a cursor after a reload, a first-run panel replaces a composer that cannot work, and
 two accessibility audit passes are clean. See [Loro 0.16.0](releases/0.16.0.md).
 
+Release `0.16.1` fixes the Governance view reporting a resolved identity as blank. See
+[Loro 0.16.1](releases/0.16.1.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.

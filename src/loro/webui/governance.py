@@ -73,11 +73,17 @@ class GovernanceService:
             }
             if diagnostic.ok:
                 identity = resolve_identity(config.identity)
+                # IdentityContext names these `subject` and `tenant`. Reading
+                # `actor`/`tenant_id` found nothing, so the panel showed "—" for
+                # a fully resolved identity while the audit rows beneath it
+                # carried the actor perfectly well.
                 payload["identity"].update(
                     {
-                        "actor": getattr(identity, "actor", ""),
-                        "tenant_id": getattr(identity, "tenant_id", ""),
-                        "roles": list(getattr(identity, "roles", []) or []),
+                        "actor": str(getattr(identity, "subject", "") or ""),
+                        "tenant_id": str(getattr(identity, "tenant", "") or ""),
+                        "roles": list(getattr(identity, "roles", ()) or ()),
+                        "organization": str(getattr(identity, "organization", "") or ""),
+                        "auth_method": str(getattr(identity, "auth_method", "") or ""),
                     }
                 )
         except Exception as error:  # noqa: BLE001 - reported, never raised

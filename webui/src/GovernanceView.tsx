@@ -14,7 +14,15 @@ import { request } from "./api";
  */
 
 type Status = {
-  identity?: { ok?: boolean; actor?: string; tenant_id?: string; roles?: string[]; issues?: string[] };
+  identity?: {
+    ok?: boolean;
+    actor?: string;
+    tenant_id?: string;
+    roles?: string[];
+    organization?: string;
+    auth_method?: string;
+    issues?: string[];
+  };
   budgets?: Record<string, number | null>;
   sandbox?: { profile?: string; enforced?: boolean; max_runtime_seconds?: number | null; max_output_bytes?: number | null };
   approvals?: { mode?: string; allow_session_scope?: boolean };
@@ -143,6 +151,7 @@ export function GovernanceView({ setError }: { setError: (message: string) => vo
             ["Actor", status?.identity?.actor],
             ["Tenant", status?.identity?.tenant_id],
             ["Roles", (status?.identity?.roles || []).join(", ")],
+            ["Signed in via", status?.identity?.auth_method],
             ["Resolved", status?.identity?.ok],
           ]}
         />

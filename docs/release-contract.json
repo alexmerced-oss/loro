@@ -233,7 +233,7 @@
   "digests": {
     "data_support_matrix": "sha256:0ccc0c2a141df9c1e40598c1244e54815bd90c6c38625a5d2d13f7fb2989640d",
     "interoperability_matrix": "sha256:f86fc0b330f7a068526281d3cd32710f47af266b309d0e18a27296710ae97c69",
-    "oap_conformance": "sha256:78826f2b0f22a1ecd8b69bbf37bad094c96def0471c6af65f31a95611538ddeb",
+    "oap_conformance": "sha256:12c0172fb13bd7df9af4c6e3031fd9ae650c83e723c50ffcd1ef41c4ca07d241",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
     "reference_deployment": "sha256:8cf9e47f9b777ea720b4aab1409d015ba79193d681db0b42660eab355b522678",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
@@ -278,7 +278,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.16.0",
+  "package_version": "0.16.1",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
