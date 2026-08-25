@@ -1,3 +1,4 @@
+import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +19,29 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  const shortcuts = useMemo<Shortcut[]>(() => [
+    { key: "k", mod: true, describe: "Focus the message box", run: () => {
+        setView("chat");
+        window.setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(), 0);
+      } },
+    { key: "n", mod: true, shift: true, describe: "New conversation", run: () => {
+        setView("chat");
+        window.dispatchEvent(new CustomEvent("loro:new-conversation"));
+      } },
+    { key: "1", mod: true, describe: "Go to Chat", run: () => setView("chat") },
+    { key: "2", mod: true, describe: "Go to Bots", run: () => setView("bots") },
+    { key: "3", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
+    { key: "4", mod: true, describe: "Go to Settings", run: () => setView("settings") },
+    { key: "/", describe: "Show keyboard shortcuts", run: () => setShowShortcuts(true) },
+    { key: "Escape", describe: "Close a dialog or clear an error", run: () => {
+        setShowShortcuts(false);
+        setError("");
+      } },
+  ], []);
+
+  useEffect(() => registerShortcuts(shortcuts), [shortcuts]);
 
   const refreshConversations = useCallback(async () => {
     const items = await request<Conversation[]>("/api/conversations");
@@ -86,6 +110,23 @@ export default function App() {
       </aside>
       <main className="main-panel">
         {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
+        {showShortcuts && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"
+               onClick={(event) => { if (event.target === event.currentTarget) setShowShortcuts(false); }}>
+            <div className="modal shortcuts-sheet">
+              <button className="modal-close" onClick={() => setShowShortcuts(false)} aria-label="Close">×</button>
+              <small>Keyboard</small>
+              <h2>Shortcuts</h2>
+              <ul>
+                {shortcuts.map((item) => (
+                  <li key={item.describe}><span>{item.describe}</span><kbd>{chord(item)}</kbd></li>
+                ))}
+                <li><span>Send the message</span><kbd>Enter</kbd></li>
+                <li><span>Newline in the message box</span><kbd>Shift+Enter</kbd></li>
+              </ul>
+            </div>
+          </div>
+        )}
         {view === "chat" && <ChatView conversations={conversations} activeId={activeId} setActiveId={setActiveId} profiles={profiles} onNew={newConversation} refresh={refreshConversations} setError={setError} />}
         {view === "bots" && <BotsView profiles={profiles} onChat={newConversation} />}
         {view === "profiles" && <ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} />}
@@ -112,6 +153,14 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
+
+  // Cmd/Ctrl+Shift+N is registered globally; the handler lives here because
+  // this is where onNew is in scope.
+  useEffect(() => {
+    const open = () => onNew();
+    window.addEventListener("loro:new-conversation", open);
+    return () => window.removeEventListener("loro:new-conversation", open);
+  }, [onNew]);
   const [approval, setApproval] = useState<Approval | null>(null);
   const transcript = useRef<HTMLDivElement>(null);
   const active = conversations.find((item) => item.id === activeId);

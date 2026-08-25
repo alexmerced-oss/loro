@@ -486,3 +486,9 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 
 @media(max-width:900px){.theme-toggle i{display:none}.theme-toggle{justify-content:center;padding:9px 4px}}
 @media(max-width:680px){.theme-toggle{display:none}}
+
+/* --- Keyboard shortcuts sheet --------------------------------------------- */
+.shortcuts-sheet ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.shortcuts-sheet li{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:9px 2px;border-bottom:1px solid var(--c-29332c);font-size:12px}
+.shortcuts-sheet li:last-child{border-bottom:0}
+.shortcuts-sheet kbd{font:11px 'DM Mono',ui-monospace,monospace;border:1px solid var(--c-34433a);background:var(--c-0e1310);border-radius:5px;padding:3px 7px;white-space:nowrap}
