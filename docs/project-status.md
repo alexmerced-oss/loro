@@ -76,6 +76,20 @@ sandbox posture and approval mode; policy explanation for a hypothetical request
 record with hash-chain verification and filtering by event type. It is read-only throughout and
 cannot grant authority or mutate state.
 
+Two gaps in that streaming were closed. The Graphs view claimed a dropped connection resumed from
+the cursor, but the client requested the whole log every time, never tracked its position, and
+cleared the run on any error; a lost connection therefore blanked the board while the run carried
+on. It now resumes from the last event it saw, and a reloaded page finds a run still in progress
+through a new endpoint that lists live handles, as distinct from the persisted history a finished
+record lands in.
+
+A first-run panel replaces the workspace when a folder cannot run a turn. Loro is configured per
+folder and the browser assumed that had already happened, so a fresh project produced a composer
+whose first message failed with a provider error and no explanation. The panel reports the same
+readiness `loro get-started` does and can select a provider and model, but never accepts a
+credential: keys stay in the environment or the OS keyring, and it reports only whether one was
+found and which variable it expects.
+
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and
 validity checks are unavailable under the repository's current GitHub plan, so repository-owned
