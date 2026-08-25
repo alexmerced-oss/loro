@@ -1,3 +1,4 @@
+import { FirstRun } from "./FirstRun";
 import { GovernanceView } from "./GovernanceView";
 import { GraphsView } from "./GraphsView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
@@ -21,6 +22,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const shortcuts = useMemo<Shortcut[]>(() => [
@@ -62,6 +64,16 @@ export default function App() {
       try {
         const session = await initialize();
         setWorkspace(session.workspace);
+        // Ask whether this folder can actually run a turn before showing a
+        // workspace whose composer would fail on the first message.
+        const readiness = await request<{ ready?: boolean }>("/api/onboarding/readiness").catch(
+          () => ({ ready: true }),
+        );
+        if (!readiness.ready) {
+          setNeedsSetup(true);
+          setReady(true);
+          return;
+        }
         await Promise.all([refreshConversations(), refreshProfiles()]);
         setReady(true);
       } catch (reason) {
@@ -88,6 +100,19 @@ export default function App() {
   }
 
   if (!ready) return <Splash error={error} />;
+  // A fresh folder has no provider; showing an empty workspace whose first
+  // message will fail is worse than saying so.
+  if (needsSetup) {
+    return (
+      <FirstRun
+        setError={setError}
+        onReady={() => {
+          setNeedsSetup(false);
+          void refreshConversations();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">

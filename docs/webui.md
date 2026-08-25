@@ -138,6 +138,30 @@ The initial form exposes descriptions and role instructions plus the effective m
 Skills, memory stores, and policy adjustments. The API accepts the complete validated profile
 document, allowing future form controls to expand without defining another profile format.
 
+## First Run
+
+Loro is configured per folder, and the browser previously assumed that had already happened: open
+`loro web` in a fresh project and the first message failed with a provider error, having never said
+that a provider was not chosen.
+
+The boot sequence now asks `/api/onboarding/readiness` before rendering the workspace. When the
+folder cannot run a turn, the setup panel replaces the shell rather than presenting a composer that
+is guaranteed to fail. It reports the same four checks `loro get-started` does:
+
+| Step | Blocking | Meaning |
+| --- | --- | --- |
+| Project configuration | yes | Whether `.loro/config.local.toml` exists |
+| Model | no | The provider and model that would be used, flagged when offline |
+| Credential | yes | Whether a key was found, and which variable was searched |
+| Default agent profile | no | Optional; a role for bots, not a gate on the first message |
+
+A provider and model can be chosen in the panel, which writes only the route into the project
+configuration. **Credentials are never accepted through the form.** A key typed into a page ends up
+in a file on disk, so keys stay in the environment or the OS keyring and the panel reports only
+whether one was found and which variable it expects. `Try it offline first` selects the `mock`
+provider, which answers without any credential, so the whole loop can be seen before a key is
+found.
+
 ## Governance
 
 The Governance view is the evidence surface, and it is entirely read-only.

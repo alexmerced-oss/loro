@@ -629,3 +629,26 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .gov-event-top time{font:9.5px 'DM Mono';color:var(--c-6e7f73)}
 .gov-event-facts{display:flex;flex-wrap:wrap;gap:9px;margin-top:6px;font:9.5px 'DM Mono';color:var(--c-8d9b91)}
 .gov-note{color:var(--c-8d9b91);font-size:12px;margin:0}
+
+/* --- First run ------------------------------------------------------------ */
+.first-run{min-height:100vh;display:grid;place-items:center;padding:28px}
+.first-run-card{width:min(560px,100%);border:1px solid var(--c-29332c);background:var(--c-111713);border-radius:14px;padding:28px;box-shadow:0 20px 60px var(--c-0008)}
+.first-run-card .parrot{font-size:34px}
+.first-run-card h1{font-size:24px;margin:10px 0 6px}
+.first-run-card>p{color:var(--c-8d9b91);font-size:13px;margin:0 0 20px;overflow-wrap:anywhere}
+.first-run-steps{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:11px}
+.first-run-steps li{display:grid;grid-template-columns:20px 1fr;gap:9px;align-items:start}
+.first-run-steps .mark{font:600 13px 'DM Mono';color:var(--c-6e7f73)}
+.first-run-steps li.done .mark{color:var(--c-9de7b1)}
+.first-run-steps b{font-size:13px;display:flex;align-items:center;gap:7px}
+.first-run-steps .tag{font:8.5px 'DM Mono';font-style:normal;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--c-735f35);color:var(--c-d9bd74);border-radius:4px;padding:1px 5px}
+.first-run-steps small{display:block;color:var(--c-8d9b91);font-size:11.5px;margin-top:2px;overflow-wrap:anywhere}
+.first-run-steps em{display:block;color:var(--c-a9b8ae);font-style:normal;font-size:11.5px;margin-top:4px}
+.first-run-choose{border-top:1px solid var(--c-29332c);padding-top:18px;display:grid;gap:8px}
+.first-run-choose label{font:500 10px 'DM Mono';letter-spacing:.13em;text-transform:uppercase;color:var(--c-6e7f73)}
+.first-run-choose select,.first-run-choose input{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:7px;color:var(--c-e7eee9);padding:10px;font-size:13px;outline:0}
+.first-run-choose select:focus,.first-run-choose input:focus{border-color:var(--c-568167)}
+.first-run-key{color:var(--c-8d9b91);font-size:11.5px;margin:2px 0 0;line-height:1.6}
+.first-run-key code{background:var(--c-0e1310);border:1px solid var(--c-26302a);border-radius:4px;padding:1px 5px;font:11px 'DM Mono'}
+.first-run-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.first-run-note{color:var(--c-6e7f73);font-size:11px;margin:4px 0 0}

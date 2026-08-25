@@ -47,6 +47,12 @@ class ProfileImport(BaseModel):
     rename: str | None = Field(default=None, max_length=120)
 
 
+class ConfigureRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=60)
+    model: str = Field(default="", max_length=200)
+    small_model: str = Field(default="", max_length=200)
+
+
 class AuditVerifyRequest(BaseModel):
     anchor: str = Field(default="", max_length=200)
 
@@ -144,6 +150,26 @@ def create_app(
     graphs = GraphService(root)
 
     from loro.webui.governance import GovernanceService
+    from loro.webui.onboarding import OnboardingService
+
+    onboarding = OnboardingService(root)
+
+    @app.get("/api/onboarding/readiness")
+    async def onboarding_readiness() -> dict[str, Any]:
+        return onboarding.readiness()
+
+    @app.get("/api/onboarding/providers")
+    async def onboarding_providers() -> dict[str, Any]:
+        return onboarding.providers()
+
+    @app.post("/api/onboarding/configure")
+    async def onboarding_configure(payload: ConfigureRequest) -> dict[str, Any]:
+        """Write the provider and model route. Credentials are never accepted here."""
+        try:
+            return onboarding.configure(payload.provider, payload.model, payload.small_model)
+        except ValueError as error:
+            raise translate(error) from error
+
 
     governance = GovernanceService(root)
 
