@@ -1,13 +1,21 @@
 {
   "oap": "1.0",
   "implementation": "loro",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "level": 3,
   "status": "provisional",
   "source": "docs/oap-implementation-plan.md",
   "source_revision": null,
-  "encodings": ["yaml", "json", "md"],
-  "discovery_roots": ["managed", "user", "project"],
+  "encodings": [
+    "yaml",
+    "json",
+    "md"
+  ],
+  "discovery_roots": [
+    "managed",
+    "user",
+    "project"
+  ],
   "evidence": [
     "tests/test_agent_profiles.py",
     "tests/test_agraph.py",

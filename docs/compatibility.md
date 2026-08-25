@@ -30,7 +30,7 @@ approval, audit, data protection, and explicit-memory rules still apply.
   or shared-memory write mode.
 - Unknown configuration or persisted-record versions are rejected instead of guessed.
 
-No surface is deprecated in `0.15.2`; the warning type and policy establish the contract for later
+No surface is deprecated in `0.16.0`; the warning type and policy establish the contract for later
 releases.
 
 The generated [release contract](release-contract.json) is enforced in CI. After the `0.14`

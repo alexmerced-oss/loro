@@ -6,8 +6,8 @@ installation:
 ```bash
 sha256sum -c SHA256SUMS
 git config gpg.ssh.allowedSignersFile docs/keys/allowed_signers
-git verify-tag v0.15.2
-python -m pip install ./loro_agent-0.15.2-py3-none-any.whl
+git verify-tag v0.16.0
+python -m pip install ./loro_agent-0.16.0-py3-none-any.whl
 loro --version
 loro providers conformance
 loro operations benchmark --strict --output loro-benchmark.json

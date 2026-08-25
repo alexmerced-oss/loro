@@ -136,6 +136,11 @@ Release `0.15.2` adds the optional local Web UI with durable multi-conversation 
 profile-backed bots, governed profile/default-setting editing, streamed execution, approvals,
 cancellation, and hardened local serving. See [Loro 0.15.2](releases/0.15.2.md).
 
+Release `0.16.0` completes that Web UI: Agentic Graphs, a read-only Governance evidence surface,
+and Memory with its proposal queue are reachable from the browser, chat replies and graph runs
+reconnect from a cursor after a reload, a first-run panel replaces a composer that cannot work, and
+two accessibility audit passes are clean. See [Loro 0.16.0](releases/0.16.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.

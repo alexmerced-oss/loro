@@ -231,13 +231,13 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:0a157b3eb2f76bced5d82e5dc74133c0edb2496c3cc9160a8f54a7e93265a38a",
-    "interoperability_matrix": "sha256:c694b8043c046d906e7f9d25e2212a4c59cc1d13e74c7167c0e44016ae25ddbc",
-    "oap_conformance": "sha256:c2dd81ff431fa7d0f8f4ce6044e19b4bd0c21259283651715d98b4f4e3541271",
+    "data_support_matrix": "sha256:0ccc0c2a141df9c1e40598c1244e54815bd90c6c38625a5d2d13f7fb2989640d",
+    "interoperability_matrix": "sha256:f86fc0b330f7a068526281d3cd32710f47af266b309d0e18a27296710ae97c69",
+    "oap_conformance": "sha256:78826f2b0f22a1ecd8b69bbf37bad094c96def0471c6af65f31a95611538ddeb",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:c81ed14e4ba665ff5cdd87f8c34d910595fb30760c9b9b29e3eb516105c5bba3",
+    "reference_deployment": "sha256:8cf9e47f9b777ea720b4aab1409d015ba79193d681db0b42660eab355b522678",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:87b64300f85e7d22a902a0e7b278a234992c735a35a5d43fd7f4a1f134e1d368"
+    "support_matrix": "sha256:36226650c1fd2dc2f4d3b7f54656ac81f4f24e457d0bdd84fbd871aa66e06418"
   },
   "experimental": {
     "extensions": [
@@ -278,7 +278,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.15.2",
+  "package_version": "0.16.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -294,7 +294,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.15",
+  "release_line": "0.16",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

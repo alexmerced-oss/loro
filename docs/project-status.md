@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.15.2` is an **experimental feature release built on the release-quality 0.10
+Loro `0.16.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
 general availability because several production and organization-owned controls require evidence
@@ -57,14 +57,15 @@ CLI. The Web UI remains experimental and does not expand the 0.10 stable boundar
 validation run passed 624 tests with 4 environment-dependent skips and 75.58% repository
 branch-aware coverage.
 
-Unreleased work on that Web UI closes three gaps found after 0.15.2. Assistant markdown is now
-rendered rather than shown as literal `**` markers and backticks, without a raw-HTML pass, so
-untrusted model output cannot introduce elements or `javascript:` links. Loopback binding is
-token-gated per launch, matching MagAgent, which closes the API to other local processes and other
-users on a shared machine. And the committed frontend bundle is now verified in CI: the `Web UI`
-workflow reinstalls from the lockfile, runs the unit tests, rebuilds, and fails when the shipped
-assets no longer match their source, which previously could ship a UI older than its own code.
-Frontend dependencies moved from `latest` to exact pins so the bundle is reproducible.
+The 0.16.0 feature release completes that Web UI. Assistant markdown is now rendered rather than
+shown as literal `**` markers and backticks, without a raw-HTML pass, so untrusted model output
+cannot introduce elements or `javascript:` links. Loopback binding is token-gated per launch,
+matching MagAgent, which closes the API to other local processes and other users on a shared
+machine. The committed frontend bundle is verified in CI: the `Web UI` workflow reinstalls from the
+lockfile, runs the unit tests, rebuilds, and fails when the shipped assets no longer match their
+source, which previously could ship a UI older than its own code. Frontend dependencies moved from
+`latest` to exact pins so the bundle is reproducible. Its release validation run passed 720 tests
+with 3 environment-dependent skips, alongside 29 frontend tests.
 
 The Web UI also gained a Graphs view, closing the largest gap between the CLI and the browser: Loro
 implements AGS conformance level 3, and none of that runtime was previously reachable from its own
@@ -95,6 +96,12 @@ queue, and governed shared memory were all terminal-only, so the memory shaping 
 invisible from the interface that displayed those replies. Accepting a proposal writes a local
 memory or stages a shared draft exactly as the CLI does, and declining one is newly possible at all:
 the CLI only accepts, so the queue could previously only grow. Both decisions are audited.
+
+Two accessibility audit passes run against a live server, because the properties that matter are
+computed styles against real backgrounds rather than anything a unit test can assert. The first
+covers contrast in both themes, accessible names, heading structure, pointer-target size, clipped
+text, and horizontal overflow; the second covers the tab ring, focus indication,
+`prefers-reduced-motion`, 200% zoom, and narrow viewports. Both are clean across every view.
 
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and

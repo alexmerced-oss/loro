@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.15.2`. It records the
+This is the single authoritative roadmap for work remaining after Loro `0.16.0`. It records the
 experimental Open Agent Profile releases and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -13,10 +13,12 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.15.2`, released August 22, 2026, preserves the 0.10 stable-core baseline. It includes the
+Loro `0.16.0`, released August 25, 2026, preserves the 0.10 stable-core baseline. It includes the
 provisional Level 3 harness delivered in 0.12, the interactive workflows introduced in 0.13, the
-provider, profile, artifact, graph, and onboarding improvements delivered in 0.14, and an optional
-local Web UI for durable conversations, profile-backed bots, and governed configuration. In
+provider, profile, artifact, graph, and onboarding improvements delivered in 0.14, the optional
+local Web UI for durable conversations, profile-backed bots, and governed configuration introduced
+in 0.15, and that Web UI completed in 0.16 with Agentic Graphs, a read-only governance evidence
+surface, memory and its proposal queue, cursor-based reconnection, and first-run setup. In
 addition to the
 agent, memory, governance, provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark,
 and release controls delivered through `0.8`, the repository now provides:
