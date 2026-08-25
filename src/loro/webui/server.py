@@ -47,6 +47,14 @@ class ProfileImport(BaseModel):
     rename: str | None = Field(default=None, max_length=120)
 
 
+class AuditVerifyRequest(BaseModel):
+    anchor: str = Field(default="", max_length=200)
+
+
+class PolicyExplainRequest(BaseModel):
+    request: dict[str, Any]
+
+
 class GraphSaveRequest(BaseModel):
     path: str = Field(min_length=1, max_length=500)
     document: dict[str, Any]
@@ -134,6 +142,32 @@ def create_app(
     from loro.webui.graphs import GraphService
 
     graphs = GraphService(root)
+
+    from loro.webui.governance import GovernanceService
+
+    governance = GovernanceService(root)
+
+    @app.get("/api/governance/status")
+    async def governance_status() -> dict[str, Any]:
+        return governance.status()
+
+    @app.get("/api/governance/audit")
+    async def governance_audit(
+        limit: int = 100, event_type: str = "", actor: str = ""
+    ) -> dict[str, Any]:
+        return governance.audit(limit=limit, event_type=event_type, actor=actor)
+
+    @app.post("/api/governance/verify")
+    async def governance_verify(payload: AuditVerifyRequest) -> dict[str, Any]:
+        """Recompute the audit hash chain. Read-only; nothing is written."""
+        return governance.verify(payload.anchor)
+
+    @app.post("/api/governance/explain")
+    async def governance_explain(payload: PolicyExplainRequest) -> dict[str, Any]:
+        try:
+            return governance.explain(payload.request)
+        except ValueError as error:
+            raise translate(error) from error
 
     @app.get("/api/graphs")
     async def list_graphs() -> list[dict[str, Any]]:

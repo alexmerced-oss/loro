@@ -138,6 +138,23 @@ The initial form exposes descriptions and role instructions plus the effective m
 Skills, memory stores, and policy adjustments. The API accepts the complete validated profile
 document, allowing future form controls to expand without defining another profile format.
 
+## Governance
+
+The Governance view is the evidence surface, and it is entirely read-only.
+
+**Posture** reports who you resolve as, the tenant and roles, the runtime budgets, whether the
+sandbox profile is enforced, the approval mode, and where the audit record is written.
+
+**Policy** evaluates a permission request and shows the decision, the reason, the policy version and
+source, and which rule matched. It is `loro policy explain` in the browser: the rules are evaluated
+against a hypothetical request and nothing is executed.
+
+**Audit** lists recent events newest first, with counts by event type you can filter on, and a
+*Verify chain* control that recomputes the SHA-256 hash chain and reports whether every event still
+hashes onto its predecessor. Only the JSONL sink can be verified locally; another sink says so
+rather than pretending. The event window is bounded, because a ledger grows without limit and the
+browser only ever shows part of it.
+
 ## Bots And Group Conversations
 
 The Bots view is a roster of every profile you can talk to, each showing the model route it will

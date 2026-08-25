@@ -71,6 +71,11 @@ implements AGS conformance level 3, and none of that runtime was previously reac
 interface. It discovers, validates, plans, and runs graphs through the same governed executor, holds
 human gates for an explicit decision, and streams node transitions from a replayable cursor.
 
+A Governance view now exposes the evidence surface in the browser: resolved identity, budgets,
+sandbox posture and approval mode; policy explanation for a hypothetical request; and the audit
+record with hash-chain verification and filtering by event type. It is read-only throughout and
+cannot grant authority or mutate state.
+
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and
 validity checks are unavailable under the repository's current GitHub plan, so repository-owned

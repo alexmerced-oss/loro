@@ -587,3 +587,45 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .bot-card-head{display:flex;align-items:start;justify-content:space-between;gap:10px}
 .bot-pick{display:flex;align-items:center;gap:6px;font:9px 'DM Mono';letter-spacing:.1em;text-transform:uppercase;color:var(--c-8d9b91);cursor:pointer}
 .bot-pick input{accent-color:var(--c-50b978);cursor:pointer}
+
+/* --- Governance ----------------------------------------------------------- */
+.gov-page{display:flex;flex-direction:column;gap:20px}
+.gov-page>*{flex:none}
+.gov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.gov-card{border:1px solid var(--c-29332c);background:var(--c-101512);border-radius:10px;padding:14px 16px}
+.gov-card small{font:500 10px 'DM Mono';letter-spacing:.13em;color:var(--c-6e7f73)}
+.gov-card dl{margin:10px 0 0;display:grid;gap:7px}
+.gov-card dl div{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.gov-card dt{color:var(--c-8d9b91);text-transform:capitalize}
+.gov-card dd{margin:0;font-weight:600;overflow-wrap:anywhere;text-align:right}
+.gov-issues{border:1px solid var(--c-a85353);background:var(--c-4c2626);color:var(--c-ffe6e6);border-radius:9px;padding:12px 15px;font-size:12.5px}
+.gov-issues ul{margin:7px 0 0;padding-left:18px}
+.gov-section{border:1px solid var(--c-29332c);border-radius:10px;padding:16px;display:grid;gap:12px;background:var(--c-101512)}
+.gov-section-head{display:flex;flex-wrap:wrap;gap:12px;align-items:start;justify-content:space-between}
+.gov-section-head small{font:500 10px 'DM Mono';letter-spacing:.13em;color:var(--c-6e7f73)}
+.gov-section-head h2{font-size:17px;margin:5px 0 3px}
+.gov-section-head p{margin:0;color:var(--c-8d9b91);font-size:12px}
+.gov-section textarea{width:100%;background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:8px;color:var(--c-e7eee9);padding:11px;font:11.5px/1.6 'DM Mono',ui-monospace,monospace;outline:0;resize:vertical}
+.gov-section textarea:focus{border-color:var(--c-568167)}
+.gov-decision{border:1px solid var(--c-29332c);border-radius:9px;padding:13px 15px;display:grid;gap:5px}
+.gov-decision b{font:600 12px 'DM Mono';letter-spacing:.08em}
+.gov-decision p{margin:0;font-size:12.5px;color:var(--c-a9b8ae)}
+.gov-decision small{font:10px 'DM Mono';color:var(--c-6e7f73)}
+.decision-allow{border-color:var(--c-568167)}.decision-allow b{color:var(--c-9de7b1)}
+.decision-deny{border-color:var(--c-a85353)}.decision-deny b{color:var(--c-f2b8b8)}
+.decision-ask{border-color:var(--c-735f35)}.decision-ask b{color:var(--c-d9bd74)}
+.gov-chain{border-radius:9px;padding:12px 15px;display:grid;gap:3px}
+.gov-chain.ok{border:1px solid var(--c-568167);background:var(--c-19221c)}
+.gov-chain.broken{border:1px solid var(--c-a85353);background:var(--c-4c2626)}
+.gov-chain b{font-size:13px}.gov-chain span{font-size:11.5px;color:var(--c-a9b8ae)}
+.gov-filters{display:flex;flex-wrap:wrap;gap:6px}
+.gov-filters .chip{background:transparent;cursor:pointer;color:var(--c-8d9b91)}
+.gov-filters .chip.active{border-color:var(--c-568167);color:var(--c-9de7b1)}
+.gov-filters .chip i{font-style:normal;opacity:.6}
+.gov-events{display:grid;gap:7px;max-height:420px;overflow:auto}
+.gov-events article{border:1px solid var(--c-29332c);border-radius:8px;padding:10px 12px;background:var(--c-0e1310)}
+.gov-event-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.gov-event-top b{font-size:12px}
+.gov-event-top time{font:9.5px 'DM Mono';color:var(--c-6e7f73)}
+.gov-event-facts{display:flex;flex-wrap:wrap;gap:9px;margin-top:6px;font:9.5px 'DM Mono';color:var(--c-8d9b91)}
+.gov-note{color:var(--c-8d9b91);font-size:12px;margin:0}
