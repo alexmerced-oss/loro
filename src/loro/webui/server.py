@@ -244,6 +244,12 @@ def create_app(
     async def graph_history() -> list[dict[str, Any]]:
         return graphs.history()
 
+    @app.get("/api/graphs/runs/active")
+    async def graph_active() -> list[dict[str, Any]]:
+        # A browser that reloaded mid-run knows nothing about the run it lost;
+        # this is how it finds the live handle again.
+        return graphs.active()
+
     @app.post("/api/graphs/runs", status_code=202)
     async def start_graph(payload: GraphRunRequest) -> dict[str, str]:
         try:

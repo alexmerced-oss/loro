@@ -162,6 +162,26 @@ whether one was found and which variable it expects. `Try it offline first` sele
 provider, which answers without any credential, so the whole loop can be seen before a key is
 found.
 
+## Reconnecting To A Run
+
+A graph run outlives the page watching it, and the event stream is cursor-based so that a
+reconnecting browser can ask for exactly what it has not seen. That was only half-built: the client
+requested `after=-1` every time and never tracked the cursor, and its `onerror` handler closed the
+stream and cleared the run. A dropped connection therefore blanked the board while the run carried
+on server-side, and the comment claiming otherwise was wrong.
+
+The client now records each event's sequence, delivered as the SSE `id`, and resumes from it. A
+dropped connection reconnects up to five times before giving up and saying the connection was lost
+rather than leaving the board reconnecting forever.
+
+Reloading the page is the other way to lose a run, and a reloaded page knows nothing about the run
+it lost. `GET /api/graphs/runs/active` lists the runs this server still holds in memory, distinct
+from `GET /api/graphs/runs`, which reads persisted history: a finished record is not something you
+can reattach to. On mount the Graphs view adopts any run still in progress and replays it from the
+beginning, because the board has no state from a run it never watched. A run waiting on an approval
+is reported as such, and replaying its `gate.requested` event re-renders the prompt, so a reattached
+run is not left stuck behind a gate nobody can answer.
+
 ## Governance
 
 The Governance view is the evidence surface, and it is entirely read-only.

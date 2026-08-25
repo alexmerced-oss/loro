@@ -81,12 +81,21 @@ function Card({ node }: { node: GraphNode }) {
   );
 }
 
+// Bounded: a server that has actually gone away should say so rather than
+// leave the board reconnecting forever.
+const MAX_RECONNECTS = 5;
+const RECONNECT_DELAY_MS = 1200;
+
 export function GraphsView({ setError }: { setError: (message: string) => void }) {
   const [files, setFiles] = useState<GraphFile[]>([]);
   const [path, setPath] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
+  // The last event sequence this browser actually saw, so a reconnect asks for
+  // what it missed rather than replaying the whole run or nothing at all.
+  const cursor = useRef(-1);
+  const retries = useRef(0);
   const [status, setStatus] = useState("Ready");
   const [gate, setGate] = useState<Gate | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -138,6 +147,99 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
     void loadPlan(path);
   }, [path, loadPlan, draft]);
 
+  /**
+   * Subscribe to a run's event stream from a cursor.
+   *
+   * Split out of `start` because starting a run is not the only way to end up
+   * watching one: a browser that reloads mid-run, or whose connection drops,
+   * has to pick the same stream back up from where it stopped.
+   */
+  const attach = useCallback(
+    (id: string, after: number) => {
+      const note = (line: string) => setLog((entries) => [...entries.slice(-80), line]);
+      const source = new EventSource(`/api/graphs/runs/${id}/events?after=${after}`);
+      stream.current = source;
+
+      // Every event carries its sequence as the SSE id, so a reconnect can ask
+      // for exactly what it has not seen. Not tracking it is what made the
+      // cursor decorative: `after` was hardcoded and nothing ever resumed.
+      const track = (event: Event) => {
+        const seq = Number((event as MessageEvent).lastEventId);
+        if (Number.isFinite(seq)) cursor.current = seq;
+      };
+
+      source.addEventListener("gate.requested", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        setGate({ request_id: data.request_id, prompt: data.prompt, roles: data.roles || [] });
+        setStatus("Waiting on a gate");
+      });
+      source.addEventListener("gate.resolved", (event) => {
+        track(event);
+        setGate(null);
+        setStatus("Running");
+      });
+      source.addEventListener("node.started", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        setNodes((current) =>
+          current.map((node) => (node.id === data.node_id ? { ...node, state: "running" } : node)),
+        );
+        note(`▶ ${data.node_id}`);
+      });
+      source.addEventListener("node.finished", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === data.node_id ? { ...node, state: data.status || "succeeded" } : node,
+          ),
+        );
+        note(`✓ ${data.node_id} ${data.status || ""}`);
+      });
+      source.addEventListener("run.finished", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        setStatus(data.status || "finished");
+        note(`Run ${data.status || "finished"}`);
+      });
+      source.addEventListener("run.failed", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        setStatus("failed");
+        setError(data.error || "The graph run failed.");
+      });
+      source.addEventListener("run.closed", (event) => {
+        track(event);
+        source.close();
+        stream.current = null;
+        retries.current = 0;
+        setRunId(null);
+        setGate(null);
+      });
+      source.onerror = () => {
+        source.close();
+        stream.current = null;
+        // A dropped connection is not a dead run. Resume from the cursor
+        // rather than abandoning it, which is what used to happen: the run
+        // carried on server-side while the board went blank.
+        if (retries.current >= MAX_RECONNECTS) {
+          retries.current = 0;
+          setRunId(null);
+          setStatus("disconnected");
+          setError(
+            "Lost the connection to this run. It may still be going; reload to pick it back up.",
+          );
+          return;
+        }
+        retries.current += 1;
+        note(`Reconnecting (${retries.current}/${MAX_RECONNECTS})…`);
+        window.setTimeout(() => attach(id, cursor.current), RECONNECT_DELAY_MS);
+      };
+    },
+    [setError],
+  );
+
   const start = useCallback(
     async (dryRun: boolean) => {
       if (!path || runId) return;
@@ -149,65 +251,44 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         setRunId(started.run_id);
         setStatus(dryRun ? "Dry run" : "Running");
         setLog([]);
-
-        // Cursor-based, so a dropped connection resumes without losing events.
-        const source = new EventSource(`/api/graphs/runs/${started.run_id}/events?after=-1`);
-        stream.current = source;
-
-        const note = (line: string) => setLog((entries) => [...entries.slice(-80), line]);
-
-        source.addEventListener("gate.requested", (event) => {
-          const data = JSON.parse((event as MessageEvent).data);
-          setGate({ request_id: data.request_id, prompt: data.prompt, roles: data.roles || [] });
-          setStatus("Waiting on a gate");
-        });
-        source.addEventListener("gate.resolved", () => {
-          setGate(null);
-          setStatus("Running");
-        });
-        source.addEventListener("node.started", (event) => {
-          const data = JSON.parse((event as MessageEvent).data);
-          setNodes((current) =>
-            current.map((node) => (node.id === data.node_id ? { ...node, state: "running" } : node)),
-          );
-          note(`▶ ${data.node_id}`);
-        });
-        source.addEventListener("node.finished", (event) => {
-          const data = JSON.parse((event as MessageEvent).data);
-          setNodes((current) =>
-            current.map((node) =>
-              node.id === data.node_id ? { ...node, state: data.status || "succeeded" } : node,
-            ),
-          );
-          note(`✓ ${data.node_id} ${data.status || ""}`);
-        });
-        source.addEventListener("run.finished", (event) => {
-          const data = JSON.parse((event as MessageEvent).data);
-          setStatus(data.status || "finished");
-          note(`Run ${data.status || "finished"}`);
-        });
-        source.addEventListener("run.failed", (event) => {
-          const data = JSON.parse((event as MessageEvent).data);
-          setStatus("failed");
-          setError(data.error || "The graph run failed.");
-        });
-        source.addEventListener("run.closed", () => {
-          source.close();
-          stream.current = null;
-          setRunId(null);
-          setGate(null);
-        });
-        source.onerror = () => {
-          source.close();
-          stream.current = null;
-          setRunId(null);
-        };
+        cursor.current = -1;
+        retries.current = 0;
+        attach(started.run_id, -1);
       } catch (problem) {
         setError((problem as Error).message);
       }
     },
-    [path, runId, setError],
+    [path, runId, setError, attach],
   );
+
+  // Reattach to a run that was still going when this view last went away.
+  useEffect(() => {
+    if (stream.current) return;
+    let abandoned = false;
+    (async () => {
+      try {
+        const live = await request<{ run_id: string; path: string; status: string }[]>(
+          "/api/graphs/runs/active",
+        );
+        const running = live.find((item) => item.status === "running");
+        if (abandoned || !running || stream.current) return;
+        setRunId(running.run_id);
+        setPath(running.path);
+        setStatus("Running");
+        setLog(["Picked up a run already in progress."]);
+        // From the start: the board has no state from a run it never watched.
+        cursor.current = -1;
+        attach(running.run_id, -1);
+      } catch {
+        /* nothing in flight is the normal case, not an error worth showing */
+      }
+    })();
+    return () => {
+      abandoned = true;
+    };
+    // Deliberately once per mount: this is recovery, not a subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Show a freshly drafted document on the board without saving it yet. */
   const adoptDraft = useCallback((document: Record<string, unknown>, note: string) => {

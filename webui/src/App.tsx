@@ -69,7 +69,10 @@ export default function App() {
         const readiness = await request<{ ready?: boolean }>("/api/onboarding/readiness").catch(
           () => ({ ready: true }),
         );
-        if (!readiness.ready) {
+        // Only an explicit "no". Replacing the whole workspace with a setup
+        // panel is a strong intervention, so an unreachable or unexpected
+        // answer must not trigger it: the composer reports its own errors.
+        if (readiness.ready === false) {
           setNeedsSetup(true);
           setReady(true);
           return;

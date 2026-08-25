@@ -262,3 +262,45 @@ def test_deterministic_generation_needs_no_provider(tmp_path: Path) -> None:
 def test_generation_rejects_an_empty_goal(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         GraphService(tmp_path).generate("   ")
+
+
+def test_active_lists_only_runs_still_in_memory(tmp_path: Path) -> None:
+    """`history` reads persisted records, which is the wrong question here.
+
+    A browser that reloaded mid-run needs the live handle it can still reattach
+    to, and a finished record is not one.
+    """
+    from loro.webui.graphs import GraphRunHandle, GraphService
+
+    service = GraphService(tmp_path)
+    running = GraphRunHandle("run_live", "graphs/build.yaml")
+    running.publish("node.started", node_id="plan")
+    finished = GraphRunHandle("run_done", "graphs/old.yaml")
+    finished.status = "succeeded"
+    service.handles["run_live"] = running
+    service.handles["run_done"] = finished
+
+    active = service.active()
+    assert [item["run_id"] for item in active] == ["run_live"]
+    assert active[0]["path"] == "graphs/build.yaml"
+    # The cursor lets a client decide whether it has already seen everything.
+    assert active[0]["cursor"] == 1
+    assert active[0]["awaiting_gate"] is False
+
+
+def test_active_reports_a_run_waiting_on_a_gate(tmp_path: Path) -> None:
+    """A reattaching browser has to re-render the approval, or the run hangs."""
+    from loro.webui.graphs import GateRequest, GraphRunHandle, GraphService
+
+    service = GraphService(tmp_path)
+    handle = GraphRunHandle("run_gate", "graphs/build.yaml")
+    handle.gate = GateRequest(request_id="gate-1", prompt="Run shell?", roles=["operator"])
+    service.handles["run_gate"] = handle
+
+    assert service.active()[0]["awaiting_gate"] is True
+
+
+def test_active_is_empty_when_nothing_is_running(tmp_path: Path) -> None:
+    from loro.webui.graphs import GraphService
+
+    assert GraphService(tmp_path).active() == []

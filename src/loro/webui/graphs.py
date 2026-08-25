@@ -458,6 +458,25 @@ class GraphService:
             self.semaphore.release()
             handle.publish("run.closed", status=handle.status)
 
+    def active(self) -> list[dict[str, Any]]:
+        """Runs this server still holds in memory.
+
+        `history` reads persisted records, which is the wrong question for a
+        browser that reloaded mid-run: it needs the live handle it can still
+        reattach to, and a finished record is not one.
+        """
+        return [
+            {
+                "run_id": handle.run_id,
+                "path": handle.path,
+                "status": handle.status,
+                "cursor": len(handle.events),
+                "awaiting_gate": handle.gate is not None and not handle.gate.decided.is_set(),
+            }
+            for handle in self.handles.values()
+            if handle.status == "running"
+        ]
+
     def handle(self, run_id: str) -> GraphRunHandle:
         handle = self.handles.get(run_id)
         if handle is None:
