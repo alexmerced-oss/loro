@@ -13,10 +13,13 @@ same way `loro memory accept-proposal` writes it.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from loro.config import load_config
+
+logger = logging.getLogger(__name__)
 
 # A browser is shown a window, never a whole store.
 MAX_MEMORIES = 200
@@ -317,4 +320,4 @@ class MemoryService:
                 config.audit, resolve_identity(config.identity), safety_config=config.safety
             ).write(event, **payload)
         except Exception:  # noqa: BLE001 - never fail a decision on audit wiring
-            pass
+            logger.warning("Unable to write memory decision audit event", exc_info=True)

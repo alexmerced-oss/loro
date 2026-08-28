@@ -568,7 +568,8 @@ class RunManager:
                     if is_group:
                         handle.publish("speaker.finished", profile=speaker, message=last_message)
 
-                assert last_result is not None and last_message is not None
+                if last_result is None or last_message is None:
+                    raise RuntimeError("conversation run completed without an assistant response")
                 self.store.finish_run(
                     handle.run_id,
                     status="completed",

@@ -15,6 +15,7 @@ than being auto-approved.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,7 @@ from loro.config import load_config
 from loro.data_protection import DataProtectionEngine
 
 GRAPH_SUFFIXES = (".agraph.yaml", ".agraph.yml", ".agraph.json")
+logger = logging.getLogger(__name__)
 
 # Discovery is bounded: a deep node_modules tree should not become a file scan.
 MAX_DISCOVERY_DEPTH = 4
@@ -347,6 +349,7 @@ class GraphService:
             try:
                 record = store.get(run_id if isinstance(run_id, str) else str(run_id))
             except Exception:
+                logger.warning("Unable to load graph run record %s", run_id, exc_info=True)
                 continue
             records.append(
                 {
