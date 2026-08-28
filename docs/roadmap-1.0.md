@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.16.0`. It records the
+This is the single authoritative roadmap for work remaining after Loro `0.17.0`. It records the
 experimental Open Agent Profile releases and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -13,12 +13,15 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.16.0`, released August 25, 2026, preserves the 0.10 stable-core baseline. It includes the
-provisional Level 3 harness delivered in 0.12, the interactive workflows introduced in 0.13, the
+Loro `0.17.0` preserves the 0.10 stable-core baseline. It includes the
+Level 3 OAP harness delivered provisionally in 0.12 and aligned to the published specification in
+0.17, the interactive workflows introduced in 0.13, the
 provider, profile, artifact, graph, and onboarding improvements delivered in 0.14, the optional
 local Web UI for durable conversations, profile-backed bots, and governed configuration introduced
 in 0.15, and that Web UI completed in 0.16 with Agentic Graphs, a read-only governance evidence
-surface, memory and its proposal queue, cursor-based reconnection, and first-run setup. In
+surface, memory and its proposal queue, cursor-based reconnection, and first-run setup. Release
+0.17 adds canonical OAP persistence, RFC 8785 OAP/AGS digests, specification-owned AGS validation
+and run-record schemas, and immutable upstream conformance revisions in CI. In
 addition to the
 agent, memory, governance, provider, MCP, Skill, graph, gateway, artifact, deployment, benchmark,
 and release controls delivered through `0.8`, the repository now provides:
@@ -85,9 +88,12 @@ available for evaluation.
 | `0.9` | Released | The candidate boundary is frozen and published for controlled pilot and assurance. |
 | `0.10` | Released | Repository hardening, release signing, and the deliberately small stable core are frozen. |
 | `0.11` | Released | Experimental provisional OAP v1 Level 2 named-agent profiles ship without expanding the stable core. |
-| `0.12` | Released | Provisional Level 3 composition and full harness scoping ship; formal upstream certification remains open. |
+| `0.12` | Released | Provisional Level 3 composition and full harness scoping shipped; upstream alignment followed in 0.17. |
 | `0.13` | Released | Selectable setup, a durable folder REPL, and governed AI artifact drafting ship. |
 | `0.14` | Released | Discovery, profile setup, streaming interaction, artifacts, graphs, and onboarding operate as complete harness workflows. |
+| `0.15` | Released | The optional local Web UI ships with governed conversations, profiles, execution, and approvals. |
+| `0.16` | Released | The Web UI gains graphs, governance evidence, memory, reconnection, and first-run setup. |
+| `0.17` | Release candidate | OAP and AGS align with the published 1.0 specifications and pinned 1.0.1 support libraries. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 0.11: Open Agent Profile
@@ -97,8 +103,8 @@ Agent Profile v1 conformance Level 2: document loading, discovery and trust, fai
 narrowing, runtime instantiation, untrusted state injection, and approval-gated state writeback.
 Loro `0.12.0` completes the deferred Level 3 harness behavior: cycle-checked composition,
 profile-selected MCP/Skills and memory stores, bounded subagents, tenant-bound memory scopes, and
-Agentic Graph profile binding. Formal upstream fixture certification remains deferred because no
-canonical immutable source was available to pin.
+Agentic Graph profile binding. Release 0.17 supersedes the earlier provisional evidence with
+pinned upstream schemas, examples, invalid fixtures, and machine-readable Level 3 results.
 
 The detailed, batch-by-batch scope and release gates are in the
 [0.11.0 Release Plan](releases/0.11.0-plan.md). The source guide remains the

@@ -4,10 +4,10 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.16.1` is the current experimental feature release. The `0.10` deliberately limited stable
-core remains the stabilization baseline, while Open Agent Profile support joins the experimental
-surface. See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0
-gates.
+Loro `0.17.0` is the current release candidate. The deliberately limited `0.10` stable core remains
+the stabilization baseline. The OAP and AGS integrations remain pre-1.0 product surfaces, but are
+implemented against the published 1.0 specifications and their pinned 1.0.1 support libraries.
+See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0 gates.
 
 ## Install
 
@@ -158,9 +158,9 @@ loro setup quickstart
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 - OS-keyring credential vault references with named provider and integration accounts.
 - Signed, identity-mapped Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways.
-- Experimental Open Agent Profile v1 named agents with fail-closed narrowing, untrusted state,
-  digest-bound proposals, `/state`-only atomic writeback, a complete profile wizard, and optional
-  default-profile selection.
+- Open Agent Profile 1.0 Level 3 named agents with fail-closed narrowing, untrusted state,
+  digest-bound proposals, canonical `/state`-only atomic writeback, a complete profile wizard, and
+  optional default-profile selection. This remains experimental in Loro's pre-1.0 support matrix.
 - An optional loopback-first React Web UI with append-only conversations, profile-backed bots,
   streamed runs and approvals, profile revision pinning, and redacted workspace settings. Every
   launch is token-gated, and rendered markdown never evaluates raw HTML from model output.

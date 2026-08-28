@@ -2,11 +2,13 @@
 
 ## Assessment
 
-Loro `0.16.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.17.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
-unchanged; Open Agent Profile support is experimental. Loro is not yet unrestricted enterprise
-general availability because several production and organization-owned controls require evidence
-that cannot be created by repository tests.
+unchanged. Open Agent Profile and Agentic Graph support are aligned with their published 1.0
+specifications and pinned 1.0.1 support libraries, while remaining experimental in Loro's product
+support matrix. Loro is not yet unrestricted enterprise general availability because several
+production and organization-owned controls require evidence that cannot be created by repository
+tests.
 
 ## Stable Boundary
 
@@ -32,11 +34,10 @@ Postgres recovery, Polaris/Iceberg quickstart integration, and content-free benc
 release validation suite passed 547 tests with 5 environment-dependent skips and 74.31% branch
 coverage.
 
-The 0.12.0 release completes the repository-defined provisional OAP Level 3 harness without
-changing that stable boundary. Its pre-release validation run passed 580 tests with 5
+The 0.12.0 release completed the repository-defined provisional OAP Level 3 harness without
+changing that stable boundary. Its historical pre-release validation run passed 580 tests with 5
 environment-dependent skips, 75.04% repository branch-aware coverage, and 89.13%
-profile-package coverage. Formal upstream OAP certification remains pending and is explicitly
-provisional in the machine-readable conformance statement.
+profile-package coverage. Release 0.17.0 supersedes that provisional conformance description.
 
 The 0.13.0 feature release adds selectable provider/model setup, a durable folder REPL, and
 model-drafted document, presentation, spreadsheet, and brief commands. These additions preserve
@@ -102,6 +103,14 @@ computed styles against real backgrounds rather than anything a unit test can as
 covers contrast in both themes, accessible names, heading structure, pointer-target size, clipped
 text, and horizontal overflow; the second covers the tab ring, focus indication,
 `prefers-reduced-motion`, 200% zoom, and narrow viewports. Both are clean across every view.
+
+The 0.17.0 release candidate aligns OAP and AGS with their canonical 1.0 schemas and 1.0.1 Python
+support libraries. CI pins OAP commit `7fb633a1a59dd7636ffb0030d254f2f58934f74a` and AGS commit
+`f180a4dbd07911f90dd0821f531d7ccd51bb0764`. Loro claims OAP Level 3 and AGS Level 3 in
+[machine-readable OAP evidence](oap-conformance.json) and
+[machine-readable AGS evidence](ags-conformance.json). Profiles, exports, state updates, graph
+digests, and run records now use the canonical formats; older Loro profile encodings remain
+readable at the storage boundary. Final release evidence must be generated from the tagged commit.
 
 GitHub main-branch and release-tag rulesets, required checks, secret scanning with push
 protection, and Dependabot security updates are active. Non-provider secret scanning and

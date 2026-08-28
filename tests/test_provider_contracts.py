@@ -30,7 +30,7 @@ def _fixture(name: str) -> dict:
 
 def test_provider_contract_matrix_covers_profiles_and_required_cases() -> None:
     report = validate_provider_contracts(MATRIX, FIXTURES)
-    assert report.release_line == "0.16"
+    assert report.release_line == "0.17"
     assert set(report.protocols) == {
         "openai-compatible",
         "anthropic",

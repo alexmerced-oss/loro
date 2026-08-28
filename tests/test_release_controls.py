@@ -59,7 +59,7 @@ def test_machine_readable_support_matrix_has_explicit_stability() -> None:
     matrix = json.loads((ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8"))
 
     assert matrix["schema_version"] == "1.0"
-    assert matrix["release_line"] == "0.16"
+    assert matrix["release_line"] == "0.17"
     assert matrix["stability"] == "stabilization"
     assert "linux" in matrix["operating_systems"]["supported"]
     assert "iceberg" in matrix["memory_backends"]["experimental"]
@@ -96,9 +96,9 @@ def test_release_manifest_hashes_actual_artifacts(tmp_path: Path) -> None:
     manifest = json.loads(output.read_text(encoding="utf-8"))
     assert manifest["commit"] == "a" * 40
     assert manifest["workflow_run"] == "fixture-run"
-    assert manifest["data_support_matrix"]["release_line"] == "0.16"
-    assert manifest["interoperability_matrix"]["release_line"] == "0.16"
-    assert manifest["release_contract"]["release_line"] == "0.16"
+    assert manifest["data_support_matrix"]["release_line"] == "0.17"
+    assert manifest["interoperability_matrix"]["release_line"] == "0.17"
+    assert manifest["release_contract"]["release_line"] == "0.17"
     assert manifest["artifacts"] == [
         {
             "bytes": len(b"fixture-wheel"),

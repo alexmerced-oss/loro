@@ -73,7 +73,7 @@ flowchart LR
 - `loro.credentials`: strict vault references, OS-keyring access, and non-secret metadata indexing.
 - `loro.gateway`: signed Slack, Discord, Telegram, Teams, Signal-bridge, and generic adapters plus
   identity mapping, durable replay suppression, bounded dispatch, and asynchronous replies.
-- `loro.agent_profiles`: provisional OAP v1 profile models, safe loading, discovery trust,
+- `loro.agent_profiles`: OAP 1.0 Level 3 profile models, safe loading, discovery trust,
   deterministic digests, effective-policy narrowing, untrusted state rendering, proposals, and
   locked `/state`-only durable writeback.
 - `loro.webui`: optional loopback-first API, append-only SQLite conversation store, bounded run

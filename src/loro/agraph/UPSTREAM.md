@@ -1,8 +1,13 @@
 # Upstream AGS Materials
 
-The JSON Schemas and `reference_validator.py` are vendored from
+Loro 0.17.0 depends on `agentic-graph-spec>=1.0.1,<2` for canonical JSON, graph digests,
+specification validation, and the portable run-record schema. CI pins
 `AlexMercedCoder/agentic-graph-spec` commit
-`6bf105f2f7b51176bc1a4b49db0a722a2aa2e774`, licensed under MIT. The original repository is
+`f180a4dbd07911f90dd0821f531d7ccd51bb0764`, licensed under MIT. The upstream repository is
 <https://github.com/AlexMercedCoder/agentic-graph-spec>.
 
-The CI conformance workflow compares the packaged schemas byte-for-byte with that pinned source.
+The JSON Schemas under `schema/` and the schema in the bundled Agentic Graph Skill mirror that
+pinned 1.0.1 revision. `reference_validator.py` retains expression-parser and finding types from
+the earlier vendored implementation for Loro runtime compatibility; it is no longer the source of
+canonical graph validation. The conformance workflow validates the immutable upstream examples
+and runs Loro's positive, negative-diagnostic, execution, and run-record tests.

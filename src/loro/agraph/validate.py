@@ -4,9 +4,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ags import reference_validator
+
 from loro.agraph.document import GraphDocument, GraphDocumentError, load_graph
-from loro.agraph.reference_validator import Finding, Report, Validator
 from loro.agraph.support import unsupported_feature_findings
+
+_reference = reference_validator()
+Finding = _reference.Finding
+Report = _reference.Report
+Validator = _reference.Validator
 
 
 @dataclass(frozen=True)

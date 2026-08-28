@@ -1,26 +1,28 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
+from oap.validate import canonical_json as canonical_json
+from oap.validate import profile_digest as _profile_digest
+from oap.validate import spec_digest as _spec_digest
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-        "utf-8"
+from loro.agent_profiles.compat import canonical_document
+from loro.agent_profiles.models import AgentProfileModel
+
+
+def profile_digest(document: dict[str, Any] | AgentProfileModel) -> str:
+    value = (
+        document
+        if isinstance(document, AgentProfileModel)
+        else AgentProfileModel.model_validate(document)
     )
+    return _profile_digest(canonical_document(value))
 
 
-def _digest(value: Any) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json(value)).hexdigest()
-
-
-def profile_digest(document: dict[str, Any]) -> str:
-    return _digest(document)
-
-
-def spec_digest(document: dict[str, Any]) -> str:
-    metadata = dict(document.get("metadata", {}))
-    for mutable in ("trust", "revision", "updatedAt", "updated_at"):
-        metadata.pop(mutable, None)
-    return _digest({"metadata": metadata, "spec": document.get("spec", {})})
+def spec_digest(document: dict[str, Any] | AgentProfileModel) -> str:
+    value = (
+        document
+        if isinstance(document, AgentProfileModel)
+        else AgentProfileModel.model_validate(document)
+    )
+    return _spec_digest(canonical_document(value))

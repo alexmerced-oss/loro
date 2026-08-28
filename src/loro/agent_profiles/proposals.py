@@ -43,17 +43,18 @@ class ProfileProposalStore:
         payload = delta.model_dump(mode="json")
         for operation in payload["operations"]:
             value = operation.get("value")
-            if isinstance(value, dict) and "content" in value:
-                value["content"] = self.protection.enforce(
-                    str(value["content"]), "agent_profile"
-                ).content
+            if isinstance(value, dict) and ("content" in value or "text" in value):
+                key = "content" if "content" in value else "text"
+                value[key] = self.protection.enforce(str(value[key]), "agent_profile").content
         proposal = ProfileProposal(
             proposal_id=str(uuid4()),
             kind="state-delta",
             status="pending",
             profile=delta.profile,
             spec_digest=delta.spec_digest,
-            delta=AgentStateDelta.model_validate(payload),
+            delta=AgentStateDelta.model_validate(payload).model_copy(
+                update={"spec_digest": delta.spec_digest}
+            ),
         )
         self._write(proposal)
         return proposal
@@ -77,7 +78,11 @@ class ProfileProposalStore:
             profile=str(payload["profile"]),
             spec_digest=str(payload["spec_digest"]),
             delta=(
-                AgentStateDelta.model_validate(payload["delta"]) if payload.get("delta") else None
+                AgentStateDelta.model_validate(payload["delta"]).model_copy(
+                    update={"spec_digest": str(payload["spec_digest"])}
+                )
+                if payload.get("delta")
+                else None
             ),
             capability=payload.get("capability"),
         )

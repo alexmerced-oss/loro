@@ -1,8 +1,10 @@
 # AGX — the Agentic Graph expression language
 
 AGX is the small language AGS uses for conditions, bindings and machine-checkable criteria. It is
-deliberately tiny: **pure, total, side-effect-free, and replayable**. This document is the reference;
-[SPEC.md §16](../SPEC.md#16-agx-the-expression-language) is the normative summary.
+deliberately tiny: **pure, total, side-effect-free, and replayable**. This document is the bundled
+reference; the pinned upstream
+[SPEC.md §16](https://github.com/AlexMercedCoder/agentic-graph-spec/blob/f180a4dbd07911f90dd0821f531d7ccd51bb0764/SPEC.md#16-agx-the-expression-language)
+is normative.
 
 ## 1. Two syntactic positions
 
@@ -200,8 +202,9 @@ prompt: "Publish ${{ params.target_version }} to ${{ params.package_index }}?"
 
 ## 8. Implementing AGX
 
-The reference implementation is
-[`tools/validate_agraph.py`](../tools/validate_agraph.py) (`AgxParser`) — a ~150-line recursive
+The reference implementation is the pinned upstream
+[`tools/validate_agraph.py`](https://github.com/AlexMercedCoder/agentic-graph-spec/blob/f180a4dbd07911f90dd0821f531d7ccd51bb0764/tools/validate_agraph.py)
+(`AgxParser`) — a ~150-line recursive
 descent parser with one production per precedence level. It validates syntax, checks function arity,
 and collects references for scope and dataflow analysis. Add an evaluator and you have the runtime
 half.
@@ -209,7 +212,7 @@ half.
 Two implementation notes worth stating:
 
 - **Do not implement AGX by calling your host language's `eval`.** Graph documents are untrusted
-  input ([SPEC.md §22](../SPEC.md#22-security-considerations)); an expression must never be able to
+  input ([SPEC.md §22](https://github.com/AlexMercedCoder/agentic-graph-spec/blob/f180a4dbd07911f90dd0821f531d7ccd51bb0764/SPEC.md#22-security-considerations)); an expression must never be able to
   reach the host runtime.
 - **Validate expressions at load time, not first use.** A typo in a guard on the eighth node should
   fail before the first node spends a token. All of AG201–AG211 are statically decidable.

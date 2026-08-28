@@ -1,0 +1,13 @@
+{
+  "schema": "ags.cross-harness-golden.v1",
+  "fixture": "minimal.agraph.yaml",
+  "fixture_revision": "f180a4dbd07911f90dd0821f531d7ccd51bb0764",
+  "graph_id": "examples/minimal",
+  "graph_digest": "sha256-UVrM3iZ07z2EVF96uVF7QoRcbOw9qFcZcswl3ARx0kc=",
+  "topological_order": ["draft_contributing", "maintainer_approval"],
+  "expected_states_before_approval": {
+    "draft_contributing": "succeeded",
+    "maintainer_approval": "awaiting_human"
+  },
+  "expected_graph_state_before_approval": "awaiting_human"
+}

@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 jobs:
-  provisional-level-3:
+  level-3:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,12 +25,18 @@ jobs:
         python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: alexmerced-oss/open-agent-profile
+          ref: 7fb633a1a59dd7636ffb0030d254f2f58934f74a
+          path: upstream-oap
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: python scripts/check_oap_conformance.py
+      - run: oap-validate upstream-oap/examples --digest
       - run: python -m pytest tests/test_agent_profiles.py -q
       - name: Verify CLI surface
         run: |

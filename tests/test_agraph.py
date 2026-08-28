@@ -125,6 +125,14 @@ def test_plan_accounts_for_retries() -> None:
     assert build_plan(graph).worst_case_executions == 3
 
 
+def test_cross_harness_minimal_golden_plan() -> None:
+    golden = json.loads((ROOT / "docs/conformance/ags-golden-minimal.json").read_text())
+    document = load_graph(FIXTURES / "examples/minimal.agraph.yaml")
+    plan = build_plan(document.data)
+    assert document.digest == golden["graph_digest"]
+    assert list(plan.topological_order) == golden["topological_order"]
+
+
 def test_executor_emits_conformant_durable_run_record(tmp_path: Path) -> None:
     config = LoroConfig.model_validate(
         {

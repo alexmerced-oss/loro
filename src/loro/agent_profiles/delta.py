@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from loro.agent_profiles.compat import canonical_document
 from loro.agent_profiles.digest import profile_digest, spec_digest
 from loro.agent_profiles.errors import ConflictError, ProfileError
 from loro.agent_profiles.models import AgentProfileModel, AgentStateDelta, HistoryEntry, StateEntry
@@ -35,8 +36,7 @@ def apply_delta(
                     f"Profile revision conflict: expected {delta.base_revision}, "
                     f"found {document.metadata.revision}."
                 )
-            current = document.model_dump(mode="json", by_alias=True, exclude_none=True)
-            if spec_digest(current) != delta.spec_digest:
+            if spec_digest(document) != delta.spec_digest:
                 raise ConflictError("Profile spec digest changed since delta creation.")
             protection = DataProtectionEngine(safety)
             entries = {item.id: item for item in document.state}
@@ -48,13 +48,17 @@ def apply_delta(
             document.state = _enforce_retention(document.state, config.max_state_bytes)
             old_revision = document.metadata.revision
             document.metadata.revision += 1
-            dumped = document.model_dump(mode="json", by_alias=True, exclude_none=True)
+            updated_at = datetime.now(UTC).isoformat()
+            document.metadata.updated_at = updated_at
+            if document.canonical_source is None:
+                document.canonical_source = {}
+            document.canonical_source.setdefault("state", {})["updated_at"] = updated_at
             document.history.append(
                 HistoryEntry(
                     revision=old_revision,
                     session_id=delta.session_id,
-                    timestamp=datetime.now(UTC).isoformat(),
-                    digest=profile_digest(dumped),
+                    timestamp=updated_at,
+                    digest=profile_digest(document),
                 )
             )
             _write_profile(path, document, config.max_bytes)
@@ -125,7 +129,8 @@ def _apply_operation(
 
 
 def _write_profile(path: Path, document: AgentProfileModel, max_bytes: int) -> None:
-    payload = document.model_dump(mode="json", by_alias=True, exclude_none=True)
+    payload = canonical_document(document)
+    _enforce_lifecycle_retention(payload)
     if path.name.endswith(".agent.json"):
         content = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     elif path.name.endswith(".agent.md"):
@@ -136,6 +141,30 @@ def _write_profile(path: Path, document: AgentProfileModel, max_bytes: int) -> N
     if len(content.encode("utf-8")) > max_bytes:
         raise ProfileError("Updated agent profile exceeds managed size limit.")
     atomic_write_text(path, content)
+
+
+def _enforce_lifecycle_retention(payload: dict[str, Any]) -> None:
+    lifecycle = payload.get("spec", {}).get("lifecycle", {})
+    retention = lifecycle.get("retention", {}) if isinstance(lifecycle, dict) else {}
+    facts = payload.get("state", {}).get("facts", [])
+    limit = retention.get("max_facts")
+    if isinstance(limit, int) and isinstance(facts, list):
+        while len(facts) > limit:
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(facts)
+                    if not isinstance(item, dict) or not item.get("pinned")
+                ),
+                None,
+            )
+            if index is None:
+                raise ProfileError("Pinned facts exceed lifecycle.retention.max_facts.")
+            facts.pop(index)
+    history = payload.get("history", [])
+    max_history = retention.get("max_history", 50)
+    if isinstance(history, list) and isinstance(max_history, int):
+        payload["history"] = history[-max_history:] if max_history else []
 
 
 def _enforce_retention(entries: list[StateEntry], max_bytes: int) -> list[StateEntry]:

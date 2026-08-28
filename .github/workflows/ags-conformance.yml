@@ -29,17 +29,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: AlexMercedCoder/agentic-graph-spec
-          ref: 6bf105f2f7b51176bc1a4b49db0a722a2aa2e774 # pragma: allowlist secret
+          ref: f180a4dbd07911f90dd0821f531d7ccd51bb0764
           path: upstream-ags
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -e ".[dev]"
-      - name: Verify pinned schemas
-        run: |
-          cmp upstream-ags/schema/agentic-graph-1.0.schema.json src/loro/agraph/schema/agentic-graph-1.0.schema.json
-          cmp upstream-ags/schema/agentic-graph-run-1.0.schema.json src/loro/agraph/schema/agentic-graph-run-1.0.schema.json
+      - name: Verify immutable upstream examples
+        run: ags-validate upstream-ags/examples --strict
       - run: python -m pytest tests/test_agraph.py -q
       - name: Validate Loro examples strictly
         run: |

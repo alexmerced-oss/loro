@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class OAPModel(BaseModel):
@@ -108,6 +108,9 @@ class HistoryEntry(OAPModel):
 
 
 class AgentProfileModel(OAPModel):
+    # Exact canonical input retained in memory so editing a profile never drops
+    # normative fields that Loro's runtime projection does not consume yet.
+    canonical_source: dict[str, Any] | None = Field(default=None, exclude=True)
     api_version: str = Field(default="oap/v1", alias="apiVersion")
     kind: str = "AgentProfile"
     metadata: ProfileMetadata
@@ -137,10 +140,71 @@ class DeltaOperation(OAPModel):
     value: Any = None
 
 
+class DeltaProposal(OAPModel):
+    path: str = Field(pattern=r"^/(metadata|spec)(/.*)?$")
+    rationale: str = Field(min_length=1)
+    op: Literal["add", "replace", "remove"] = "replace"
+    value: Any = None
+    risk: Literal["low", "medium", "high"] | None = None
+
+
 class AgentStateDelta(OAPModel):
     profile: str
     base_revision: int = Field(ge=1)
     spec_digest: str
     session_id: str | None = None
     operations: list[DeltaOperation] = Field(default_factory=list)
-    proposals: list[DeltaOperation] = Field(default_factory=list)
+    proposals: list[DeltaProposal] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _canonical_input(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("kind") != "AgentStateDelta":
+            return value
+        target = value.get("target") or {}
+        session = value.get("session") or {}
+        operations = []
+        for operation in value.get("operations") or []:
+            item = dict(operation)
+            path = str(item.get("path", ""))
+            if path.startswith("/state/facts/id:"):
+                item["path"] = "/state/" + path.rsplit("id:", 1)[-1]
+            payload = item.get("value")
+            if isinstance(payload, dict) and "text" in payload:
+                item["value"] = {**payload, "content": payload["text"]}
+                item["value"].pop("text", None)
+            operations.append(item)
+        return {
+            "profile": target.get("name"),
+            "base_revision": target.get("revision"),
+            "spec_digest": target.get("digest") or "sha256:" + ("0" * 64),
+            "session_id": session.get("id"),
+            "operations": operations,
+            "proposals": value.get("proposals") or [],
+        }
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        operations = []
+        for operation in self.operations:
+            item = operation.model_dump(mode="json", exclude_none=True)
+            entry_id = item["path"].removeprefix("/state/")
+            if entry_id and "/" not in entry_id:
+                item["path"] = f"/state/facts/id:{entry_id}"
+            payload = item.get("value")
+            if isinstance(payload, dict) and "content" in payload:
+                item["value"] = {**payload, "text": payload["content"]}
+                item["value"].pop("content", None)
+            operations.append(item)
+        return {
+            "oap": "1.0",
+            "kind": "AgentStateDelta",
+            "target": {
+                "name": self.profile,
+                "revision": self.base_revision,
+            },
+            "session": {"id": self.session_id or "loro-unknown", "harness": "loro"},
+            "operations": operations,
+            "proposals": [
+                item.model_dump(mode="json", exclude_none=True) for item in self.proposals
+            ],
+        }

@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
-import math
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+from ags import canonical_json as _canonical_json
+from ags import graph_digest
 
 
 class GraphDocumentError(ValueError):
@@ -18,6 +16,14 @@ class GraphDocumentError(ValueError):
 
 class _NoDuplicateLoader(yaml.SafeLoader):
     pass
+
+
+_NoDuplicateLoader.yaml_implicit_resolvers = {
+    key: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:timestamp"]
+    for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+for _first in "yYnNoO":
+    _NoDuplicateLoader.yaml_implicit_resolvers.pop(_first, None)
 
 
 def _construct_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False) -> Any:
@@ -52,54 +58,9 @@ class GraphDocument:
 
 def canonical_json(document: dict[str, Any]) -> bytes:
     try:
-        return _canonical_value(document).encode("utf-8")
+        return _canonical_json(document)
     except (TypeError, ValueError) as error:
         raise GraphDocumentError(f"AGS document is not JSON-compatible: {error}") from error
-
-
-def _canonical_value(value: Any) -> str:
-    if value is None:
-        return "null"
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("non-finite numbers are not valid JSON")
-        if value == 0:
-            return "0"
-        encoded = repr(value).lower()
-        if "e" in encoded:
-            mantissa, exponent = encoded.split("e", 1)
-            if mantissa.endswith(".0"):
-                mantissa = mantissa[:-2]
-            exponent = re.sub(r"^\+", "", exponent)
-            exponent = re.sub(r"^(-?)0+", r"\1", exponent) or "0"
-            return f"{mantissa}e{exponent}"
-        return encoded[:-2] if encoded.endswith(".0") else encoded
-    if isinstance(value, list):
-        return "[" + ",".join(_canonical_value(item) for item in value) + "]"
-    if isinstance(value, dict):
-        if not all(isinstance(key, str) for key in value):
-            raise TypeError("JSON object keys must be strings")
-        return (
-            "{"
-            + ",".join(
-                f"{_canonical_value(key)}:{_canonical_value(value[key])}" for key in sorted(value)
-            )
-            + "}"
-        )
-    raise TypeError(f"unsupported JSON value: {type(value).__name__}")
-
-
-def graph_digest(document: dict[str, Any]) -> str:
-    digest = hashlib.sha256(canonical_json(document)).digest()
-    return "sha256-" + base64.b64encode(digest).decode("ascii")
 
 
 def _json_mapping(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

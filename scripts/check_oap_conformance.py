@@ -15,21 +15,22 @@ def main() -> int:
     path = ROOT / "docs" / "oap-conformance.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("oap") != "1.0" or payload.get("implementation") != "loro":
+        if payload.get("schema") != "oap.conformance-result.v1":
+            raise ValueError("schema must be oap.conformance-result.v1")
+        if payload.get("oap") != "1.0" or payload.get("implementation") != "Loro":
             raise ValueError("identity must declare Loro OAP 1.0")
-        if payload.get("version") != __version__:
+        if payload.get("implementation_version") != __version__:
             raise ValueError("conformance version does not match package")
-        if payload.get("level") != 3 or payload.get("status") != "provisional":
-            raise ValueError("the current release must declare provisional Level 3")
-        if payload.get("source_revision") is not None:
-            raise ValueError("source revision must remain null until canonical upstream is pinned")
-        for evidence in payload.get("evidence", []):
-            if not (ROOT / evidence).is_file():
-                raise ValueError(f"missing evidence: {evidence}")
+        if payload.get("level") != 3 or payload.get("failed"):
+            raise ValueError("the current release must pass Level 3")
+        if payload.get("maintenance_release") != "1.0.1":
+            raise ValueError("maintenance release must be 1.0.1")
+        if len(str(payload.get("fixture_revision", ""))) != 40:
+            raise ValueError("fixture revision must be an immutable commit")
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"OAP conformance statement invalid: {error}")
         return 1
-    print("OAP conformance statement OK: provisional Level 3 evidence is explicit.")
+    print("OAP conformance statement OK: Level 3 result is explicit and immutable.")
     return 0
 
 

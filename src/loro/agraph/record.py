@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
+import ags
 import jsonschema
 
 
@@ -16,11 +17,11 @@ def _run_record_validator() -> jsonschema.Draft202012Validator:
     each time dominated the cost of persisting a run.
     """
 
-    schema = json.loads(
-        files("loro.agraph.schema")
-        .joinpath("agentic-graph-run-1.0.schema.json")
-        .read_text(encoding="utf-8")
-    )
+    root = Path(ags.__file__).resolve().parent
+    path = root / "schema" / "agentic-graph-run-1.0.schema.json"
+    if not path.exists():
+        path = root.parent / "schema" / "agentic-graph-run-1.0.schema.json"
+    schema = json.loads(path.read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
 
 

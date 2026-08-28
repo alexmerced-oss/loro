@@ -1,13 +1,15 @@
 # Implementing Open Agent Profile (OAP) v1 in Loro
 
-**Status:** Level 3 implemented provisionally in Loro 0.12.0
+**Status:** Level 3 aligned with canonical OAP 1.0 in Loro 0.17.0; retained as design history
 **Spec:** `open-agent-profile` repository, `spec/v1/SPEC.md`
-**Target:** Conformance Level 3, pending formal upstream fixture certification
+**Target:** Conformance Level 3
 **Audience:** An engineer or agent implementing this end to end
 
-> Release planning status: reviewed against Loro `0.10.0` on August 14, 2026. The delivery
-> sequence, corrected integration boundaries, and release gates are maintained in the
-> [0.11.0 Release Plan](releases/0.11.0-plan.md). This guide remains the detailed design source.
+> Historical planning note: this design was reviewed against Loro `0.10.0` on August 14, 2026.
+> Releases 0.11 and 0.12 delivered the original implementation; 0.17 aligned it with the published
+> schema, support library, and immutable upstream fixture revision. Current behavior is documented
+> in [Open Agent Profiles](agent-profiles.md), and current evidence is
+> [machine-readable](oap-conformance.json).
 
 ---
 
@@ -458,12 +460,11 @@ Publish the conformance statement at `docs/oap-conformance.json`:
 ```json
 {
   "oap": "1.0",
-  "implementation": "loro",
-  "version": "0.12.0",
+  "implementation": "Loro",
+  "implementation_version": "0.17.0",
   "level": 3,
-  "encodings": ["yaml", "json", "md"],
-  "discovery_roots": ["managed", "user", "project"],
-  "unimplemented": ["formal upstream fixture certification"]
+  "fixture_revision": "7fb633a1a59dd7636ffb0030d254f2f58934f74a",
+  "failed": []
 }
 ```
 

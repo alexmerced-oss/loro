@@ -144,6 +144,10 @@ two accessibility audit passes are clean. See [Loro 0.16.0](releases/0.16.0.md).
 Release `0.16.1` fixes the Governance view reporting a resolved identity as blank. See
 [Loro 0.16.1](releases/0.16.1.md).
 
+Release `0.17.0` aligns OAP and AGS with the published 1.0.1 support libraries, persists canonical
+OAP documents and state deltas, uses RFC 8785 digests, and pins immutable upstream conformance
+fixtures in CI. See [Loro 0.17.0](releases/0.17.0.md).
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.

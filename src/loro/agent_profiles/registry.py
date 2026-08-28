@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from oap import validate as oap_validate
 
 from loro.agent_profiles.digest import profile_digest, spec_digest
 from loro.agent_profiles.errors import ProfileError
@@ -27,6 +28,8 @@ for key, resolvers in list(_StringSafeLoader.yaml_implicit_resolvers.items()):
     _StringSafeLoader.yaml_implicit_resolvers[key] = [
         item for item in resolvers if item[0] != "tag:yaml.org,2002:timestamp"
     ]
+for _first in "yYnNoO":
+    _StringSafeLoader.yaml_implicit_resolvers.pop(_first, None)
 
 
 def _unique_mapping(loader: _StringSafeLoader, node: yaml.MappingNode) -> dict[str, Any]:
@@ -174,7 +177,6 @@ class AgentProfileRegistry:
         composed_raw["extends"] = list(document.extends)
         composed_raw["metadata"] = document.metadata.model_dump(mode="json", exclude_none=True)
         document = AgentProfileModel.model_validate(composed_raw)
-        dumped = document.model_dump(mode="json", by_alias=True, exclude_none=True)
         warnings = tuple(
             [*inherited_warnings, *(f"shadowed profile: {path}" for path in metadata.shadowed)]
         )
@@ -183,8 +185,8 @@ class AgentProfileRegistry:
             document=document,
             source_path=metadata.source_path,
             trust=metadata.trust,
-            spec_digest=spec_digest(dumped),
-            profile_digest=profile_digest(dumped),
+            spec_digest=spec_digest(document),
+            profile_digest=profile_digest(document),
             warnings=warnings,
             lineage=ordered_lineage,
             layers=tuple((*layers, AgentProfileModel.model_validate(raw))),
@@ -220,9 +222,99 @@ def _load_document(path: Path, max_bytes: int, *, metadata_only: bool = False) -
         value = _safe_load(text)
     if not isinstance(value, dict):
         raise ProfileError(f"Agent profile must be an object: {path}")
+    if value.get("oap") and value.get("kind") == "AgentProfile" and "apiVersion" not in value:
+        value = _canonical_to_internal(value, path)
     if metadata_only:
         return {"metadata": value.get("metadata", {}), "spec": {}}
     return value
+
+
+def _canonical_to_internal(value: dict[str, Any], path: Path) -> dict[str, Any]:
+    """Validate canonical OAP and project it into Loro's stable runtime model."""
+    schema = oap_validate.load_schema("agent-profile.schema.json")
+    errors = sorted(
+        oap_validate.Draft202012Validator(schema).iter_errors(value),
+        key=lambda error: list(error.absolute_path),
+    )
+    report = oap_validate.Report(path)
+    oap_validate.check_version(value, report)
+    oap_validate.check_secrets(value, report)
+    oap_validate.check_mcp_refs(value, report)
+    oap_validate.check_paths(value, report)
+    oap_validate.check_variables(value, report)
+    oap_validate.check_state_ids(value, report)
+    oap_validate.check_history(value, report)
+    if errors or report.errors:
+        details = [error.message for error in errors] + report.errors
+        raise ProfileError("Invalid OAP profile: " + "; ".join(details))
+
+    projected = deepcopy(value)
+    projected["canonical_source"] = deepcopy(value)
+    projected["apiVersion"] = "oap/v1"
+    projected.pop("oap", None)
+    role = projected.get("spec", {}).get("role", {})
+    if isinstance(role.get("persona"), dict):
+        persona = role["persona"]
+        role["persona"] = "; ".join(str(item) for item in persona.values() if item)
+    tools = projected.get("spec", {}).get("tools", {})
+    for key in ("mcp_servers", "skills"):
+        if isinstance(tools.get(key), list):
+            tools[key] = [
+                item.get("name") if isinstance(item, dict) else item for item in tools[key]
+            ]
+    model = projected.get("spec", {}).get("model", {})
+    if isinstance(model.get("fallbacks"), list):
+        model["fallbacks"] = [
+            f"{item.get('provider')}/{item.get('id')}" if isinstance(item, dict) else item
+            for item in model["fallbacks"]
+        ]
+    memory = projected.get("spec", {}).get("memory", {})
+    if isinstance(memory.get("stores"), list):
+        store_names = []
+        for item in memory["stores"]:
+            kind = item.get("kind") if isinstance(item, dict) else item
+            if kind == "oap-state":
+                store_names.append("oap-state")
+            elif kind in {"loro-shared", "shared"}:
+                store_names.append("shared")
+            else:
+                store_names.append("local")
+        memory["stores"] = list(dict.fromkeys(store_names))
+    permissions = projected.get("spec", {}).get("permissions", {})
+    if permissions.get("network") is not None:
+        permissions["web"] = permissions["network"]
+    filesystem = permissions.get("filesystem") or {}
+    if isinstance(filesystem, dict):
+        roots = filesystem.get("write_roots") or filesystem.get("read_roots") or []
+        permissions["workspace_roots"] = list(roots)
+    runtime = projected.get("spec", {}).get("runtime", {})
+    if isinstance(runtime.get("subagents"), dict):
+        subagents = runtime["subagents"]
+        runtime["subagents"] = list(subagents.get("allow") or [])
+        runtime["max_subagent_depth"] = subagents.get("max_depth")
+    lifecycle = projected.get("spec", {}).pop("lifecycle", {})
+    projected["spec"]["writeback"] = lifecycle.get("writeback", "propose")
+    projected["extends"] = [
+        item.get("name") if isinstance(item, dict) else item
+        for item in projected.get("extends", [])
+    ]
+    state = projected.get("state") or {}
+    if isinstance(state, dict):
+        entries = []
+        if state.get("summary"):
+            entries.append({"id": "summary", "content": state["summary"], "pinned": True})
+        for collection in ("facts", "preferences"):
+            for item in state.get(collection) or []:
+                entries.append(
+                    {
+                        "id": item["id"],
+                        "content": item["text"],
+                        "pinned": item.get("pinned", False),
+                    }
+                )
+        projected["state"] = entries
+    projected["history"] = []
+    return projected
 
 
 def _markdown_document(text: str) -> dict[str, Any]:

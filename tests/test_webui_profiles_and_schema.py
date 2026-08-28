@@ -60,9 +60,7 @@ def test_migration_is_idempotent(tmp_path: Path) -> None:
     ConversationStore(db)
     ConversationStore(db)  # a second open must not fail or duplicate the column
 
-    columns = [
-        row[1] for row in sqlite3.connect(db).execute("PRAGMA table_info(conversations)")
-    ]
+    columns = [row[1] for row in sqlite3.connect(db).execute("PRAGMA table_info(conversations)")]
     assert columns.count("participants") == 1
 
 
@@ -125,6 +123,28 @@ def test_a_profile_carries_its_own_provider_and_model(workspace: Path) -> None:
     assert document["model"]["model"] == "deepseek/deepseek-v4-flash-0731"
 
 
+def test_legacy_api_input_is_read_but_persisted_as_canonical_oap(workspace: Path) -> None:
+    service = ProfileService(workspace)
+    service.create(
+        {
+            "apiVersion": "oap/v1",
+            "kind": "AgentProfile",
+            "metadata": {"name": "legacy-client", "description": "Legacy client."},
+            "spec": {
+                "role": {"instructions": "Review."},
+                "writeback": "propose",
+            },
+            "state": [],
+            "history": [],
+        }
+    )
+
+    stored = Path(service.get("legacy-client")["source"]).read_text(encoding="utf-8")
+    assert "oap: '1.0'" in stored
+    assert "apiVersion" not in stored
+    assert service.get("legacy-client")["spec"]["lifecycle"]["writeback"] == "propose"
+
+
 def test_the_listing_reports_the_effective_route_not_the_declared_one(workspace: Path) -> None:
     """`list` answers "what will this actually use", after managed resolution.
 
@@ -145,7 +165,8 @@ def test_export_round_trips_through_import(workspace: Path) -> None:
 
     exported = service.export("reviewer")
     assert exported["filename"] == "reviewer.agent.yaml"
-    assert exported["document"]["model"]["provider"] == "nous"
+    assert exported["document"]["oap"] == "1.0"
+    assert exported["document"]["spec"]["model"]["provider"] == "nous"
 
     service.import_document(exported["document"], rename="reviewer-copy")
     assert {item["name"] for item in service.list()} >= {"reviewer", "reviewer-copy"}
@@ -171,7 +192,8 @@ def test_import_drops_inbound_state_and_resets_revision(workspace: Path) -> None
     service.import_document(hostile)
     stored = service.get("shared")
 
-    assert stored.get("state") in (None, {}, [])
+    assert stored["state"]["facts"] == []
+    assert stored["state"]["preferences"] == []
     assert stored["metadata"]["revision"] == 1
 
 
@@ -185,6 +207,72 @@ def test_importing_a_duplicate_name_is_refused(workspace: Path) -> None:
     service.create(_profile("reviewer"))
     with pytest.raises(ValueError, match="already exists"):
         service.import_document(_profile("reviewer"))
+
+
+def test_web_ui_edit_preserves_canonical_fields_it_does_not_render(workspace: Path) -> None:
+    service = ProfileService(workspace)
+    profile = {
+        "oap": "1.0",
+        "kind": "AgentProfile",
+        "metadata": {"name": "portable", "description": "Before."},
+        "spec": {
+            "role": {
+                "instructions": "Review carefully.",
+                "persona": {"tone": "direct", "voice": "concise"},
+            },
+            "tools": {
+                "policy": "inherit",
+                "skills": [
+                    {
+                        "name": "release-review",
+                        "source": "./skills/release-review",
+                        "required": True,
+                    }
+                ],
+                "mcp_servers": [
+                    {
+                        "name": "docs",
+                        "transport": "stdio",
+                        "command": "docs-server",
+                        "args": ["--safe"],
+                    }
+                ],
+            },
+            "permissions": {
+                "filesystem": {
+                    "read_roots": ["."],
+                    "write_roots": ["./reports"],
+                    "deny_paths": [".env"],
+                }
+            },
+            "lifecycle": {
+                "writeback": "propose",
+                "retention": {"max_facts": 50, "eviction": "oldest"},
+            },
+        },
+        "state": {
+            "revision": 1,
+            "facts": [],
+            "preferences": [],
+            "glossary": [{"term": "RC", "definition": "release candidate"}],
+        },
+        "history": [],
+    }
+    service.create(profile)
+
+    edited = service.get("portable")
+    edited["metadata"]["description"] = "After."
+    service.update("portable", edited)
+    stored = service.get("portable")
+
+    assert stored["metadata"]["description"] == "After."
+    assert stored["metadata"]["revision"] == 2
+    assert stored["spec"]["role"]["persona"]["voice"] == "concise"
+    assert stored["spec"]["tools"]["skills"][0]["source"] == "./skills/release-review"
+    assert stored["spec"]["tools"]["mcp_servers"][0]["args"] == ["--safe"]
+    assert stored["spec"]["permissions"]["filesystem"]["deny_paths"] == [".env"]
+    assert stored["spec"]["lifecycle"]["retention"]["max_facts"] == 50
+    assert stored["state"]["glossary"][0]["term"] == "RC"
 
 
 # --- group conversations -----------------------------------------------------
@@ -223,9 +311,7 @@ def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
             return _FakeResult(f"reply from {name}")
 
     monkeypatch.setattr(services, "AgentRuntime", _FakeRuntime)
-    monkeypatch.setattr(
-        services, "build_effective_profile", lambda resolved, config: resolved
-    )
+    monkeypatch.setattr(services, "build_effective_profile", lambda resolved, config: resolved)
 
     class _Resolved:
         def __init__(self, name: str) -> None:

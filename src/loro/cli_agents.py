@@ -135,15 +135,19 @@ def create(
     if path.exists():
         raise typer.BadParameter(f"Profile already exists: {path}")
     payload = {
-        "apiVersion": "oap/v1",
+        "oap": "1.0",
         "kind": "AgentProfile",
-        "metadata": {"name": name, "revision": 1},
+        "metadata": {
+            "name": name,
+            "revision": 1,
+            "description": f"Loro agent profile {name}.",
+        },
         "spec": {
             "role": {"instructions": instructions},
             "tools": {"policy": "inherit"},
-            "writeback": "propose",
+            "lifecycle": {"writeback": "propose"},
         },
-        "state": [],
+        "state": {"revision": 1, "facts": [], "preferences": []},
         "history": [],
     }
     load_path_from_payload = yaml.safe_dump(payload, sort_keys=False)
@@ -529,10 +533,12 @@ def configure_profile(
 
 
 def load_path_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate a concise wizard payload through the normative profile model."""
-    from loro.agent_profiles.models import AgentProfileModel
+    """Return a wizard document for the canonical write-and-validate boundary.
 
-    AgentProfileModel.model_validate(payload)
+    The caller persists this exact OAP document and immediately validates it
+    with ``load_path``; Loro's internal compatibility projection is not an
+    authoring schema and must never be used to validate canonical output.
+    """
     return payload
 
 
@@ -658,22 +664,35 @@ def _profile_payload(
     }
     if tools is not None:
         tool_spec["allow"] = list(tools)
-    permission_spec: dict[str, Any] = dict(permissions)
+    permission_spec: dict[str, Any] = {
+        key: value for key, value in permissions.items() if key in {"default", "shell", "edit"}
+    }
+    if permissions.get("web"):
+        permission_spec["network"] = permissions["web"]
     if workspace_root:
-        permission_spec["workspace_roots"] = [workspace_root]
+        permission_spec["filesystem"] = {
+            "read_roots": [workspace_root],
+            "write_roots": [workspace_root],
+        }
     return {
-        "apiVersion": "oap/v1",
+        "oap": "1.0",
         "kind": "AgentProfile",
         "metadata": {"name": name, "revision": 1, "description": description},
         "spec": {
             "role": {"instructions": instructions},
             "model": model,
-            "tools": tool_spec,
+            "tools": {
+                **tool_spec,
+                "skills": [{"name": item} for item in skills],
+                "mcp_servers": [
+                    {"name": item, "transport": "stdio", "command": item} for item in mcp_servers
+                ],
+            },
             "permissions": permission_spec,
-            "memory": {"stores": memory_stores},
-            "writeback": writeback,
+            "memory": {"stores": [{"name": item, "kind": item} for item in memory_stores]},
+            "lifecycle": {"writeback": writeback},
         },
-        "state": [],
+        "state": {"revision": 1, "facts": [], "preferences": []},
         "history": [],
     }
 

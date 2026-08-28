@@ -1,8 +1,10 @@
 # Open Agent Profiles
 
-Loro `0.16.0` implements experimental Open Agent Profile (OAP) v1 named agents. The behavior is
-provisional Level 3 against the supplied implementation guide; formal upstream certification is
-pending an immutable canonical schema and conformance-suite source.
+Loro `0.17.0` implements Open Agent Profile (OAP) 1.0 Level 3 named agents using
+`open-agent-profile>=1.0.1,<2`. CI pins the canonical upstream repository at commit
+`7fb633a1a59dd7636ffb0030d254f2f58934f74a` and checks the upstream examples in addition to Loro's
+behavioral tests. OAP remains an experimental Loro product surface until the 1.0 support boundary
+is promoted; that classification does not weaken its schema, authority, or persistence rules.
 
 ## Create And Run
 
@@ -164,10 +166,12 @@ because this section is additive and defaults fail closed around writes.
 
 ## Evidence And Limitations
 
-The machine-readable statement is [oap-conformance.json](oap-conformance.json). Tests cover
+The machine-readable Level 3 statement is [oap-conformance.json](oap-conformance.json). Tests cover
 encodings, digest determinism, timestamp handling, trust, root precedence, collisions, symlink
 escape, composition cycles/depth, inherited authority intersection, permission/tool/root/budget
 narrowing, MCP and Skill execution scoping, tenant-bound memory scopes, bounded subagents, graph
 profile binding, untrusted state, whole-entry eviction, `/state` scope, revision/spec conflicts,
 atomic persistence, secret redaction, runtime filtering, sessions, proposals, and auto-writeback
-ceilings. Formal upstream fixture certification remains the only declared OAP gap.
+ceilings. New and updated profiles persist as canonical OAP 1.0 documents; legacy Loro encodings
+are accepted at the storage boundary and migrated in memory. Optional requirements L2-A14 and
+L3-M2 are not claimed. The statement is implementation evidence, not third-party certification.

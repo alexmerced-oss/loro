@@ -30,14 +30,14 @@ def test_profile_wizard_creates_compliant_default_coding_profile(tmp_path, monke
     profile_path = tmp_path / ".loro/agents/project-coder.agent.yaml"
     payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
     local_config = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
-    assert payload["apiVersion"] == "oap/v1"
+    assert payload["oap"] == "1.0"
     assert payload["kind"] == "AgentProfile"
     assert payload["metadata"]["name"] == "project-coder"
     assert payload["spec"]["model"] == {"provider": "mock", "id": "mock-agent"}
     assert payload["spec"]["tools"]["policy"] == "allowlist"
     assert "file.write" in payload["spec"]["tools"]["allow"]
     assert payload["spec"]["permissions"]["shell"] == "ask"
-    assert payload["spec"]["permissions"]["web"] == "deny"
+    assert payload["spec"]["permissions"]["network"] == "deny"
     assert local_config["agent_profiles"]["default_profile"] == "project-coder"
 
     config = load_config()
@@ -65,7 +65,7 @@ def test_profile_wizard_can_prepare_governed_web_research_ceiling(tmp_path, monk
         (tmp_path / ".loro/agents/web-researcher.agent.yaml").read_text(encoding="utf-8")
     )
     config = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
-    assert profile["spec"]["permissions"]["web"] == "ask"
+    assert profile["spec"]["permissions"]["network"] == "ask"
     assert profile["spec"]["permissions"]["shell"] == "deny"
     assert "shell.run" in profile["spec"]["tools"]["allow"]
     assert config["permissions"]["web"] == "ask"
@@ -106,13 +106,11 @@ def test_profile_wizard_explains_routes_and_separates_custom_web_from_shell(
         (tmp_path / ".loro/agents/web-reader.agent.yaml").read_text(encoding="utf-8")
     )
     assert profile["spec"]["permissions"]["shell"] == "deny"
-    assert profile["spec"]["permissions"]["web"] == "ask"
+    assert profile["spec"]["permissions"]["network"] == "ask"
     assert profile["spec"]["tools"]["allow"] == ["shell.run"]
     config = tomllib.loads((tmp_path / ".loro/config.local.toml").read_text())
     assert config["permissions"]["web"] == "ask"
-    assert "curl" in config["sandbox"]["profiles"]["controlled-shell"][
-        "allowed_executables"
-    ]
+    assert "curl" in config["sandbox"]["profiles"]["controlled-shell"]["allowed_executables"]
 
 
 def test_profile_wizard_rejects_non_spec_profile_name(tmp_path, monkeypatch) -> None:

@@ -4,9 +4,11 @@ Loro implements Agentic Graph Specification (AGS) 1.0 conformance level 3. An Ag
 portable JSON or YAML execution plan whose scheduling, bounds, success checks, and approval points
 are enforced by the harness rather than left to the model.
 
-The implementation is pinned to upstream commit
-`6bf105f2f7b51176bc1a4b49db0a722a2aa2e774`. Loro vendors the graph schema, run-record schema,
-and reference validator under the upstream MIT license so validation remains reproducible.
+Release 0.17.0 uses `agentic-graph-spec>=1.0.1,<2` and pins upstream commit
+`f180a4dbd07911f90dd0821f531d7ccd51bb0764` in CI. Static semantics, RFC 8785 graph digests, and
+the portable run-record schema come from that support library. The bundled authoring Skill and
+packaged schema mirrors match the same revision. See the
+[machine-readable Level 3 result](ags-conformance.json) for the exact claim and fixture revision.
 
 ## Quick Start
 
@@ -78,7 +80,7 @@ through `ApprovalManager`; changing the document voids it. `--remember-outcome` 
 memory directly. It creates a proposal containing only the user's explicit text, which must still
 pass the normal shared-memory review and commit flow.
 
-Run records conform to `agentic-graph-run-1.0.schema.json`. Full task transcripts remain in Loro
+Run records conform to the support library's `agentic-graph-run-1.0.schema.json`. Full task transcripts remain in Loro
 session records; graph records contain references, outputs, criteria evidence, routing, usage, and
 human outcomes. The safety policy for session persistence applies before atomic record writes.
 
