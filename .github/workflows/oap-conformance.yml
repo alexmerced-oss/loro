@@ -36,7 +36,10 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: python scripts/check_oap_conformance.py
-      - run: oap-validate upstream-oap/examples --digest
+      - name: Validate positive and negative upstream fixtures
+        run: |
+          oap-validate upstream-oap/examples/*.agent.* upstream-oap/examples/json/* --digest
+          oap-validate upstream-oap/examples/invalid --expect-invalid
       - run: python -m pytest tests/test_agent_profiles.py -q
       - name: Verify CLI surface
         run: |
