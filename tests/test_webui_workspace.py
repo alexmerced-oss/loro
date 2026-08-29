@@ -103,7 +103,7 @@ def test_extension_inventory_does_not_expose_mcp_targets_or_settings(
                 "private": SimpleNamespace(
                     enabled=True,
                     transport="streamable_http",
-                    url="https://user:secret@example.test/mcp?token=secret",
+                    url="https://example.test/mcp",
                     command=None,
                     extensions=[],
                 )
@@ -127,4 +127,4 @@ def test_extension_inventory_does_not_expose_mcp_targets_or_settings(
     assert server["configured"] is True
     assert "target" not in server
     assert "url" not in server
-    assert "secret" not in str(result)
+    assert "example.test" not in str(result)
