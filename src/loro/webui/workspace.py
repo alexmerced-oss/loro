@@ -6,7 +6,7 @@ import base64
 import binascii
 import json
 import mimetypes
-import subprocess  # nosec B404 - fixed argv, read-only git inspection
+import subprocess
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -164,7 +164,7 @@ class WorkspaceService:
 
     def changes(self) -> dict[str, Any]:
         def git(*args: str) -> str:
-            completed = subprocess.run(  # nosec B603
+            completed = subprocess.run(  # nosec B603,B607 -- fixed read-only Git argv
                 ["git", *args],
                 cwd=self.root,
                 check=False,
