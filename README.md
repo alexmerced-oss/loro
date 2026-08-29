@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.18.0` is the current release candidate. The deliberately limited `0.10` stable core remains
+Loro `0.18.0` is the current release. The deliberately limited `0.10` stable core remains
 the stabilization baseline. The OAP and AGS integrations remain pre-1.0 product surfaces, but are
 implemented against the published 1.0 specifications and their pinned 1.0.1 support libraries.
 See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0 gates.
