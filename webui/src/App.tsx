@@ -2,6 +2,9 @@ import { FirstRun } from "./FirstRun";
 import { GovernanceView } from "./GovernanceView";
 import { MemoryView } from "./MemoryView";
 import { GraphsView } from "./GraphsView";
+import { ExtensionsView } from "./ExtensionsView";
+import { RunCenterView } from "./RunCenterView";
+import { WorkspaceView } from "./WorkspaceView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
@@ -9,10 +12,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { activeRun, initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
-type View = "chat" | "graphs" | "bots" | "profiles" | "memory" | "governance" | "settings";
+type View = "chat" | "runs" | "workspace" | "graphs" | "bots" | "profiles" | "extensions" | "memory" | "governance" | "settings";
 type Approval = { runId: string; request_id: string; action: string; target: string; arguments_preview: string; scopes: string[] };
 
-const icons: Record<View, string> = { chat: "⌁", graphs: "⌘", bots: "◉", profiles: "◇", memory: "❖", governance: "⚖", settings: "⚙" };
+const icons: Record<View, string> = { chat: "⌁", runs: "↻", workspace: "▱", graphs: "⌘", bots: "◉", profiles: "◇", extensions: "⬡", memory: "❖", governance: "⚖", settings: "⚙" };
 
 // Bounded: a server that has actually gone away should say so rather than
 // leave the transcript reconnecting forever.
@@ -41,12 +44,14 @@ export default function App() {
         window.dispatchEvent(new CustomEvent("loro:new-conversation"));
       } },
     { key: "1", mod: true, describe: "Go to Chat", run: () => setView("chat") },
-    { key: "2", mod: true, describe: "Go to Graphs", run: () => setView("graphs") },
-    { key: "3", mod: true, describe: "Go to Bots", run: () => setView("bots") },
-    { key: "4", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
-    { key: "5", mod: true, describe: "Go to Memory", run: () => setView("memory") },
-    { key: "6", mod: true, describe: "Go to Governance", run: () => setView("governance") },
-    { key: "7", mod: true, describe: "Go to Settings", run: () => setView("settings") },
+    { key: "2", mod: true, describe: "Go to Run center", run: () => setView("runs") },
+    { key: "3", mod: true, describe: "Go to Workspace", run: () => setView("workspace") },
+    { key: "4", mod: true, describe: "Go to Graphs", run: () => setView("graphs") },
+    { key: "5", mod: true, describe: "Go to Bots", run: () => setView("bots") },
+    { key: "6", mod: true, describe: "Go to Profiles", run: () => setView("profiles") },
+    { key: "7", mod: true, describe: "Go to Extensions", run: () => setView("extensions") },
+    { key: "8", mod: true, describe: "Go to Memory", run: () => setView("memory") },
+    { key: "9", mod: true, describe: "Go to Governance", run: () => setView("governance") },
     { key: "/", describe: "Show keyboard shortcuts", run: () => setShowShortcuts(true) },
     { key: "Escape", describe: "Close a dialog or clear an error", run: () => {
         setShowShortcuts(false);
@@ -92,14 +97,14 @@ export default function App() {
     })();
   }, [refreshConversations, refreshProfiles]);
 
-  async function newConversation(profileName?: string, participants?: string[]) {
+  async function newConversation(profileName?: string, participants?: string[], groupMode = "sequential", coordinatorProfile?: string) {
     try {
       const roster = participants?.filter(Boolean) ?? [];
       const conversation = await request<Conversation>("/api/conversations", {
         method: "POST",
         body: JSON.stringify(
           roster.length
-            ? { participants: roster, title: `Group: ${roster.join(", ")}` }
+            ? { participants: roster, title: `Group: ${roster.join(", ")}`, group_mode: groupMode, coordinator_profile: coordinatorProfile || null }
             : { profile_name: profileName || null },
         ),
       });
@@ -172,9 +177,12 @@ export default function App() {
           </div>
         )}
         {view === "chat" && <ChatView conversations={conversations} activeId={activeId} setActiveId={setActiveId} profiles={profiles} onNew={newConversation} refresh={refreshConversations} setError={setError} />}
+        {view === "runs" && <RunCenterView setError={setError} />}
+        {view === "workspace" && <WorkspaceView setError={setError} />}
         {view === "graphs" && <GraphsView setError={setError} />}
         {view === "bots" && <BotsView profiles={profiles} onChat={newConversation} />}
         {view === "profiles" && <ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} />}
+        {view === "extensions" && <ExtensionsView setError={setError} />}
         {view === "memory" && <MemoryView setError={setError} />}
         {view === "governance" && <GovernanceView setError={setError} />}
         {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} />}
@@ -202,6 +210,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   const [runId, setRunId] = useState<string | null>(null);
   const [speaker, setSpeaker] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const [context, setContext] = useState<{ path: string; name?: string }[]>([]);
+  const uploadInput = useRef<HTMLInputElement>(null);
 
   // Cmd/Ctrl+Shift+N is registered globally; the handler lives here because
   // this is where onNew is in scope.
@@ -210,7 +220,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     window.addEventListener("loro:new-conversation", open);
     return () => window.removeEventListener("loro:new-conversation", open);
   }, [onNew]);
-  const [approval, setApproval] = useState<Approval | null>(null);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
   const [notice, setNotice] = useState("");
   const [resumed, setResumed] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
@@ -224,7 +234,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   useEffect(() => { loadMessages().catch((reason) => setError(String(reason))); }, [loadMessages, setError]);
   useEffect(() => {
     if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [messages, streaming, approval]);
+  }, [messages, streaming, approvals]);
 
   /**
    * Watch a run to completion, resuming if the connection drops.
@@ -246,8 +256,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
               id,
               (eventName, data) => {
                 if (eventName === "assistant.delta") setStreaming((current) => current + data.content);
-                if (eventName === "approval.requested") setApproval({ ...data, runId: id });
-                if (eventName === "approval.resolved") setApproval(null);
+                if (eventName === "approval.requested") setApprovals((current) => [...current.filter((item) => item.request_id !== data.request_id), { ...data, runId: id }]);
+                if (eventName === "approval.resolved") setApprovals((current) => current.filter((item) => item.request_id !== data.request_id));
                 // A group hands off between speakers mid-run; label the live
                 // bubble and flush the finished reply so each voice stays a
                 // separate message.
@@ -274,7 +284,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
         setRunId(null);
         setStreaming("");
         setSpeaker("");
-        setApproval(null);
+        setApprovals([]);
         await Promise.all([loadMessages(), refresh()]);
       }
     },
@@ -289,7 +299,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     setMessages((current) => [...current, { id: `pending-${Date.now()}`, role: "user", content, status: "complete", metadata: {}, created_at: new Date().toISOString() }]);
     setStreaming("");
     try {
-      const started = await request<{ run_id: string }>(`/api/conversations/${activeId}/messages`, { method: "POST", body: JSON.stringify({ content }) });
+      const started = await request<{ run_id: string }>(`/api/conversations/${activeId}/messages`, { method: "POST", body: JSON.stringify({ content, context: context.map((item) => ({ path: item.path })) }) });
+      setContext([]);
       await watch(started.run_id, -1);
     } catch (reason) { setError(String(reason)); setRunId(null); setStreaming(""); }
   }
@@ -317,10 +328,9 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  async function decide(decision: "approve" | "deny", scope: "once" | "session" = "once") {
-    if (!approval) return;
+  async function decide(approval: Approval, decision: "approve" | "deny", scope: "once" | "session" = "once") {
     await request(`/api/runs/${approval.runId}/approvals/${approval.request_id}`, { method: "POST", body: JSON.stringify({ decision, scope }) });
-    setApproval(null);
+    setApprovals((current) => current.filter((item) => item.request_id !== approval.request_id));
   }
 
   async function archive(id: string) {
@@ -341,6 +351,22 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     await refresh();
   }
 
+  async function upload(files: File[]) {
+    if (!activeId) return;
+    try {
+      for (const file of files) {
+        const content_base64 = await fileBase64(file);
+        const item = await request<{ path: string; name: string }>(`/api/conversations/${activeId}/attachments`, { method: "POST", body: JSON.stringify({ name: file.name, media_type: file.type || "application/octet-stream", content_base64 }) });
+        setContext((current) => [...current, item]);
+      }
+    } catch (reason) { setError(String(reason)); }
+  }
+
+  function addWorkspacePath() {
+    const path = window.prompt("Workspace-relative file path")?.trim();
+    if (path && !context.some((item) => item.path === path)) setContext((current) => [...current, { path }]);
+  }
+
   return <div className={`chat-layout ${listOpen ? "list-open" : ""}`}>
       <button className="list-scrim" type="button" aria-label="Hide conversations"
               onClick={() => setListOpen(false)} tabIndex={listOpen ? 0 : -1} />
@@ -357,7 +383,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
     <section className="chat-stage">
       <header className="chat-header">
         <button className="list-toggle" type="button" onClick={() => setListOpen(true)}
-                aria-label="Show conversations" aria-expanded={listOpen}>☰</button><div><small>{active?.profile_name ? "BOT CONVERSATION" : "CONVERSATION"}</small><h1>{active?.title || "Start a conversation"}</h1></div>{active?.profile_name && <span className="profile-chip">{active.profile_name} · r{active.profile_revision}</span>}</header>
+                aria-label="Show conversations" aria-expanded={listOpen}>☰</button><div><small>{active?.participants?.length ? `${active.group_mode || "sequential"} group` : active?.profile_name ? "BOT CONVERSATION" : "CONVERSATION"}</small><h1>{active?.title || "Start a conversation"}</h1></div>{active?.profile_name && <span className="profile-chip">{active.profile_name} · r{active.profile_revision}</span>}</header>
       <div className="transcript" ref={transcript} role="log" aria-label="Conversation transcript"
            aria-live="polite" aria-relevant="additions text" aria-busy={Boolean(runId)}>
         {!active && <EmptyChat onNew={() => onNew()} />}
@@ -366,10 +392,10 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
         {resumed && runId && <p className="run-resumed" role="status">Picked this reply back up. It kept going while the view was away.</p>}
         {notice && <p className="run-resumed" role="status">{notice}</p>}
         {streaming && <div className="message assistant"><div className="message-label">{speaker || "Loro"} <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
-        <p className="sr-only" role="status">{runId ? "Loro is working." : approval ? "Approval required." : ""}</p>
-        {approval && <div className="approval-card"><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide("deny")}>Deny</button><button onClick={() => decide("approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide("approve", "session")}>For session</button>}</div></div>}
+        <p className="sr-only" role="status">{runId ? "Loro is working." : approvals.length ? `${approvals.length} approvals required.` : ""}</p>
+        {approvals.map((approval) => <div className="approval-card" key={approval.request_id}><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide(approval, "deny")}>Deny</button><button onClick={() => decide(approval, "approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide(approval, "approve", "session")}>For session</button>}</div></div>)}
       </div>
-      {active && <form className="composer" onSubmit={send}><textarea aria-label="Message" rows={2} placeholder={`Message ${active.profile_name || "Loro"}…`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} disabled={Boolean(runId)} /><div className="composer-footer"><span>Enter to send · Shift+Enter for a new line</span>{runId ? <button type="button" className="stop" onClick={() => request(`/api/runs/${runId}/cancel`, { method: "POST" })}>■ Stop</button> : <button disabled={!draft.trim()} aria-label="Send message">↑</button>}</div></form>}
+      {active && <form className="composer" onSubmit={send}><textarea aria-label="Message" rows={2} placeholder={`Message ${active.profile_name || "Loro"}…`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} disabled={Boolean(runId)} />{context.length > 0 && <div className="context-chips">{context.map((item) => <span key={item.path}>{item.name || item.path}<button type="button" onClick={() => setContext((current) => current.filter((found) => found.path !== item.path))}>×</button></span>)}</div>}<div className="composer-footer"><span><button type="button" className="context-action" onClick={addWorkspacePath}>＋ Workspace file</button><button type="button" className="context-action" onClick={() => uploadInput.current?.click()}>↑ Upload</button><input ref={uploadInput} type="file" multiple hidden onChange={(event) => { void upload([...event.target.files || []]); event.target.value = ""; }} /> Enter to send · Shift+Enter for a new line</span>{runId ? <button type="button" className="stop" onClick={() => request(`/api/runs/${runId}/cancel`, { method: "POST" })}>■ Stop</button> : <button disabled={!draft.trim()} aria-label="Send message">↑</button>}</div></form>}
     </section>
   </div>;
 }
@@ -382,11 +408,14 @@ function EmptyChat({ onNew }: { onNew: () => void }) { return <div className="we
 
 function BotsView({ profiles, onChat }: {
   profiles: Profile[];
-  onChat: (profile?: string, participants?: string[]) => void;
+  onChat: (profile?: string, participants?: string[], groupMode?: string, coordinatorProfile?: string) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [groupMode, setGroupMode] = useState("sequential");
+  const [coordinator, setCoordinator] = useState("");
 
   function toggle(name: string) {
+    if (coordinator === name && selected.includes(name)) setCoordinator("");
     setSelected((current) =>
       current.includes(name)
         ? current.filter((item) => item !== name)
@@ -408,9 +437,11 @@ function BotsView({ profiles, onChat }: {
           <span>{selected.join(" · ")}</span>
         </div>
         <div className="group-bar-actions">
+          <select aria-label="Group execution mode" value={groupMode} onChange={(event) => setGroupMode(event.target.value)}><option value="sequential">Sequential</option><option value="parallel">Parallel</option><option value="coordinator">Coordinator</option></select>
+          {groupMode === "coordinator" && <select aria-label="Coordinator profile" value={coordinator} onChange={(event) => setCoordinator(event.target.value)}><option value="">Choose coordinator</option>{selected.map((name) => <option key={name} value={name}>{name}</option>)}</select>}
           <button className="secondary-action" type="button" onClick={() => setSelected([])}>Clear</button>
-          <button className="primary-action" type="button" disabled={selected.length < 2}
-                  onClick={() => { onChat(undefined, selected); setSelected([]); }}>
+          <button className="primary-action" type="button" disabled={selected.length < 2 || (groupMode === "coordinator" && !coordinator)}
+                  onClick={() => { onChat(undefined, selected, groupMode, coordinator); setSelected([]); }}>
             Start group chat
           </button>
         </div>
@@ -548,3 +579,4 @@ function relativeTime(value: string) { const seconds = Math.floor((Date.now() - 
 function parseList(value: string) { return value.split(",").map((item) => item.trim()).filter(Boolean); }
 function referenceNames(values: any[] | undefined) { return (values || []).map((item) => typeof item === "string" ? item : item?.name).filter(Boolean); }
 function updateNamedReferences(values: any[] | undefined, names: string[], create: (name: string) => any) { const current = new Map((values || []).map((item) => [typeof item === "string" ? item : item?.name, item])); return names.map((name) => current.get(name) || create(name)); }
+function fileBase64(file: File): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error(`Could not read ${file.name}`)); reader.onload = () => resolve(String(reader.result).split(",")[1] || ""); reader.readAsDataURL(file); }); }

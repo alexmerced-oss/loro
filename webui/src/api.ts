@@ -90,6 +90,12 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   return response.json();
 }
 
+export async function requestBlob(path: string): Promise<Blob> {
+  const response = await fetch(path, { headers: headers() });
+  if (!response.ok) throw await responseError(response);
+  return response.blob();
+}
+
 export type RunSnapshot = {
   run_id: string;
   conversation_id: string;

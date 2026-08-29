@@ -38,6 +38,9 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByText("Conversations")).toBeInTheDocument();
     expect(screen.getByText("Your local agent workspace")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /runs/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /extensions/i })).toBeInTheDocument();
   });
 
   it("shows setup instead of a composer when the folder cannot run a turn", async () => {

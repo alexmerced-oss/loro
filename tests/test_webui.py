@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import threading
@@ -101,9 +102,7 @@ async def test_web_api_conversations_streaming_and_csrf(tmp_path: Path) -> None:
     ) as client:
         assert (await client.post("/api/conversations", json={})).status_code == 403
         token = await _csrf(client)
-        created = await client.post(
-            "/api/conversations", json={}, headers=_headers(token)
-        )
+        created = await client.post("/api/conversations", json={}, headers=_headers(token))
         assert created.status_code == 201
         conversation_id = created.json()["id"]
 
@@ -139,6 +138,49 @@ async def test_web_api_conversations_streaming_and_csrf(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_web_api_workspace_context_artifacts_extensions_and_run_center(
+    tmp_path: Path,
+) -> None:
+    _prepare_project(tmp_path)
+    (tmp_path / "brief.md").write_text("release brief", encoding="utf-8")
+    app_instance = create_app(
+        project_root=tmp_path,
+        database_path=tmp_path / "web.sqlite3",
+        database_synchronous="OFF",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_instance), base_url="http://test"
+    ) as client:
+        token = await _csrf(client)
+        conversation = await client.post("/api/conversations", json={}, headers=_headers(token))
+        conversation_id = conversation.json()["id"]
+        files = await client.get("/api/workspace/files")
+        upload = await client.post(
+            f"/api/conversations/{conversation_id}/attachments",
+            headers=_headers(token),
+            json={
+                "name": "diagram.png",
+                "media_type": "image/png",
+                "content_base64": base64.b64encode(b"image").decode(),
+            },
+        )
+        preview = await client.get("/api/workspace/file", params={"path": upload.json()["path"]})
+        artifacts = await client.get("/api/workspace/artifacts")
+        extensions = await client.get("/api/workspace/extensions")
+        workspaces = await client.get("/api/workspaces")
+        center = await client.get("/api/run-center")
+
+    assert any(item["path"] == "brief.md" for item in files.json()["files"])
+    assert upload.status_code == 201
+    assert preview.content == b"image"
+    assert preview.headers["content-type"].startswith("image/png")
+    assert "changes" in artifacts.json()
+    assert {"mcp_servers", "mcp_extensions", "skills"} <= set(extensions.json())
+    assert workspaces.json()["workspaces"][0]["launch_argv"][0:2] == ["loro", "web"]
+    assert center.json()["chat_runs"] == []
+
+
+@pytest.mark.asyncio
 async def test_web_api_profile_bot_and_settings_workflows(tmp_path: Path) -> None:
     _prepare_project(tmp_path)
     app_instance = create_app(
@@ -150,9 +192,7 @@ async def test_web_api_profile_bot_and_settings_workflows(tmp_path: Path) -> Non
         transport=httpx.ASGITransport(app=app_instance), base_url="http://test"
     ) as client:
         token = await _csrf(client)
-        created = await client.post(
-            "/api/profiles", json=_profile(), headers=_headers(token)
-        )
+        created = await client.post("/api/profiles", json=_profile(), headers=_headers(token))
         assert created.status_code == 201, created.text
         assert created.json()["editable"] is True
 
@@ -163,9 +203,7 @@ async def test_web_api_profile_bot_and_settings_workflows(tmp_path: Path) -> Non
 
         document = (await client.get("/api/profiles/reviewer")).json()
         document["spec"]["role"]["instructions"] = "Review evidence and report risk."
-        updated = await client.put(
-            "/api/profiles/reviewer", json=document, headers=_headers(token)
-        )
+        updated = await client.put("/api/profiles/reviewer", json=document, headers=_headers(token))
         assert updated.status_code == 200, updated.text
         assert updated.json()["metadata"]["revision"] == 2
 
@@ -240,9 +278,7 @@ def test_run_handle_approval_and_cancel() -> None:
         risk_reason="process execution",
     )
     result: list[str | None] = []
-    thread = threading.Thread(
-        target=lambda: result.append(handle.approval_provider(request))
-    )
+    thread = threading.Thread(target=lambda: result.append(handle.approval_provider(request)))
     thread.start()
     with handle.condition:
         handle.condition.wait_for(lambda: request.request_id in handle.approvals, timeout=2)

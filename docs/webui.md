@@ -288,6 +288,47 @@ the conversation starts is refused rather than quietly speaking with different a
 as for a single-profile bot. Group members also run with a fresh session each turn and read the
 transcript instead, so one member's hidden context never leaks into another's.
 
+Groups offer three explicit execution modes. Sequential mode preserves deterministic handoff and
+lets later speakers see earlier findings. Parallel mode gives every participant the same starting
+context and runs them concurrently under the existing global concurrency and approval limits.
+Coordinator mode runs the non-coordinator participants first, then asks the selected coordinator
+to synthesize their attributed findings. Parallel approval requests are queued independently in
+the chat rather than replacing one another.
+
+## Workspace Context And Artifacts
+
+The composer accepts workspace-relative file references and bounded browser uploads. Up to twenty
+references may accompany a message. UTF-8 text-like files up to 256 KB are embedded in an
+untrusted context envelope, with a 750 KB total inline ceiling. Images, binary files, and larger
+documents remain explicit workspace paths for tools that are permitted to read them. Uploads are
+limited to 10 MB and stored beneath `.loro/attachments/<conversation-id>`.
+
+The Workspace view lists reviewable files, previews bounded text/images/PDFs, supports authenticated
+downloads, and presents read-only Git status, staged diff, and unstaged diff. Paths are resolved
+beneath the active project; dependency/build trees and private `.loro` state are excluded. The
+project selector identifies adjacent initialized Loro workspaces and copies an exact launch command
+for switching, keeping each server instance and policy boundary tied to one project root.
+
+## Run Center, Schedules, And Notifications
+
+The Run center combines durable conversation records, live conversation handles, graph history,
+active graph handles, outstanding approvals, usage, and schedules. It polls for state changes and
+can opt into browser-native completion notifications. Notification permission is requested only
+from the operator's explicit action and the preference remains in local browser storage.
+
+Graph schedules use bounded minute intervals and persist atomically in
+`.loro/webui-schedules.json`. A scheduler executes due graphs only while the local Web UI server is
+running, through the same `GraphService` validation, policy, budget, gate, and audit path as a
+manual graph run. Failures are recorded on the schedule rather than weakening policy or retrying
+without a fresh interval.
+
+## Extension Inventory
+
+The Extensions view shows the effective MCP enablement state, configured servers and transports,
+protocol extensions, and discovered managed/user/project skills. It deliberately exposes no
+credential values and does not bypass configuration-file review for installing or changing an
+extension.
+
 ## Portable Identities
 
 A profile can be exported as a portable Open Agent Profile document and imported into another
@@ -344,6 +385,9 @@ The default Web UI is a local operator surface, not a production multi-user serv
 - CORS is not enabled.
 - CSP, frame denial, no-sniff, and no-referrer headers are applied.
 - API message size, database text, history context, and concurrency are bounded.
+- Workspace context, uploads, previews, Git output, file discovery, and scheduler intervals are
+  independently bounded. Internal Loro state cannot be attached or previewed except for the
+  dedicated attachment directory.
 - Credentials and unrestricted environment data are not exposed.
 - Assistant markdown is rendered without a raw-HTML pass. Model output is untrusted because it can
   quote a hostile file, a scraped page, or a tool result, so embedded markup stays visible text,
@@ -369,6 +413,9 @@ The version-1 local API provides:
 
 - status and CSRF session establishment;
 - conversation CRUD, messages, runs, cancellation, SSE, and approval decisions;
+- bounded context uploads, file/artifact previews, read-only change review, and workspace launch
+  metadata;
+- unified chat/graph run-center data, interval graph schedules, and extension inventory;
 - profile list, document, effective authority, create, update, and validation;
 - redacted settings reads and constrained default updates.
 

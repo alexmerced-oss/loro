@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -511,7 +512,12 @@ class RunManager:
                 last_result = None
                 last_message = None
 
-                for index, speaker in enumerate(roster or [None]):
+                def execute_speaker(
+                    speaker: str | None,
+                    index: int,
+                    speaker_transcript: list[dict[str, Any]],
+                    speaker_prompt: str,
+                ) -> tuple[int, str | None, Any]:
                     handle.check_cancelled()
                     profile = None
                     if speaker:
@@ -521,52 +527,89 @@ class RunManager:
                             else conversation.get("profile_spec_digest")
                         )
                         profile = self._resolve_profile(config, speaker, pinned)
-
                     if is_group:
                         handle.publish("speaker.started", profile=speaker, index=index)
-
                     runtime = AgentRuntime(
                         config,
                         approval_provider=handle.approval_provider,
                         profile=profile,
                         _profile_cwd=self.project_root,
                     )
-                    # Group members get a fresh session each turn and read the
-                    # transcript instead, so one member's hidden context never
-                    # leaks into another's.
                     session_id = None
                     if not is_group and previous:
                         session_id = conversation["session_id"]
-
                     result = runtime.run(
-                        _conversation_prompt(transcript, prompt),
+                        _conversation_prompt(speaker_transcript, speaker_prompt),
                         mode="run",
                         session_id=session_id,
                         on_token=on_token_for(speaker if is_group else None),
                         on_event=on_event_for(speaker if is_group else None),
                     )
-                    if not is_group and not previous:
-                        self.store.set_session_id(handle.conversation_id, result.session_id)
+                    return index, speaker, result
 
+                def persist_result(index: int, speaker: str | None, result: Any) -> dict[str, Any]:
                     metadata: dict[str, Any] = {
                         "stop_reason": result.stop_reason,
                         "usage": result.usage,
                         "steps": result.steps,
+                        "group_mode": conversation.get("group_mode", "sequential"),
                     }
                     if speaker:
                         metadata["profile"] = speaker
-                    last_message = self.store.add_message(
+                    message = self.store.add_message(
                         handle.conversation_id,
                         role="assistant",
                         content=result.response,
                         metadata=metadata,
                     )
-                    last_result = result
-                    # The next speaker reads this reply as part of the transcript.
-                    transcript = [*transcript, last_message]
-
                     if is_group:
-                        handle.publish("speaker.finished", profile=speaker, message=last_message)
+                        handle.publish(
+                            "speaker.finished", profile=speaker, index=index, message=message
+                        )
+                    return message
+
+                group_mode = str(conversation.get("group_mode") or "sequential")
+                if is_group and group_mode == "parallel":
+                    completed: dict[int, tuple[str | None, Any]] = {}
+                    with ThreadPoolExecutor(
+                        max_workers=min(len(roster), MAX_GROUP_PARTICIPANTS),
+                        thread_name_prefix=f"loro-group-{handle.run_id[:8]}",
+                    ) as executor:
+                        futures = {
+                            executor.submit(
+                                execute_speaker, speaker, index, transcript, prompt
+                            ): index
+                            for index, speaker in enumerate(roster)
+                        }
+                        for future in as_completed(futures):
+                            index, speaker, result = future.result()
+                            completed[index] = (speaker, result)
+                    for index in sorted(completed):
+                        speaker, result = completed[index]
+                        last_message = persist_result(index, speaker, result)
+                        last_result = result
+                else:
+                    ordered_roster: list[str | None] = list(roster or [None])
+                    coordinator = conversation.get("coordinator_profile")
+                    if is_group and group_mode == "coordinator" and coordinator:
+                        ordered_roster = [item for item in ordered_roster if item != coordinator]
+                        ordered_roster.append(str(coordinator))
+
+                    for index, speaker in enumerate(ordered_roster):
+                        speaker_prompt = prompt
+                        if group_mode == "coordinator" and speaker == coordinator:
+                            speaker_prompt = (
+                                f"{prompt}\n\nAct as the coordinator. Synthesize the other "
+                                "participants' findings into one final recommendation."
+                            )
+                        index, speaker, result = execute_speaker(
+                            speaker, index, transcript, speaker_prompt
+                        )
+                        if not is_group and not previous:
+                            self.store.set_session_id(handle.conversation_id, result.session_id)
+                        last_message = persist_result(index, speaker, result)
+                        last_result = result
+                        transcript = [*transcript, last_message]
 
                 if last_result is None or last_message is None:
                     raise RuntimeError("conversation run completed without an assistant response")

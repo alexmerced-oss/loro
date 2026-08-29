@@ -293,7 +293,14 @@ class _FakeResult:
 GROUP_RUN_TIMEOUT_SECONDS = 60
 
 
-def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
+def _run_group(
+    monkeypatch,
+    tmp_path: Path,
+    participants: list[str],
+    *,
+    group_mode: str = "sequential",
+    coordinator_profile: str | None = None,
+) -> tuple:
     """Drive RunManager against a stubbed runtime, so no model is called."""
     from loro.webui import services
     from loro.webui.conversations import ConversationStore
@@ -334,6 +341,8 @@ def _run_group(monkeypatch, tmp_path: Path, participants: list[str]) -> tuple:
         workspace=str(tmp_path),
         participants=participants,
         participant_digests={name: f"digest-{name}" for name in participants},
+        group_mode=group_mode,
+        coordinator_profile=coordinator_profile,
     )
     handle = manager.start(conversation["id"], "What should we ship?")
     # The run finishes on its own thread. How long that takes depends on machine
@@ -383,6 +392,50 @@ def test_a_later_speaker_sees_what_the_earlier_one_said(monkeypatch, tmp_path: P
     assert len(prompts) == 2
     assert "reply from reviewer" not in prompts[0]
     assert "reply from reviewer" in prompts[1]
+
+
+def test_parallel_group_members_receive_the_same_starting_context(
+    monkeypatch, tmp_path: Path
+) -> None:
+    store, conversation, _, prompts = _run_group(
+        monkeypatch,
+        tmp_path,
+        ["reviewer", "release-notes"],
+        group_mode="parallel",
+    )
+
+    assert len(prompts) == 2
+    assert all("reply from" not in prompt for prompt in prompts)
+    replies = [
+        item for item in store.list_messages(conversation["id"]) if item["role"] == "assistant"
+    ]
+    assert {item["metadata"]["profile"] for item in replies} == {
+        "reviewer",
+        "release-notes",
+    }
+    assert {item["metadata"]["group_mode"] for item in replies} == {"parallel"}
+
+
+def test_coordinator_speaks_last_and_receives_worker_findings(monkeypatch, tmp_path: Path) -> None:
+    store, conversation, _, prompts = _run_group(
+        monkeypatch,
+        tmp_path,
+        ["coordinator", "reviewer", "release-notes"],
+        group_mode="coordinator",
+        coordinator_profile="coordinator",
+    )
+
+    replies = [
+        item for item in store.list_messages(conversation["id"]) if item["role"] == "assistant"
+    ]
+    assert [item["metadata"]["profile"] for item in replies] == [
+        "reviewer",
+        "release-notes",
+        "coordinator",
+    ]
+    assert "Act as the coordinator" in prompts[-1]
+    assert "reply from reviewer" in prompts[-1]
+    assert "reply from release-notes" in prompts[-1]
 
 
 def test_a_solo_conversation_is_unchanged(monkeypatch, tmp_path: Path) -> None:

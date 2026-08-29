@@ -7,6 +7,9 @@ export type Conversation = {
   profile_revision: number | null;
   profile_spec_digest: string | null;
   updated_at: string;
+  participants?: string[];
+  group_mode?: "sequential" | "parallel" | "coordinator";
+  coordinator_profile?: string | null;
 };
 
 export type Message = {

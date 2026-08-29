@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _STATUSES = {"active", "archived"}
 _ROLES = {"user", "assistant", "tool", "system-event"}
 
@@ -56,6 +56,8 @@ class ConversationStore:
                     profile_spec_digest TEXT,
                     participants TEXT,
                     participant_digests TEXT,
+                    group_mode TEXT NOT NULL DEFAULT 'sequential',
+                    coordinator_profile TEXT,
                     session_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -114,9 +116,22 @@ class ConversationStore:
                 }
                 for column in ("participants", "participant_digests"):
                     if column not in columns:
-                        connection.execute(
-                            f"ALTER TABLE conversations ADD COLUMN {column} TEXT"
-                        )
+                        connection.execute(f"ALTER TABLE conversations ADD COLUMN {column} TEXT")
+                connection.execute("UPDATE webui_schema SET version = ?", (SCHEMA_VERSION,))
+            if version < 3:
+                columns = {
+                    str(item["name"])
+                    for item in connection.execute("PRAGMA table_info(conversations)")
+                }
+                if "group_mode" not in columns:
+                    connection.execute(
+                        "ALTER TABLE conversations ADD COLUMN group_mode TEXT NOT NULL "
+                        "DEFAULT 'sequential'"
+                    )
+                if "coordinator_profile" not in columns:
+                    connection.execute(
+                        "ALTER TABLE conversations ADD COLUMN coordinator_profile TEXT"
+                    )
                 connection.execute("UPDATE webui_schema SET version = ?", (SCHEMA_VERSION,))
 
     def create_conversation(
@@ -129,7 +144,13 @@ class ConversationStore:
         profile_spec_digest: str | None = None,
         participants: list[str] | None = None,
         participant_digests: dict[str, str] | None = None,
+        group_mode: str = "sequential",
+        coordinator_profile: str | None = None,
     ) -> dict[str, Any]:
+        if group_mode not in {"sequential", "parallel", "coordinator"}:
+            raise ValueError("Invalid group conversation mode.")
+        if coordinator_profile and coordinator_profile not in (participants or []):
+            raise ValueError("The coordinator must be one of the conversation participants.")
         conversation_id = str(uuid4())
         now = _now()
         normalized_title = _bounded_text(title.strip() or "New conversation", 200)
@@ -137,8 +158,9 @@ class ConversationStore:
             connection.execute(
                 """INSERT INTO conversations(
                     id,title,status,workspace,profile_name,profile_revision,profile_spec_digest,
-                    participants,participant_digests,session_id,created_at,updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    participants,participant_digests,group_mode,coordinator_profile,
+                    session_id,created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     conversation_id,
                     normalized_title,
@@ -149,6 +171,8 @@ class ConversationStore:
                     profile_spec_digest,
                     json.dumps(participants) if participants else None,
                     json.dumps(participant_digests) if participant_digests else None,
+                    group_mode,
+                    coordinator_profile,
                     conversation_id,
                     now,
                     now,
@@ -315,6 +339,22 @@ class ConversationStore:
         payload = _row(row)
         payload["usage"] = json.loads(payload.pop("usage_json"))
         return payload
+
+    def list_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(limit, 500))
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT runs.*, conversations.title AS conversation_title
+                FROM runs JOIN conversations ON conversations.id = runs.conversation_id
+                ORDER BY runs.created_at DESC LIMIT ?""",
+                (bounded_limit,),
+            ).fetchall()
+        payloads: list[dict[str, Any]] = []
+        for row in rows:
+            payload = dict(row)
+            payload["usage"] = json.loads(payload.pop("usage_json"))
+            payloads.append(payload)
+        return payloads
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:

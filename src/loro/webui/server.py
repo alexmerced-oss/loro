@@ -4,6 +4,7 @@ import asyncio
 import json
 import mimetypes
 import secrets
+import threading
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,12 +16,21 @@ from loro.agent_profiles import AgentProfileRegistry
 from loro.config import load_config
 from loro.webui.conversations import ConversationStore
 from loro.webui.services import MAX_GROUP_PARTICIPANTS, ProfileService, RunManager, SettingsService
+from loro.webui.workspace import (
+    ContextReference,
+    ScheduleInput,
+    ScheduleStore,
+    UploadInput,
+    WorkspaceService,
+)
 
 
 class ConversationCreate(BaseModel):
     title: str = Field(default="New conversation", max_length=200)
     profile_name: str | None = None
     participants: list[str] = Field(default_factory=list, max_length=5)
+    group_mode: Literal["sequential", "parallel", "coordinator"] = "sequential"
+    coordinator_profile: str | None = Field(default=None, max_length=120)
 
 
 class ConversationUpdate(BaseModel):
@@ -30,6 +40,7 @@ class ConversationUpdate(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+    context: list[ContextReference] = Field(default_factory=list, max_length=20)
 
 
 class ApprovalResolve(BaseModel):
@@ -96,6 +107,10 @@ class SettingsUpdate(BaseModel):
     default_profile: str | None = None
 
 
+class ScheduleUpdate(BaseModel):
+    enabled: bool
+
+
 def create_app(
     *,
     project_root: Path | None = None,
@@ -110,6 +125,7 @@ def create_app(
     profiles = ProfileService(root)
     settings = SettingsService(root)
     runs = RunManager(root, store)
+    workspace = WorkspaceService(root)
     sessions: dict[str, str] = {}
     app = FastAPI(title="Loro Web UI", version="1.0", docs_url=None, redoc_url=None)
     app.state.project_root = root
@@ -139,8 +155,8 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-            "script-src 'self'; connect-src 'self'"
+            "default-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
         )
         return response
 
@@ -154,6 +170,20 @@ def create_app(
     from loro.webui.graphs import GraphService
 
     graphs = GraphService(root)
+    schedules = ScheduleStore(root, lambda path: graphs.start(path))
+    scheduler_stop = threading.Event()
+
+    def schedule_loop() -> None:
+        while not scheduler_stop.wait(10):
+            schedules.tick()
+
+    @app.on_event("startup")
+    async def start_scheduler() -> None:
+        threading.Thread(target=schedule_loop, daemon=True, name="loro-web-scheduler").start()
+
+    @app.on_event("shutdown")
+    async def stop_scheduler() -> None:
+        scheduler_stop.set()
 
     from loro.webui.governance import GovernanceService
     from loro.webui.memory import MemoryService
@@ -176,7 +206,6 @@ def create_app(
             return onboarding.configure(payload.provider, payload.model, payload.small_model)
         except ValueError as error:
             raise translate(error) from error
-
 
     governance = GovernanceService(root)
     memory = MemoryService(root)
@@ -370,6 +399,65 @@ def create_app(
             "default_profile": config.agent_profiles.default_profile,
         }
 
+    @app.get("/api/workspace/files")
+    async def workspace_files(q: str = "") -> dict[str, Any]:
+        return {"workspace": str(root), "files": workspace.files(q)}
+
+    @app.get("/api/workspace/file")
+    async def workspace_file(path: str, download: bool = False) -> Response:
+        try:
+            content, media_type, name = workspace.read(path)
+        except Exception as error:
+            raise translate(error) from error
+        safe_name = name.replace('"', "_").replace("\r", "_").replace("\n", "_")
+        headers = (
+            {"Content-Disposition": f'attachment; filename="{safe_name}"'} if download else None
+        )
+        return Response(content=content, media_type=media_type, headers=headers)
+
+    @app.get("/api/workspace/artifacts")
+    async def workspace_artifacts() -> dict[str, Any]:
+        return {"artifacts": workspace.artifacts(), "changes": workspace.changes()}
+
+    @app.get("/api/workspace/extensions")
+    async def workspace_extensions() -> dict[str, Any]:
+        return workspace.extensions()
+
+    @app.get("/api/workspaces")
+    async def workspaces() -> dict[str, Any]:
+        return {"workspaces": workspace.workspaces()}
+
+    @app.get("/api/run-center")
+    async def run_center() -> dict[str, Any]:
+        return {
+            "chat_runs": store.list_runs(),
+            "active_chat_runs": [
+                handle.snapshot() for handle in runs.handles.values() if not handle.finished
+            ],
+            "graph_runs": graphs.history(),
+            "active_graph_runs": graphs.active(),
+            "schedules": schedules.list(),
+        }
+
+    @app.get("/api/schedules")
+    async def list_schedules() -> list[dict[str, Any]]:
+        return schedules.list()
+
+    @app.post("/api/schedules", status_code=201)
+    async def create_schedule(payload: ScheduleInput) -> dict[str, Any]:
+        try:
+            graphs.plan(payload.graph_path)
+            return schedules.create(payload)
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.patch("/api/schedules/{schedule_id}")
+    async def update_schedule(schedule_id: str, payload: ScheduleUpdate) -> dict[str, Any]:
+        try:
+            return schedules.update(schedule_id, payload.enabled)
+        except Exception as error:
+            raise translate(error) from error
+
     @app.get("/api/conversations")
     async def list_conversations(include_archived: bool = False) -> list[dict[str, Any]]:
         return store.list_conversations(include_archived=include_archived)
@@ -378,9 +466,7 @@ def create_app(
     async def create_conversation(payload: ConversationCreate) -> dict[str, Any]:
         try:
             config = load_config(root)
-            registry = AgentProfileRegistry(
-                config.agent_profiles, cwd=root, safety=config.safety
-            )
+            registry = AgentProfileRegistry(config.agent_profiles, cwd=root, safety=config.safety)
 
             # A group names several profiles. Pin each one's spec digest now, so
             # a profile that changes mid-conversation is refused rather than
@@ -394,11 +480,18 @@ def create_app(
                 if len(set(roster)) != len(roster):
                     raise ValueError("Each profile can join a group only once.")
                 digests = {name: registry.load(name).spec_digest for name in roster}
+                if (
+                    payload.group_mode == "coordinator"
+                    and payload.coordinator_profile not in roster
+                ):
+                    raise ValueError("Choose one of the group participants as coordinator.")
                 return store.create_conversation(
                     title=payload.title,
                     workspace=str(root),
                     participants=roster,
                     participant_digests=digests,
+                    group_mode=payload.group_mode,
+                    coordinator_profile=payload.coordinator_profile,
                 )
 
             selected = payload.profile_name or config.agent_profiles.default_profile
@@ -436,9 +529,7 @@ def create_app(
         except Exception as error:
             raise translate(error) from error
 
-    @app.delete(
-        "/api/conversations/{conversation_id}", status_code=204, response_model=None
-    )
+    @app.delete("/api/conversations/{conversation_id}", status_code=204, response_model=None)
     async def delete_conversation(conversation_id: str):
         try:
             if runs.is_conversation_active(conversation_id):
@@ -456,10 +547,19 @@ def create_app(
             raise translate(error) from error
 
     @app.post("/api/conversations/{conversation_id}/messages", status_code=202)
-    async def create_message(conversation_id: str, payload: MessageCreate) -> dict[str, str]:
+    async def create_message(conversation_id: str, payload: MessageCreate) -> dict[str, Any]:
         try:
-            handle = runs.start(conversation_id, payload.content)
-            return {"run_id": handle.run_id}
+            context_suffix, manifest = workspace.context(payload.context)
+            handle = runs.start(conversation_id, payload.content + context_suffix)
+            return {"run_id": handle.run_id, "context": manifest}
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.post("/api/conversations/{conversation_id}/attachments", status_code=201)
+    async def create_attachment(conversation_id: str, payload: UploadInput) -> dict[str, Any]:
+        try:
+            store.get_conversation(conversation_id)
+            return workspace.save_upload(conversation_id, payload)
         except Exception as error:
             raise translate(error) from error
 
@@ -611,6 +711,7 @@ def create_app(
     assets = static_path or Path(__file__).parent / "static"
     index = assets / "index.html"
     if assets.exists():
+
         @app.get("/{path:path}")
         async def frontend(path: str):
             candidate = assets / path
