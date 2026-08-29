@@ -164,7 +164,7 @@ class WorkspaceService:
 
     def changes(self) -> dict[str, Any]:
         def git(*args: str) -> str:
-            completed = subprocess.run(  # nosec B603,B607 -- fixed read-only Git argv
+            completed = subprocess.run(  # nosec B603 B607
                 ["git", *args],
                 cwd=self.root,
                 check=False,
