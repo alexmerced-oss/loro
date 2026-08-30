@@ -69,7 +69,7 @@ def test_machine_readable_support_matrix_has_explicit_stability() -> None:
 def test_release_manifest_hashes_actual_artifacts(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()
-    artifact = dist / "loro_agent-0.19.0-py3-none-any.whl"
+    artifact = dist / "loro_agent-0.19.1-py3-none-any.whl"
     artifact.write_bytes(b"fixture-wheel")
     output = dist / "release-manifest.json"
 

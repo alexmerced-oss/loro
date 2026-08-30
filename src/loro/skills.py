@@ -69,6 +69,8 @@ class SkillRegistry:
                 metadata = self._metadata(skill_file.parent, scope)
                 if metadata.name in found:
                     previous = found[metadata.name]
+                    if previous.path.resolve() == metadata.path.resolve():
+                        continue
                     raise SkillError(
                         f"Skill name collision for {metadata.name}: "
                         f"{previous.path} and {metadata.path}"

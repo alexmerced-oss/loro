@@ -102,6 +102,12 @@ def test_skill_packages_fail_closed_on_collisions_symlinks_and_name_mismatch(tmp
     with pytest.raises(SkillError, match="collision"):
         SkillRegistry(config).discover()
 
+    duplicate_root = skill_config(tmp_path, first).model_copy(
+        update={"project_paths": [str(first), str(first.resolve())]}
+    )
+    discovered = SkillRegistry(duplicate_root).discover()
+    assert [skill.name for skill in discovered] == ["same-name"]
+
     bad = write_skill(tmp_path / "bad-root", "actual-name")
     (bad / "SKILL.md").write_text(
         "---\nname: different-name\ndescription: mismatch\n---\nbody\n",
