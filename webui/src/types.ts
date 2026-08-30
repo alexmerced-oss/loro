@@ -26,6 +26,8 @@ export type Profile = {
   revision: number;
   description: string;
   trust: string;
+  source: string;
+  source_scope?: "managed" | "project" | "portable" | "universal" | "user";
   editable: boolean;
   default: boolean;
   provider: string;

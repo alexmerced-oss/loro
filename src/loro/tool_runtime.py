@@ -90,6 +90,7 @@ class ToolRegistry:
         allowed_skills: frozenset[str] | None = None,
         allowed_subagents: frozenset[str] | None = None,
         subagent_runner: Callable[[str, str, str], str] | None = None,
+        project_root: Path | None = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -120,6 +121,7 @@ class ToolRegistry:
         self.allowed_skills = allowed_skills
         self.allowed_subagents = allowed_subagents
         self.subagent_runner = subagent_runner
+        self.project_root = (project_root or Path.cwd()).resolve()
 
     def execute(self, call: ToolCall) -> ToolExecution:
         execution = self._execute(call)
@@ -179,9 +181,74 @@ class ToolRegistry:
                 return self._emit_graph_output(call)
             if call.name == "agent.run":
                 return self._run_subagent(call)
+            if call.name == "profile.create":
+                return self._create_profile(call)
             return ToolExecution(call=call, ok=False, output=f"Unknown tool: {call.name}")
         except Exception as error:
             return ToolExecution(call=call, ok=False, output=str(error))
+
+    def _create_profile(self, call: ToolCall) -> ToolExecution:
+        from loro.agent_profiles.generation import (
+            build_profile_proposal,
+            save_generated_profile,
+            store_profile_proposal,
+        )
+
+        payload = dict(call.args)
+        save = bool(payload.pop("save", False))
+        payload.pop("approved", None)
+        proposal = build_profile_proposal(
+            payload,
+            self.config,
+            self.project_root,
+            request="Profile authored during an agent session.",
+            autonomous=call.origin == "model",
+        )
+        proposal_path = store_profile_proposal(proposal, self.config, self.project_root)
+        if not save:
+            return ToolExecution(
+                call=call,
+                ok=True,
+                output=json.dumps(
+                    {**proposal, "proposal_path": str(proposal_path)},
+                    sort_keys=True,
+                ),
+            )
+        document = proposal["document"]
+        name = str(document["metadata"]["name"])
+        destination = (
+            self.project_root / self.config.agent_profiles.project_paths[-1] / f"{name}.agent.yaml"
+        )
+        resource = filesystem_resource(
+            str(destination),
+            operation="write",
+            workspace_roots=self.config.permissions.workspace_roots,
+        )
+        self._authorize(
+            call,
+            PermissionRequest(
+                tool="edit",
+                action="create agent profile",
+                target=str(destination),
+                resource=resource,
+            ),
+            approval_target=resource.target,
+            risk_reason="Persist a new agent identity and its requested capability envelope.",
+        )
+        output = save_generated_profile(document, self.config, self.project_root)
+        return ToolExecution(
+            call=call,
+            ok=True,
+            output=json.dumps(
+                {
+                    "status": "created",
+                    "name": name,
+                    "path": str(output),
+                    "proposal_path": str(proposal_path),
+                },
+                sort_keys=True,
+            ),
+        )
 
     def _emit_graph_output(self, call: ToolCall) -> ToolExecution:
         name = str(call.args.get("name", ""))
@@ -440,8 +507,7 @@ class ToolRegistry:
         offline_scaffold = bool(call.args.get("offline_scaffold", False))
         if kind not in {"document", "presentation", "spreadsheet", "brief"}:
             raise ValueError(
-                "artifact.create kind must be one of: document, presentation, spreadsheet, "
-                "brief."
+                "artifact.create kind must be one of: document, presentation, spreadsheet, brief."
             )
         resource = filesystem_resource(
             str(call.args.get("output_dir", "artifacts")),
@@ -492,9 +558,7 @@ class ToolRegistry:
                 prompt,
                 output_dir,
                 outline=(
-                    presentation_draft(draft)
-                    if isinstance(draft, PresentationPayload)
-                    else None
+                    presentation_draft(draft) if isinstance(draft, PresentationPayload) else None
                 ),
             )
         else:

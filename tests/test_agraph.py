@@ -16,7 +16,7 @@ from loro.agraph.criteria import CriteriaEvaluator
 from loro.agraph.document import GraphDocumentError, canonical_json, graph_digest, load_graph
 from loro.agraph.execute import GraphExecutionError, GraphExecutor
 from loro.agraph.expressions import ExpressionError, evaluate
-from loro.agraph.generate import generate_graph
+from loro.agraph.generate import generate_graph, write_ai_generated_graph
 from loro.agraph.plan import build_plan
 from loro.agraph.policy import evaluate_policy
 from loro.agraph.record import validate_run_record
@@ -152,12 +152,22 @@ def test_executor_emits_conformant_durable_run_record(tmp_path: Path) -> None:
         GraphExecutor(
             config, workspace=tmp_path, runtime_factory=lambda _config: FakeRuntime()
         ).run(graph_path)
+    events: list[tuple[str, dict[str, object]]] = []
     record = GraphExecutor(
-        config, workspace=tmp_path, runtime_factory=lambda _config: FakeRuntime()
+        config,
+        workspace=tmp_path,
+        runtime_factory=lambda _config: FakeRuntime(),
+        event_handler=lambda kind, payload: events.append((kind, dict(payload))),
     ).run(graph_path, plan_approved=True)
     assert record["status"] == "succeeded"
     assert record["outputs"] == {"result": "finished"}
     assert record["usage"]["node_executions"] == 1
+    assert [kind for kind, _payload in events] == [
+        "node.started",
+        "node.attempt.started",
+        "node.finished",
+    ]
+    assert events[1][1]["activity"].startswith("The routed model")
     validate_run_record(record)
     assert (tmp_path / "runs" / f"{record['run_id']}.json").is_file()
     audit = verify_jsonl_audit(tmp_path / "audit.jsonl")
@@ -268,6 +278,10 @@ def test_graph_generate_uses_model_authored_graph_by_default(tmp_path: Path, mon
     assert result.exit_code == 0, result.output
     assert "model-authored research" in output.read_text(encoding="utf-8")
     assert not validate_graph(output).warnings
+    generated = yaml.safe_load(output.read_text(encoding="utf-8"))
+    research = next(iter(generated["nodes"].values()))
+    assert research["requirements"]["tools"] == ["shell_exec"]
+    assert research["requirements"]["permissions"] == ["shell:exec:*", "net:fetch:*"]
 
 
 def test_graph_generate_does_not_silently_write_mock_skeleton(tmp_path: Path) -> None:
@@ -281,6 +295,68 @@ def test_graph_generate_does_not_silently_write_mock_skeleton(tmp_path: Path) ->
     assert result.exit_code == 2
     assert "Run `loro configure`" in result.stderr
     assert not output.exists()
+
+
+def test_offline_graph_generation_declares_inferred_capabilities() -> None:
+    graph = generate_graph(
+        "Research the history of sushi and create an HTML/CSS/JS website",
+        LoroConfig(),
+    )
+
+    requirements = graph["nodes"]["execute"]["requirements"]
+    assert requirements["tools"] == ["shell_exec", "file_read", "file_write"]
+    assert requirements["permissions"] == [
+        "fs:read:**",
+        "fs:write:**",
+        "shell:exec:*",
+        "net:fetch:*",
+    ]
+    assert requirements["workspace"] == "read_write"
+
+
+def test_ai_graph_generation_repairs_invented_tool_names(tmp_path: Path) -> None:
+    responses = [
+        {
+            "title": "Research evidence",
+            "description": "Research workflow.",
+            "steps": [
+                {
+                    "title": "Research sources",
+                    "description": "Collect evidence from authoritative web sources.",
+                    "output_description": "Cited evidence.",
+                    "required_tools": ["net_fetch"],
+                }
+            ],
+        },
+        {
+            "title": "Research evidence",
+            "description": "Research workflow.",
+            "steps": [
+                {
+                    "title": "Research sources",
+                    "description": "Collect evidence from authoritative web sources.",
+                    "output_description": "Cited evidence.",
+                    "required_tools": ["shell_exec"],
+                }
+            ],
+        },
+    ]
+    prompts: list[str] = []
+
+    def author(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps(responses[len(prompts) - 1])
+
+    output = tmp_path / "research.agraph.yaml"
+    config = LoroConfig(model=ModelConfig(provider="openai", model="fixture"))
+
+    write_ai_generated_graph("Research evidence", output, config, author)
+
+    graph = yaml.safe_load(output.read_text(encoding="utf-8"))
+    node = next(iter(graph["nodes"].values()))
+    assert node["requirements"]["tools"] == ["shell_exec"]
+    assert "net_fetch" in prompts[1]
+    assert "unavailable tools" in prompts[1]
 
 
 def test_criteria_variants_and_external_registry(tmp_path: Path) -> None:

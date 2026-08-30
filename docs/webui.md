@@ -62,6 +62,10 @@ sandbox profiles, budgets, and the audit log all apply unchanged. Cards move bet
 **Current work**, and **Done** as the run progresses, and the event stream is cursor-based, so a
 reconnecting browser replays what it missed rather than losing it.
 
+While a run is active, a health panel reports the most recent safe lifecycle event: active card,
+model attempt, gate state, or completion status. It does not expose private reasoning, prompts,
+credentials, tool arguments, or raw intermediate output.
+
 Cards are a Kanban: every node starts in **Pending**, moves to **In progress** while the executor
 works it, and lands in **Complete** when it finishes, whichever way it finished.
 
@@ -75,7 +79,9 @@ There are three ways to get a graph onto the board:
   runs the same pipeline as `loro graph generate`, so the model is prompted with the bundled
   `agentic-graph` skill's contract, the managed step ceiling applies, and an invalid draft gets one
   correction round. The model returns a workflow draft that Loro compiles into a governed graph; it
-  never hands back an AGS document directly. `--no-ai` deterministic generation needs no provider.
+  never hands back an AGS document directly. `--no-ai` deterministic generation needs no provider
+  and conservatively declares capabilities inferred from the goal, including research network and
+  implementation write access where applicable.
 
 *Export* downloads the current graph, saved or draft, as a JSON document you can keep, share, or
 commit.
@@ -138,6 +144,9 @@ silently acquiring different authority.
 
 The Profiles view can create project profiles and edit user or project profiles. Managed and
 imported profiles are read-only. Editable profiles can also be deleted after explicit confirmation.
+**Generate profile** accepts a natural-language purpose, lets the configured planning model choose
+only catalogued capabilities, compiles canonical OAP, and shows the validated draft before the
+user creates it. Generation never writes a profile by itself.
 A save:
 
 1. preserves the profile name;
@@ -472,3 +481,17 @@ token-gated.
 Release verification must also build a wheel, inspect that the static HTML/CSS/JavaScript assets
 are present, install it into a clean environment with the `webui` extra, and check `/api/status`
 plus the root application document.
+
+## Durable authoring and extension management
+
+Graph and profile generation show elapsed health feedback. Graph and profile screens stay mounted while navigating, preserving the live graph event stream, generation request, and editor state. Unsaved graph documents are additionally cached in browser session storage and restored when the UI is reloaded; discarding or saving removes that cache.
+
+Graph drafting is a server-side background job. The board polls bounded lifecycle states (queued,
+authoring, validated, or failed), so navigation does not cancel model work. These messages expose
+operational health and validation state, never private model reasoning. Provider credentials entered
+during first-run or Settings are written to Loro's OS-keyring-backed vault; project configuration
+stores only the credential reference.
+After 90 seconds the graph panel labels model authoring as slower than usual and reminds the operator
+that Loro's configured model-request timeout remains authoritative.
+
+The Extensions screen can create, edit, and delete project-owned skills and MCP server definitions. MCP setup distinguishes local stdio from Streamable HTTP, offers explicit protocol negotiation modes and timeouts, and uses an environment-variable allowlist for credentials. Managed protocol extensions and managed skills are labeled read-only because project UI authority cannot modify operator policy.

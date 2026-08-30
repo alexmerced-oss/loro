@@ -201,6 +201,33 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
             ["profile", "prompt"],
         ),
     ),
+    ToolSchema(
+        name="profile.create",
+        description=(
+            "Author a least-authority Open Agent Profile for this workspace. By default this "
+            "stores a reviewable proposal; save=true requires trusted edit approval."
+        ),
+        parameters=_object(
+            {
+                "name": _STRING,
+                "description": _STRING,
+                "instructions": _STRING,
+                "objectives": {"type": "array", "items": _STRING},
+                "constraints": {"type": "array", "items": _STRING},
+                "tools": {"type": "array", "items": _STRING},
+                "skills": {"type": "array", "items": _STRING},
+                "mcp_servers": {"type": "array", "items": _STRING},
+                "extends": _STRING,
+                "default_permission": {"type": "string", "enum": ["allow", "ask", "deny"]},
+                "shell_permission": {"type": "string", "enum": ["allow", "ask", "deny"]},
+                "edit_permission": {"type": "string", "enum": ["allow", "ask", "deny"]},
+                "network_permission": {"type": "string", "enum": ["allow", "ask", "deny"]},
+                "save": _BOOLEAN,
+                "approved": _BOOLEAN,
+            },
+            ["name", "description", "instructions"],
+        ),
+    ),
 )
 
 

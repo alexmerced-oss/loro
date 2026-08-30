@@ -9,9 +9,8 @@ import { request } from "./api";
  * shows the same readiness `loro get-started` reports, and lets a provider be
  * chosen without leaving the browser.
  *
- * Credentials are deliberately absent. A key typed into a form ends up in a
- * file on disk, so keys stay in the environment or the OS keyring and this
- * panel only reports whether one was found, and which variable it expects.
+ * Hosted keys entered here are stored in Loro's OS-keyring-backed vault and
+ * are never written to project config or returned to the browser.
  */
 
 type Step = {
@@ -37,6 +36,7 @@ type Provider = {
   default_model: string;
   api_key_env: string;
   needs_key: boolean;
+  credential_ready?: boolean;
 };
 
 export function FirstRun({
@@ -51,34 +51,33 @@ export function FirstRun({
   const [chosen, setChosen] = useState("");
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [credential, setCredential] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
         const [state, list] = await Promise.all([
           request<Readiness>("/api/onboarding/readiness"),
-          request<{ providers: Provider[] }>("/api/onboarding/providers"),
+          request<{ providers: Provider[]; default_provider?: string; default_model?: string }>("/api/onboarding/providers"),
         ]);
         setReadiness(state);
         setProviders(list.providers || []);
+        setChosen(list.default_provider || "");
+        setModel(list.default_model || "");
       } catch (problem) {
         setError((problem as Error).message);
       }
     })();
   }, [setError]);
 
-  useEffect(() => {
-    const provider = providers.find((item) => item.name === chosen);
-    setModel(provider?.default_model ?? "");
-  }, [chosen, providers]);
-
   async function apply(provider: string, chosenModel = "") {
     setSaving(true);
     try {
       const state = await request<Readiness>("/api/onboarding/configure", {
         method: "POST",
-        body: JSON.stringify({ provider, model: chosenModel }),
+        body: JSON.stringify({ provider, model: chosenModel, credential }),
       });
+      setCredential("");
       setReadiness(state);
       if (state.ready) onReady();
     } catch (problem) {
@@ -122,7 +121,7 @@ export function FirstRun({
           <select
             id="providerPick"
             value={chosen}
-            onChange={(event) => setChosen(event.target.value)}
+            onChange={(event) => { const value = event.target.value; setChosen(value); setModel(providers.find((item) => item.name === value)?.default_model || ""); }}
           >
             <option value="">Choose a provider…</option>
             {providers.map((provider) => (
@@ -143,11 +142,7 @@ export function FirstRun({
                 placeholder={selected.default_model}
               />
               {selected.needs_key && (
-                <p className="first-run-key">
-                  Export <code>{selected.api_key_env}</code> in the shell that runs{" "}
-                  <code>loro web</code>, or store it with <code>loro credentials set</code>. Keys are
-                  never typed into this page.
-                </p>
+                <><label htmlFor="providerCredential">API key <small>{selected.credential_ready ? "leave blank to keep the existing vault entry" : `or export ${selected.api_key_env}`}</small></label><input id="providerCredential" type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={selected.credential_ready ? "Credential already configured" : "Stored in the OS keyring"} /><p className="first-run-key">Keys entered here go to Loro's secure credential vault, never project configuration.</p></>
               )}
             </>
           )}

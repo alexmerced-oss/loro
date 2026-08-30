@@ -8,6 +8,7 @@
       "digest",
       "explain",
       "forget",
+      "generate",
       "history",
       "list",
       "proposals",
@@ -200,7 +201,8 @@
       "quickstart",
       "sandbox",
       "shared-memory",
-      "skills"
+      "skills",
+      "webmcp"
     ],
     "sheets": [
       "analyze",
@@ -231,13 +233,13 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:eb6618272ffa1c35fc79feef6c4a22d438c108554e1038c19dfe800c3425dc9c",
-    "interoperability_matrix": "sha256:dd8ff151c31f5a173bf91f98c72a2b4ef6d309157b34bc584a5af17b0b9e23bb",
-    "oap_conformance": "sha256:889afa8963ed38424ebecd630eded832835b51c3e8dd068ef855961cb8556f31",
+    "data_support_matrix": "sha256:30e9a6b1bd441544daefd9f2801a3bb4b9739d58ecb6cbacee4b2e770abd3756",
+    "interoperability_matrix": "sha256:a2168e496cbd7b6a3db83f09b313556f58ac8bdeb6c350f9b9d67b59a2dcb4b3",
+    "oap_conformance": "sha256:4a463a667bfbd5a3ba00a4c2bced2ff436921d4014fa695bfb6e53892c83044b",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:0141097303d2c57c3ec8337a42160291a77e5bd9a2b07603b49e64955e4cca70",
+    "reference_deployment": "sha256:67ef9236b039a99c3125da489e08cdcf81e288c0e4963d514f48244a96c09f26",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:76423b899e9b4dc6d07425392d7b7c5e6f253ab23560873b87842181b2bddeeb"
+    "support_matrix": "sha256:2542986ab4693eeeb8140a219c809e72df3a4a6836770c76d3c08d216c534214"
   },
   "experimental": {
     "extensions": [
@@ -278,7 +280,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.18.0",
+  "package_version": "0.19.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -294,7 +296,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.18",
+  "release_line": "0.19",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

@@ -23,8 +23,8 @@ def main() -> int:
             raise ValueError("conformance version does not match package")
         if payload.get("level") != 3 or payload.get("failed"):
             raise ValueError("the current release must pass Level 3")
-        if payload.get("maintenance_release") != "1.0.1":
-            raise ValueError("maintenance release must be 1.0.1")
+        if payload.get("maintenance_release") != "1.0.2":
+            raise ValueError("maintenance release must be 1.0.2")
         if len(str(payload.get("fixture_revision", ""))) != 40:
             raise ValueError("fixture revision must be an immutable commit")
     except (OSError, json.JSONDecodeError, ValueError) as error:

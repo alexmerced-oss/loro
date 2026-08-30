@@ -20,6 +20,7 @@ loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup mcp
+loro setup webmcp
 loro setup gateway
 loro setup agents
 loro setup profile
@@ -66,7 +67,7 @@ This map reflects Loro 0.17.0. Run `loro COMMAND --help` or
 
 ```text
 loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
-loro agents: apply, configure, create, digest, explain, forget, history, list, proposals, review, show, state, validate
+loro agents: apply, configure, create, digest, explain, forget, generate, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
 loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
@@ -87,7 +88,7 @@ loro providers: check, conformance, list, request, show, smoke
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
-loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, profile, provider, quickstart, sandbox, shared-memory, skills
+loro setup: agents, approvals, audit, gateway, identity, mcp, mcp-server, memory, polaris, profile, provider, quickstart, sandbox, shared-memory, skills, webmcp
 loro sheets: analyze, create
 loro shell: run
 loro skills: disable, enable, import-claude, import-pi, install, list, propose, quarantine, remove, review, show, validate
@@ -181,6 +182,26 @@ loro mcp inspect filesystem
 loro mcp doctor filesystem
 loro mcp test filesystem
 ```
+
+alexmerced.app WebMCP uses an optional, origin-restricted stdio bridge so browser dependencies do
+not enter Loro core:
+
+```bash
+python -m pip install "loro-agent[webmcp]"
+playwright install chromium
+loro setup webmcp
+loro mcp doctor alexmerced-webmcp
+loro mcp tools alexmerced-webmcp
+```
+
+`loro setup webmcp` enables MCP, registers the packaged `loro-webmcp` command, and adds that exact
+command to the stdio allowlist. Its persistent profile defaults to
+`~/.local/share/loro/webmcp/alexmerced-app`; `LORO_WEBMCP_PROFILE` overrides it and
+`LORO_WEBMCP_HEADLESS=1` opts into unattended compatibility mode. Set an override before running
+the setup command so its name is included in the MCP child environment allowlist. The wizard also
+forwards display variables that are present for the visible-browser default. The bridge cannot navigate away
+from `https://alexmerced.app`. Invoke `webmcp_open`, inspect `webmcp_list_tools`, and only then call
+`webmcp_call_tool` with the discovered schema.
 
 Discover and invoke server capabilities:
 

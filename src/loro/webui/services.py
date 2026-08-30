@@ -57,6 +57,7 @@ class ProfileService:
                     "description": item.description,
                     "trust": item.trust,
                     "source": str(item.source_path),
+                    "source_scope": self._source_scope(item.source_path),
                     "editable": item.trust in {"user", "project"},
                     "default": config.agent_profiles.default_profile == item.name,
                     "provider": effective.model.provider,
@@ -111,7 +112,7 @@ class ProfileService:
             "adjustments": [item.to_payload() for item in effective.adjustments],
         }
 
-    def create(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+    def create(self, payload: Mapping[str, Any], *, scope: str = "project") -> dict[str, Any]:
         raw = dict(payload)
         if "spec" not in raw:
             declared_model = dict(raw.pop("model", {}) or {})
@@ -143,12 +144,37 @@ class ProfileService:
         existing = {item.name for item in self._registry(config).discover()}
         if name in existing:
             raise ValueError(f"Agent profile already exists: {name}")
-        relative_root = config.agent_profiles.project_paths[-1]
-        output_root = (self.project_root / relative_root).resolve()
-        output_root.relative_to(self.project_root)
+        output_root = self._scope_root(scope, config)
         path = output_root / f"{name}.agent.yaml"
         self._write_document(path, raw, previous=None)
         return self.get(name)
+
+    def _scope_root(self, scope: str, config: LoroConfig) -> Path:
+        if scope == "project":
+            root = (self.project_root / config.agent_profiles.project_paths[-1]).resolve()
+            root.relative_to(self.project_root)
+            return root
+        if scope == "portable":
+            root = (self.project_root / ".agents").resolve()
+            root.relative_to(self.project_root)
+            return root
+        if scope == "universal":
+            return Path("~/.agentprofiles").expanduser().resolve()
+        if scope == "user":
+            return Path(config.agent_profiles.user_paths[-1]).expanduser().resolve()
+        raise ValueError("Profile scope must be project, portable, universal, or user.")
+
+    def _source_scope(self, path: Path) -> str:
+        resolved = path.expanduser().resolve()
+        if resolved.parent == Path("~/.agentprofiles").expanduser().resolve():
+            return "universal"
+        if resolved.parent == (self.project_root / ".agents").resolve():
+            return "portable"
+        if resolved.parent == (self.project_root / ".loro" / "agents").resolve():
+            return "project"
+        if resolved.parent == Path("~/.config/loro/agents").expanduser().resolve():
+            return "user"
+        return "managed" if str(resolved).startswith("/etc/") else "user"
 
     def update(self, name: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         config = self._config()

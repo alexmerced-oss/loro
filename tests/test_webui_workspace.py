@@ -84,7 +84,7 @@ def test_schedule_store_records_governed_start_error(tmp_path: Path) -> None:
     assert "managed policy denied" in changed[0]["last_error"]
 
 
-def test_extension_inventory_does_not_expose_mcp_targets_or_settings(
+def test_extension_inventory_exposes_editable_structure_without_credentials(
     tmp_path: Path, monkeypatch
 ) -> None:
     config = SimpleNamespace(
@@ -126,5 +126,42 @@ def test_extension_inventory_does_not_expose_mcp_targets_or_settings(
 
     assert server["configured"] is True
     assert "target" not in server
-    assert "url" not in server
-    assert "example.test" not in str(result)
+    assert server["url"] == "https://example.test/mcp"
+
+
+def test_manage_project_skill_lifecycle(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path)
+    saved = service.manage_extension(
+        {
+            "kind": "skill",
+            "name": "release-review",
+            "description": "Review releases",
+            "body": "Check tests and evidence.",
+        }
+    )
+    assert saved["ok"] is True
+    assert (tmp_path / ".loro/skills/release-review/SKILL.md").is_file()
+    inventory = service.extensions()
+    skill = next(item for item in inventory["skills"] if item["name"] == "release-review")
+    assert skill["editable"] is True
+    assert skill["body"] == "Check tests and evidence."
+    service.manage_extension({"kind": "skill", "action": "delete", "name": "release-review"})
+    assert not (tmp_path / ".loro/skills/release-review").exists()
+
+
+def test_manage_mcp_server_lifecycle(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path)
+    service.manage_extension(
+        {
+            "kind": "mcp",
+            "name": "docs",
+            "transport": "streamable_http",
+            "url": "https://example.test/mcp",
+            "protocol_mode": "auto",
+            "enabled": True,
+        }
+    )
+    server = next(item for item in service.extensions()["mcp_servers"] if item["name"] == "docs")
+    assert server["url"] == "https://example.test/mcp"
+    service.manage_extension({"kind": "mcp", "action": "delete", "name": "docs"})
+    assert service.extensions()["mcp_servers"] == []

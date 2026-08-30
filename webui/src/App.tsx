@@ -179,9 +179,9 @@ export default function App() {
         {view === "chat" && <ChatView conversations={conversations} activeId={activeId} setActiveId={setActiveId} profiles={profiles} onNew={newConversation} refresh={refreshConversations} setError={setError} />}
         {view === "runs" && <RunCenterView setError={setError} />}
         {view === "workspace" && <WorkspaceView setError={setError} />}
-        {view === "graphs" && <GraphsView setError={setError} />}
+        <div className={`persistent-view ${view === "graphs" ? "active" : ""}`} aria-hidden={view !== "graphs"}><GraphsView setError={setError} /></div>
         {view === "bots" && <BotsView profiles={profiles} onChat={newConversation} />}
-        {view === "profiles" && <ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} />}
+        <div className={`persistent-view ${view === "profiles" ? "active" : ""}`} aria-hidden={view !== "profiles"}><ProfilesView profiles={profiles} refresh={refreshProfiles} setError={setError} /></div>
         {view === "extensions" && <ExtensionsView setError={setError} />}
         {view === "memory" && <MemoryView setError={setError} />}
         {view === "governance" && <GovernanceView setError={setError} />}
@@ -509,7 +509,21 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
   const [document, setDocument] = useState<any>(null);
   const [effective, setEffective] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generationBusy, setGenerationBusy] = useState(false);
+  const [generationElapsed, setGenerationElapsed] = useState(0);
+  const [generatedDocument, setGeneratedDocument] = useState<any>(null);
+  const [generationScope, setGenerationScope] = useState("project");
   const current = profiles.find((item) => item.name === selected);
+  useEffect(() => { if (!generationBusy) { setGenerationElapsed(0); return; } const started = Date.now(); const timer = window.setInterval(() => setGenerationElapsed(Math.floor((Date.now() - started) / 1000)), 1000); return () => window.clearInterval(timer); }, [generationBusy]);
+  useEffect(() => {
+    if (!generationBusy) return;
+    const button = window.document.querySelector<HTMLButtonElement>(".modal button[type='submit']");
+    const form = button?.closest("form");
+    if (button) button.textContent = `Generating and validating… ${generationElapsed}s`;
+    form?.setAttribute("aria-busy", "true");
+    return () => form?.setAttribute("aria-busy", "false");
+  }, [generationBusy, generationElapsed]);
 
   useEffect(() => { if (!selected) return; Promise.all([request(`/api/profiles/${selected}`), request(`/api/profiles/${selected}/effective`)]).then(([profile, authority]) => { setDocument(profile); setEffective(authority); }).catch((reason) => setError(String(reason))); }, [selected, profiles, setError]);
 
@@ -538,7 +552,30 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
     const data = new FormData(event.currentTarget);
     const name = String(data.get("name"));
     const payload = { oap: "1.0", kind: "AgentProfile", metadata: { name, revision: 1, description: String(data.get("description")) }, spec: { role: { instructions: String(data.get("instructions")) }, tools: { policy: "inherit" }, lifecycle: { writeback: "propose" } }, state: { revision: 1, facts: [], preferences: [] }, history: [] };
-    try { await request("/api/profiles", { method: "POST", body: JSON.stringify(payload) }); await refresh(); setSelected(name); setCreating(false); } catch (reason) { setError(String(reason)); }
+    try { await request("/api/profiles", { method: "POST", body: JSON.stringify({ document: payload, scope: String(data.get("scope") || "project") }) }); await refresh(); setSelected(name); setCreating(false); } catch (reason) { setError(String(reason)); }
+  }
+  async function generate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setGenerationBusy(true);
+    try {
+      const proposal = await request<{ document: any }>("/api/profiles/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: String(form.get("prompt") || ""),
+          name: String(form.get("name") || "") || null,
+        }),
+      });
+      setGeneratedDocument(proposal.document);
+    } catch (reason) { setError(String(reason)); }
+    finally { setGenerationBusy(false); }
+  }
+  async function acceptGenerated() {
+    try {
+      await request("/api/profiles", { method: "POST", body: JSON.stringify({ document: generatedDocument, scope: generationScope }) });
+      const name = generatedDocument.metadata.name;
+      await refresh(); setSelected(name); setGeneratedDocument(null); setGenerating(false);
+    } catch (reason) { setError(String(reason)); }
   }
 
   return <div className="page"><PageHeader eyebrow="Open Agent Profiles" title="Profiles" description="Shape bot behavior while Loro keeps managed policy authoritative." action={<div className="profile-actions">
@@ -547,10 +584,12 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
       <button className="secondary-action" type="button" onClick={() => importInput.current?.click()}>↑ Import</button>
       <button className="secondary-action" type="button" disabled={!selected}
               onClick={() => selected && void exportProfile(selected)}>↓ Export</button>
+      <button className="secondary-action" onClick={() => { setGeneratedDocument(null); setGenerating(true); }}>✦ Generate profile</button>
       <button onClick={() => setCreating(true)}>＋ New profile</button>
     </div>} />
-    {creating && <div className="modal-backdrop"><form className="modal" onSubmit={create}><button type="button" className="modal-close" onClick={() => setCreating(false)}>×</button><small>NEW PROFILE</small><h2>Create a bot identity</h2><label>Name<input name="name" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="release-reviewer" /></label><label>Description<input name="description" placeholder="Reviews releases for evidence and risk" /></label><label>Instructions<textarea name="instructions" rows={5} defaultValue="Be helpful, precise, and cite concrete evidence." /></label><button>Create profile</button></form></div>}
-    <div className="profile-layout"><aside className="profile-list">{profiles.map((profile) => <button key={profile.name} className={selected === profile.name ? "selected" : ""} onClick={() => setSelected(profile.name)}><span className="mini-mark">{profile.name.slice(0, 1).toUpperCase()}</span><span><b>{profile.name}</b><small>r{profile.revision} · {profile.trust}</small></span>{profile.default && <i>default</i>}</button>)}</aside>
+    {generating && <div className="modal-backdrop"><form className="modal" onSubmit={generate}><button type="button" className="modal-close" onClick={() => { setGenerating(false); setGeneratedDocument(null); }}>×</button><small>GENERATE OAP PROFILE</small><h2>Describe the specialist</h2>{!generatedDocument ? <><label>What should this agent do?<textarea name="prompt" rows={7} required autoFocus placeholder="Review release candidates, verify test evidence, and flag unsafe changes…" /></label><label>Preferred name (optional)<input name="name" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="release-reviewer" /></label><label>Save location<select value={generationScope} onChange={(event) => setGenerationScope(event.target.value)}><option value="project">Project · .loro/agents</option><option value="portable">Portable with project · .agents</option><option value="universal">Universal across harnesses · ~/.agentprofiles</option><option value="user">This Loro user · ~/.config/loro/agents</option></select></label><p className="gov-note">The model can only select tools, skills, and MCP servers already available here. Loro validates the OAP document before showing it.</p><button disabled={generationBusy}>{generationBusy ? "Generating…" : "Generate draft"}</button></> : <><div className="notice"><b>@{generatedDocument.metadata.name}</b><p>{generatedDocument.metadata.description}</p></div><label>Instructions<textarea rows={8} readOnly value={generatedDocument.spec.role.instructions} /></label><p className="gov-note">Review complete. Creating this profile writes it to the selected {generationScope} location; managed policy can still narrow its authority.</p><div className="profile-actions"><button className="secondary-action" type="button" onClick={() => setGeneratedDocument(null)}>Revise prompt</button><button type="button" onClick={() => void acceptGenerated()}>Create profile</button></div></>}</form></div>}
+    {creating && <div className="modal-backdrop"><form className="modal" onSubmit={create}><button type="button" className="modal-close" onClick={() => setCreating(false)}>×</button><small>NEW PROFILE</small><h2>Create a bot identity</h2><label>Name<input name="name" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="release-reviewer" /></label><label>Description<input name="description" placeholder="Reviews releases for evidence and risk" /></label><label>Instructions<textarea name="instructions" rows={5} defaultValue="Be helpful, precise, and cite concrete evidence." /></label><label>Save location<select name="scope" defaultValue="project"><option value="project">Project · .loro/agents</option><option value="portable">Portable with project · .agents</option><option value="universal">Universal across harnesses · ~/.agentprofiles</option><option value="user">This Loro user · ~/.config/loro/agents</option></select></label><button>Create profile</button></form></div>}
+    <div className="profile-layout"><aside className="profile-list">{profiles.map((profile) => <button key={profile.name} className={selected === profile.name ? "selected" : ""} onClick={() => setSelected(profile.name)}><span className="mini-mark">{profile.name.slice(0, 1).toUpperCase()}</span><span><b>{profile.name}</b><small>r{profile.revision} · {profile.source_scope || profile.trust}</small></span>{profile.default && <i>default</i>}</button>)}</aside>
       {current && document && <form className="profile-editor" onSubmit={save}><div className="editor-heading"><div><small>{current.trust.toUpperCase()} PROFILE</small><h2>{current.name}</h2></div><span className="digest" title={current.spec_digest}>digest {current.spec_digest.slice(0, 8)}</span></div>
         {!current.editable && <div className="notice">This profile is managed and read-only. Its effective settings are shown below.</div>}
         <div className="form-grid"><label>Description<input disabled={!current.editable} value={document.metadata.description || ""} onChange={(event) => setDocument({ ...document, metadata: { ...document.metadata, description: event.target.value } })} /></label><label>Revision<input disabled value={document.metadata.revision} /></label></div>
@@ -568,17 +607,20 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
 
 function SettingsView({ profiles, refreshProfiles, setError }: { profiles: Profile[]; refreshProfiles: () => Promise<void>; setError: (error: string) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [providers, setProviders] = useState<Array<{ name: string; display_name: string; default_model: string; small_model: string }>>([]);
+  const [providers, setProviders] = useState<Array<{ name: string; display_name: string; default_model: string; small_model: string; needs_key?: boolean; api_key_env?: string; credential_ready?: boolean }>>([]);
+  const [credential, setCredential] = useState("");
   const [saved, setSaved] = useState(false);
   useEffect(() => { Promise.all([request<Settings>("/api/settings"), request<{ providers: Array<{ name: string; display_name: string; default_model: string; small_model: string }> }>("/api/onboarding/providers")]).then(([current, catalog]) => { setSettings(current); setProviders(catalog.providers || []); }).catch((reason) => setError(String(reason))); }, [setError]);
   async function save(event: FormEvent) {
     event.preventDefault(); if (!settings) return;
-    try { const updated = await request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify({ provider: settings.model.provider, model: settings.model.model, small_model: settings.model.small_model, default_profile: settings.agent_profiles.default_profile }) }); setSettings(updated); setSaved(true); setTimeout(() => setSaved(false), 2500); await refreshProfiles(); } catch (reason) { setError(String(reason)); }
+    try { if (credential) await request("/api/onboarding/configure", { method: "POST", body: JSON.stringify({ provider: settings.model.provider, model: settings.model.model, small_model: settings.model.small_model, credential }) }); const updated = await request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify({ provider: settings.model.provider, model: settings.model.model, small_model: settings.model.small_model, default_profile: settings.agent_profiles.default_profile }) }); setCredential(""); setSettings(updated); setSaved(true); setTimeout(() => setSaved(false), 2500); await refreshProfiles(); } catch (reason) { setError(String(reason)); }
   }
   if (!settings) return <div className="page"><PageHeader eyebrow="Workspace configuration" title="Settings" description="Loading effective defaults…" /></div>;
+  const selectedProvider = providers.find((item) => item.name === settings.model.provider);
   return <div className="page settings-page"><PageHeader eyebrow="Workspace configuration" title="Default settings" description="Changes are written to the local project overlay; managed policy still wins." />
     <form onSubmit={save}><section className="settings-card"><div><h2>Model route</h2><p>The provider and models used by conversations without a profile override.</p></div><div className="settings-fields"><label>Provider<select value={settings.model.provider} onChange={(event) => { const provider = providers.find((item) => item.name === event.target.value); setSettings({ ...settings, model: { ...settings.model, provider: event.target.value, model: provider?.default_model || settings.model.model, small_model: provider?.small_model || provider?.default_model || settings.model.small_model } }); }}>{providers.map((provider) => <option value={provider.name} key={provider.name}>{provider.display_name}</option>)}</select></label><label>Primary model<select value={settings.model.model} onChange={(event) => setSettings({ ...settings, model: { ...settings.model, model: event.target.value } })}>{Array.from(new Set([settings.model.model, providers.find((item) => item.name === settings.model.provider)?.default_model].filter(Boolean))).map((model) => <option key={model} value={model}>{model}</option>)}</select></label><label>Small model<select value={settings.model.small_model} onChange={(event) => setSettings({ ...settings, model: { ...settings.model, small_model: event.target.value } })}>{Array.from(new Set([settings.model.small_model, providers.find((item) => item.name === settings.model.provider)?.small_model, settings.model.model].filter(Boolean))).map((model) => <option key={model} value={model}>{model}</option>)}</select></label><div className="credential-state"><span className={settings.model.credential_configured ? "ok" : "warn"} />{settings.model.credential_configured ? "Credential reference configured" : "No credential reference detected"}</div></div></section>
-      <section className="settings-card"><div><h2>Default bot</h2><p>New conversations use this profile unless you select a bot explicitly.</p></div><div className="settings-fields"><label>Default profile<select value={settings.agent_profiles.default_profile || ""} onChange={(event) => setSettings({ ...settings, agent_profiles: { ...settings.agent_profiles, default_profile: event.target.value || null } })}><option value="">No profile</option>{profiles.map((profile) => <option value={profile.name} key={profile.name}>{profile.name} · {profile.trust}</option>)}</select></label><div className="setting-facts"><span>Writeback <b>{settings.agent_profiles.writeback}</b></span><span>Local memory <b>{settings.memory.local_enabled ? "on" : "off"}</b></span><span>Shared memory <b>{settings.memory.shared_enabled ? "on" : "off"}</b></span></div></div></section>
+      {selectedProvider?.needs_key && <section className="settings-card"><div><h2>Provider credential</h2><p>Add or rotate the key for {selectedProvider.display_name}. It is stored in Loro's OS-keyring-backed vault and is never returned to the browser.</p></div><div className="settings-fields"><label>API key<input type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={selectedProvider.credential_ready || settings.model.credential_configured ? "Credential configured · leave blank to keep it" : `Enter key or export ${selectedProvider.api_key_env || "the provider variable"}`} /></label></div></section>}
+      <section className="settings-card"><div><h2>Default bot</h2><p>New conversations use this profile unless you select a bot explicitly.</p></div><div className="settings-fields"><label>Default profile<select value={settings.agent_profiles.default_profile || ""} onChange={(event) => setSettings({ ...settings, agent_profiles: { ...settings.agent_profiles, default_profile: event.target.value || null } })}><option value="">No profile</option>{profiles.map((profile) => <option value={profile.name} key={profile.name}>{profile.name} · {profile.source_scope || profile.trust}</option>)}</select></label><div className="setting-facts"><span>Writeback <b>{settings.agent_profiles.writeback}</b></span><span>Local memory <b>{settings.memory.local_enabled ? "on" : "off"}</b></span><span>Shared memory <b>{settings.memory.shared_enabled ? "on" : "off"}</b></span></div></div></section>
       {settings.managed_overlay_active && <div className="managed-banner">◇ A managed configuration overlay is active. Locked values may narrow these defaults.</div>}
       <div className="settings-save"><span>{saved ? "✓ Settings saved" : `Writes to ${settings.write_target}`}</span><button>Save defaults</button></div>
     </form>

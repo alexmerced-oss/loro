@@ -92,6 +92,7 @@ class AgentRuntime:
             allowed_skills=(profile.skills if profile is not None else None),
             allowed_subagents=(profile.subagents if profile is not None else frozenset()),
             subagent_runner=(self._run_subagent if profile is not None else None),
+            project_root=self.profile_cwd,
         )
         self.usage = UsageBudget(config.runtime, config.model)
 

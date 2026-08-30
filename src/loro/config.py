@@ -775,6 +775,7 @@ class AGraphConfig(BaseModel):
 
 class SkillsConfig(BaseModel):
     enabled: bool = True
+    include_bundled: bool = True
     managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/skills"])
     user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/skills"])
     project_paths: list[str] = Field(default_factory=lambda: [".loro/skills"])
@@ -797,7 +798,9 @@ class AgentProfilesConfig(BaseModel):
         pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
     managed_paths: list[str] = Field(default_factory=lambda: ["/etc/loro/agents"])
-    user_paths: list[str] = Field(default_factory=lambda: ["~/.config/loro/agents"])
+    user_paths: list[str] = Field(
+        default_factory=lambda: ["~/.agentprofiles", "~/.config/loro/agents"]
+    )
     project_paths: list[str] = Field(default_factory=lambda: [".agents", ".loro/agents"])
     allow_user: bool = True
     allow_project: bool = True
@@ -809,6 +812,7 @@ class AgentProfilesConfig(BaseModel):
     max_subagent_depth: int = Field(default=3, ge=0, le=20)
     state_path: str = ".loro/agent-state.json"
     proposal_path: str = ".loro/agent-proposals"
+    generation_proposal_path: str = ".loro/profile-proposals"
 
 
 class SafetyConfig(BaseModel):

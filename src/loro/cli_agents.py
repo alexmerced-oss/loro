@@ -19,6 +19,7 @@ from loro.agent_profiles import (
     build_effective_profile,
     load_path,
 )
+from loro.agent_profiles.generation import generate_profile_proposal, save_generated_profile
 from loro.audit import AuditLogger
 from loro.config import load_config, write_config_sections
 from loro.fileio import atomic_write_text
@@ -154,6 +155,44 @@ def create(
     atomic_write_text(path, load_path_from_payload)
     load_path(path)
     console.print(str(path))
+
+
+@agents_app.command("generate")
+def generate(
+    prompt: Annotated[str, typer.Argument(help="Describe the specialist to create.")],
+    name: Annotated[str | None, typer.Option("--name")] = None,
+    extends: Annotated[str | None, typer.Option("--extends")] = None,
+    scope: Annotated[str, typer.Option("--scope", help="project, user, or universal")] = "project",
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Save without the confirmation prompt.")
+    ] = False,
+) -> None:
+    """Generate, validate, review, and optionally save a portable OAP profile."""
+    if scope not in {"project", "user", "universal"}:
+        raise typer.BadParameter("--scope must be project, user, or universal")
+    config = load_config()
+    from loro.runtime import AgentRuntime
+
+    runtime = AgentRuntime(config)
+    proposal = generate_profile_proposal(
+        prompt,
+        config,
+        Path.cwd(),
+        lambda author_prompt: runtime.run(author_prompt, mode="plan", session_id=None).response,
+        preferred_name=name,
+        extends=extends,
+        autonomous=False,
+    )
+    document = proposal["document"]
+    console.print(yaml.safe_dump(document, sort_keys=False, allow_unicode=True))
+    if dry_run:
+        return
+    if not yes and not typer.confirm("Save this validated profile?"):
+        console.print("Profile was not saved.")
+        return
+    path = save_generated_profile(document, config, Path.cwd(), scope=scope)  # type: ignore[arg-type]
+    console.print(f"Created {path}")
 
 
 @agents_app.command("digest")

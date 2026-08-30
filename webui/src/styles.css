@@ -727,3 +727,4 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.persistent-view{display:none;min-height:0;min-width:0;flex:1}.persistent-view.active{display:flex}.persistent-view>.page{flex:1;min-width:0}.operation-health{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-soft);margin:14px 0}.operation-health b,.operation-health p{display:block;margin:0}.operation-health p{font-size:11px;color:var(--muted);margin-top:3px}.operation-spinner{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:operation-spin .8s linear infinite}@keyframes operation-spin{to{transform:rotate(360deg)}}

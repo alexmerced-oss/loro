@@ -13,6 +13,8 @@ loro setup profile
 # equivalent profile-focused entrypoint
 loro agents configure
 loro agents create reviewer --instructions "Review changes and cite concrete evidence."
+loro agents generate "Review releases and cite concrete validation evidence."
+loro agents generate "A cross-harness documentation specialist" --scope universal
 loro agents validate .loro/agents/reviewer.agent.yaml
 loro agents show reviewer
 loro agents explain reviewer
@@ -85,12 +87,19 @@ profile with the schema-preserving `x-agent-profile: reviewer` extension.
 Profiles use `.agent.yaml`, `.agent.yml`, `.agent.json`, or `.agent.md` and are discovered from:
 
 1. managed roots such as `/etc/loro/agents`;
-2. user roots such as `~/.config/loro/agents`;
-3. portable project root `.agents`, then preferred Loro root `.loro/agents`.
+2. universal user root `~/.agentprofiles`;
+3. native user root `~/.config/loro/agents`;
+4. portable project root `.agents`, then preferred Loro root `.loro/agents`.
 
 Later roots have precedence and shadowed sources are reported. Duplicate names inside one root are
 errors. Trust is assigned from the root; a `metadata.trust` claim inside a file is discarded.
 Symlinks escaping a root are rejected. Resolution performs no installs, fetches, or writes.
+
+`loro agents generate` and the Web UI Profiles generator author a deliberately small draft,
+compile it into canonical OAP, reject invented capabilities, and validate it before review. During
+a session, `profile.create` follows the bundled `oap-profile-authoring` skill: model-initiated
+calls persist `.loro/profile-proposals` without activation; saving requires the normal edit-policy
+approval.
 
 ## Authority Boundary
 
@@ -163,6 +172,11 @@ to author and optionally select a default profile. An explicit `--agent` always 
 default for one command or REPL. Managed configuration can set `writeback = "off"`, clear the
 default, and disable user or project roots. Existing config schema `1.0` files remain compatible
 because this section is additive and defaults fail closed around writes.
+
+The Web UI labels and can author four distinct locations: Loro project profiles in
+`.loro/agents`, portable project profiles in `.agents`, universal cross-harness profiles in
+`~/.agentprofiles`, and Loro user profiles in `~/.config/loro/agents`. Source labels are semantic;
+the profile rail does not expose raw filesystem paths as identity.
 
 ## Evidence And Limitations
 

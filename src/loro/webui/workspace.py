@@ -6,6 +6,8 @@ import base64
 import binascii
 import json
 import mimetypes
+import re
+import shutil
 import subprocess
 import threading
 from collections.abc import Callable
@@ -16,7 +18,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from loro.config import load_config
+from loro.config import LoroConfig, MCPServerConfig, load_config, replace_config_section
 
 MAX_INLINE_BYTES = 256_000
 MAX_CONTEXT_BYTES = 750_000
@@ -218,7 +220,23 @@ class WorkspaceService:
                     continue
                 for skill in sorted(base.iterdir()):
                     if skill.is_dir() and (skill / "SKILL.md").is_file():
-                        skills.append({"name": skill.name, "path": str(skill), "enabled": True})
+                        owned = self.root in skill.resolve().parents
+                        text = (skill / "SKILL.md").read_text(encoding="utf-8") if owned else ""
+                        description = ""
+                        if owned:
+                            match = re.search(r"(?m)^description:\s*[\"']?(.*?)[\"']?\s*$", text)
+                            description = match.group(1) if match else ""
+                        body = re.sub(r"^---[\s\S]*?---\s*", "", text).strip() if owned else ""
+                        skills.append(
+                            {
+                                "name": skill.name,
+                                "path": str(skill),
+                                "enabled": True,
+                                "editable": owned,
+                                "description": description,
+                                "body": body,
+                            }
+                        )
         return {
             "mcp_enabled": config.mcp.enabled,
             "mcp_servers": [
@@ -227,6 +245,13 @@ class WorkspaceService:
                     "enabled": server.enabled,
                     "transport": server.transport,
                     "configured": bool(server.url or server.command),
+                    "command": getattr(server, "command", None),
+                    "args": getattr(server, "args", []),
+                    "url": getattr(server, "url", None),
+                    "cwd": getattr(server, "cwd", None),
+                    "protocol_mode": getattr(server, "protocol_mode", "auto"),
+                    "timeout_seconds": getattr(server, "timeout_seconds", 30),
+                    "env_allowlist": getattr(server, "env_allowlist", []),
                     "extensions": server.extensions,
                 }
                 for name, server in config.mcp.servers.items()
@@ -237,6 +262,57 @@ class WorkspaceService:
             ],
             "skills": skills[: config.skills.max_files],
         }
+
+    def manage_extension(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create, update, or remove project-owned skills and MCP definitions."""
+        kind = str(payload.get("kind") or "").strip()
+        action = str(payload.get("action") or "save").strip()
+        name = str(payload.get("name") or "").strip()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", name):
+            raise ValueError(
+                "Extension names must use lowercase letters, numbers, hyphens, or underscores."
+            )
+        if kind == "skill":
+            root = (self.root / ".loro" / "skills").resolve()
+            target = (root / name).resolve()
+            target.relative_to(root)
+            if action == "delete":
+                if target.is_dir():
+                    shutil.rmtree(target)
+                return {"ok": True, "removed": name}
+            description = str(payload.get("description") or "").strip()
+            body = str(payload.get("body") or "").strip()
+            if not description or not body:
+                raise ValueError("Skill description and instructions are required.")
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: {json.dumps(description)}\n---\n\n{body}\n",
+                encoding="utf-8",
+            )
+            return {"ok": True, "saved": name}
+        if kind == "mcp":
+            config = load_config(self.root)
+            servers = dict(config.mcp.servers)
+            if action == "delete":
+                servers.pop(name, None)
+            else:
+                raw = {
+                    key: value
+                    for key, value in payload.items()
+                    if key in MCPServerConfig.model_fields
+                }
+                servers[name] = MCPServerConfig.model_validate(raw)
+            updated = config.model_copy(
+                update={
+                    "mcp": config.mcp.model_copy(
+                        update={"enabled": bool(servers), "servers": servers}
+                    )
+                }
+            )
+            validated = LoroConfig.model_validate(updated.model_dump())
+            replace_config_section(self.root / ".loro" / "config.local.toml", validated, "mcp")
+            return {"ok": True, "saved": name, "removed": action == "delete"}
+        raise ValueError("Extension kind must be skill or mcp.")
 
     def workspaces(self) -> list[dict[str, Any]]:
         candidates = [self.root]

@@ -13,6 +13,22 @@ from loro.agraph.policy import evaluate_policy
 from loro.agraph.validate import validate_graph
 from loro.config import LoroConfig
 
+GENERATION_TOOLS = (
+    "file_read",
+    "file_search",
+    "file_write",
+    "file_replace",
+    "shell_exec",
+    "git_status",
+    "git_diff",
+    "memory_search",
+    "shared_memory_search",
+    "polaris_read",
+    "artifact_create",
+    "skill_read",
+    "skill_run",
+)
+
 
 class WorkflowStepDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -20,6 +36,7 @@ class WorkflowStepDraft(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1)
     output_description: str = Field(min_length=1)
+    required_tools: list[str] = Field(default_factory=list)
 
 
 class WorkflowDraft(BaseModel):
@@ -46,8 +63,12 @@ def graph_generation_prompt(
         "Author the substantive workflow for an Agentic Graph. Loro will compile your workflow "
         "into the exact governed AGS schema, so do not emit AGS fields. Return exactly one JSON "
         "object and no markdown fence with fields: title (string), description (string), and "
-        "steps (array). Every step must contain exactly title, description, and "
-        "output_description strings. Steps execute sequentially in the order returned. "
+        "steps (array). Every step must contain exactly title, description, "
+        "output_description, and required_tools. required_tools is an array using only these "
+        f"canonical logical names: {', '.join(GENERATION_TOOLS)}. Never invent a tool name. "
+        "Declare every capability the step may call. External web research uses shell_exec in "
+        "Loro because governed curl/wget execution is its web-fetch backend. Steps execute "
+        "sequentially in the order returned. "
         f"Use between 1 and {max_steps} concrete steps, decomposing the work whenever that "
         "materially improves execution or review. Describe actual work and useful outputs, not "
         "generic planning placeholders. Do not execute the goal.\n\n"
@@ -127,6 +148,14 @@ def _compile_workflow_draft(
     used_ids: set[str] = set()
     previous: str | None = None
     for index, step in enumerate(draft.steps, start=1):
+        tools = step.required_tools or _infer_step_tools(step)
+        unknown = sorted(set(tools) - set(GENERATION_TOOLS))
+        if unknown:
+            raise ValueError(
+                "The workflow requested unavailable tools: "
+                + ", ".join(unknown)
+                + ". Choose only from the canonical logical tool list."
+            )
         base = re.sub(r"[^a-z0-9]+", "_", step.title.lower())[:48].strip("_")
         base = base or f"step_{index}"
         node_id = base
@@ -140,6 +169,15 @@ def _compile_workflow_draft(
             "title": step.title,
             "description": step.description,
             "intelligence": {"tier": tier, "allow_downgrade": True},
+            "requirements": {
+                "tools": tools,
+                "permissions": _permissions_for_tools(tools),
+                "workspace": (
+                    "read_write"
+                    if any(tool in tools for tool in ("file_write", "file_replace"))
+                    else "read_only"
+                ),
+            },
             "constraints": {
                 "max_agent_steps": min(config.runtime.max_steps, 10),
                 "max_tool_calls": min(config.runtime.max_tool_calls, 50),
@@ -207,6 +245,34 @@ def _compile_workflow_draft(
     }
 
 
+def _infer_step_tools(step: WorkflowStepDraft) -> list[str]:
+    """Keep older three-field model drafts runnable with conservative capability inference."""
+    text = " ".join((step.title, step.description, step.output_description)).lower()
+    tools: list[str] = []
+    if any(word in text for word in ("research", "source", "web", "internet", "history")):
+        tools.append("shell_exec")
+    if any(word in text for word in ("project", "code", "file", "inspect", "review")):
+        tools.extend(("file_read", "file_search"))
+    if any(word in text for word in ("create", "write", "edit", "implement", "publish", "website")):
+        tools.extend(("file_read", "file_write"))
+    if any(word in text for word in ("build", "test", "verify", "command")):
+        tools.append("shell_exec")
+    return list(dict.fromkeys(tools))
+
+
+def _permissions_for_tools(tools: list[str]) -> list[str]:
+    permissions: list[str] = []
+    if any(tool in tools for tool in ("file_read", "file_search")):
+        permissions.append("fs:read:**")
+    if any(tool in tools for tool in ("file_write", "file_replace", "artifact_create")):
+        permissions.append("fs:write:**")
+    if "shell_exec" in tools:
+        permissions.extend(("shell:exec:*", "net:fetch:*"))
+    if any(tool.startswith("git_") for tool in tools):
+        permissions.append("git:read:*")
+    return permissions
+
+
 def _write_reviewed_graph(graph: dict[str, Any], output: Path, config: LoroConfig) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(yaml.safe_dump(graph, sort_keys=False), encoding="utf-8")
@@ -271,9 +337,25 @@ def _specification_pass(graph: dict[str, Any], config: LoroConfig) -> None:
     if config.agraph.max_tier == "minimal":
         tier = "minimal"
     node = graph["nodes"]["execute"]
+    inferred_tools = _infer_step_tools(
+        WorkflowStepDraft(
+            title=str(node.get("title") or "Execute the goal"),
+            description=str(node.get("description") or graph.get("objective") or ""),
+            output_description="A concise account of the completed work.",
+        )
+    )
     node.update(
         {
             "intelligence": {"tier": tier, "allow_downgrade": True},
+            "requirements": {
+                "tools": inferred_tools,
+                "permissions": _permissions_for_tools(inferred_tools),
+                "workspace": (
+                    "read_write"
+                    if any(tool in inferred_tools for tool in ("file_write", "file_replace"))
+                    else "read_only"
+                ),
+            },
             "constraints": {
                 "max_agent_steps": min(config.runtime.max_steps, 10),
                 "max_tool_calls": min(config.runtime.max_tool_calls, 50),

@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.18.0` is the current release. The deliberately limited `0.10` stable core remains
+Loro `0.19.0` is the current release. The deliberately limited `0.10` stable core remains
 the stabilization baseline. The OAP and AGS integrations remain pre-1.0 product surfaces, but are
 implemented against the published 1.0 specifications and their pinned 1.0.1 support libraries.
 See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0 gates.
@@ -23,6 +23,7 @@ Optional extras:
 python -m pip install "loro-agent[data]" # Postgres, Iceberg, and PyArrow support
 python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
 python -m pip install "loro-agent[mcp]"  # MCP client support
+python -m pip install "loro-agent[webmcp]" # MCP + Playwright bridge for alexmerced.app
 python -m pip install "loro-agent[gateway]" # Discord and signed chat gateway support
 python -m pip install "loro-agent[webui]" # Local multi-conversation Web UI
 python -m pip install "loro-agent[dev]"  # Development and test tools
@@ -61,6 +62,19 @@ activity and approvals, an Agentic Graph view that validates, plans and runs AGS
 human gates held for an explicit decision, and default provider/model/profile settings. Assistant replies render as
 markdown, and each launch prints a URL carrying a fresh access token, so the API is closed to other
 local processes. See the [Local Web UI guide](docs/webui.md).
+
+Create a specialist from a normal description in the CLI or Profiles page:
+
+```bash
+loro agents generate "A cautious release reviewer that cites test evidence"
+loro agents generate "A portable documentation specialist" --scope universal
+```
+
+The result is compiled into canonical OAP 1.0 and validated before it can be saved. The bundled
+`oap-profile-authoring` skill and `profile.create` session tool let an agent propose a profile for
+a useful subagent; an autonomous idea remains a reviewable proposal, while explicit saving still
+requires trusted edit approval. `~/.agentprofiles` is the universal user root, below Loro's native
+user root and project roots in discovery precedence.
 
 The folder REPL opens with a responsive status panel that keeps Loro's ASCII parrot beside the
 current folder, provider, model, agent, session, memory, sandbox, and audit state. On narrow
@@ -121,6 +135,7 @@ loro setup memory
 loro setup shared-memory
 loro setup polaris
 loro setup mcp
+loro setup webmcp
 loro setup mcp-server
 loro setup gateway
 loro setup skills
@@ -347,6 +362,21 @@ Unknown MCP extensions remain inert. Modern subscriptions are bounded by configu
 duration, and output limits. See the [MCP guide](docs/mcp.md) for authentication, managed policy,
 task input/cancellation, and compatibility details.
 
+For the bundled alexmerced.app integration, install its optional browser boundary and configure
+the reviewed stdio server in one command:
+
+```bash
+python -m pip install "loro-agent[webmcp]"
+playwright install chromium
+loro setup webmcp
+```
+
+Loro discovers the bundled `alexmerced-webmcp` skill during ordinary PDF, chart, data, media,
+notes, planning, and WebMCP tasks. The skill routes calls through Loro's existing MCP
+permission/profile boundary. The server is restricted to `https://alexmerced.app`, keeps a
+dedicated browser profile under `~/.local/share/loro/webmcp/`, and exposes only navigation, live
+tool discovery, and exact invocation. Webpage content cannot approve calls or widen policy.
+
 Loro can also serve an explicit read-only capability subset and load digest-tracked Agent Skills:
 
 ```bash
@@ -385,6 +415,7 @@ loro run --resume-session RECIPIENT_SESSION "Continue."
 - [Backup, Restore, And Recovery](docs/recovery.md)
 - [Polaris And Iceberg](docs/polaris-iceberg.md)
 - [Model Context Protocol](docs/mcp.md)
+- [alexmerced.app WebMCP](docs/webmcp.md)
 - [MCP Support Matrix](docs/mcp-support-matrix.md)
 - [Agent Skills](docs/skills.md)
 - [Open Agent Profiles](docs/agent-profiles.md)

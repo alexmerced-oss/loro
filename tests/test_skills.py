@@ -22,6 +22,7 @@ def write_skill(root: Path, name: str, *, description: str = "Review Python code
 
 def skill_config(tmp_path: Path, root: Path) -> SkillsConfig:
     return SkillsConfig(
+        include_bundled=False,
         managed_paths=[],
         user_paths=[],
         project_paths=[str(root)],

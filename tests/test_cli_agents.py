@@ -23,7 +23,7 @@ def test_profile_wizard_creates_compliant_default_coding_profile(tmp_path, monke
     result = CliRunner().invoke(
         app,
         ["setup", "profile", "--name", "project-coder"],
-        input="\n" * 8,
+        input="\n" * 9,
     )
 
     assert result.exit_code == 0, result.stdout
@@ -57,7 +57,7 @@ def test_profile_wizard_can_prepare_governed_web_research_ceiling(tmp_path, monk
     result = CliRunner().invoke(
         app,
         ["agents", "configure", "--name", "web-researcher"],
-        input="\n\n\n3\n\n\n\ny\nn\n",
+        input="\n\n\n3\n\n\n\n\ny\nn\n",
     )
 
     assert result.exit_code == 0, result.stdout
@@ -94,7 +94,7 @@ def test_profile_wizard_explains_routes_and_separates_custom_web_from_shell(
     result = CliRunner().invoke(
         app,
         ["setup", "profile", "--name", "web-reader"],
-        input="\n\n\n6\n5\nn\ny\n\n\n\ny\nn\n",
+        input="\n\n\n6\n5\nn\ny\n\n\n\n\ny\nn\n",
     )
 
     assert result.exit_code == 0, result.stdout

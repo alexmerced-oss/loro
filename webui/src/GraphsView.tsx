@@ -88,6 +88,7 @@ function Card({ node, onEdit }: { node: GraphNode; onEdit: () => void }) {
 // leave the board reconnecting forever.
 const MAX_RECONNECTS = 5;
 const RECONNECT_DELAY_MS = 1200;
+const GRAPH_DRAFT_KEY = "loro:graph-draft";
 
 export function GraphsView({ setError }: { setError: (message: string) => void }) {
   const [files, setFiles] = useState<GraphFile[]>([]);
@@ -108,22 +109,32 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
   const [busy, setBusy] = useState("");
   const [editing, setEditing] = useState("");
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [operationStarted, setOperationStarted] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [generationActivity, setGenerationActivity] = useState("");
+  const [runActivity, setRunActivity] = useState("");
   const stream = useRef<EventSource | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
         const found = await request<GraphFile[]>("/api/graphs");
-        setFiles(found);
-        if (found[0]) setPath(found[0].path);
+        const graphFiles = Array.isArray(found) ? found : [];
+        setFiles(graphFiles);
+        if (graphFiles[0]) setPath(graphFiles[0].path);
         const available = await request<Array<{ name: string }>>("/api/profiles").catch(() => []);
-        setProfiles(available.map((item) => item.name));
+        setProfiles((Array.isArray(available) ? available : []).map((item) => item.name));
+        const saved = JSON.parse(sessionStorage.getItem(GRAPH_DRAFT_KEY) || "null") as { document?: Record<string, unknown>; path?: string; goal?: string } | null;
+        if (saved?.document) { setDraft(saved.document); setDraftPath(saved.path || "workflow.agraph.yaml"); setGoal(saved.goal || ""); adoptDraft(saved.document, "Unsaved draft restored"); }
       } catch (problem) {
         setError((problem as Error).message);
       }
     })();
     return () => stream.current?.close();
   }, [setError]);
+
+  useEffect(() => { if (draft) sessionStorage.setItem(GRAPH_DRAFT_KEY, JSON.stringify({ document: draft, path: draftPath, goal })); }, [draft, draftPath, goal]);
+  useEffect(() => { if (!operationStarted) { setElapsed(0); return; } const tick = () => setElapsed(Math.floor((Date.now() - operationStarted) / 1000)); const timer = window.setInterval(tick, 1000); return () => window.clearInterval(timer); }, [operationStarted]);
 
   const loadPlan = useCallback(
     async (target: string) => {
@@ -180,11 +191,13 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         const data = JSON.parse((event as MessageEvent).data);
         setGate({ request_id: data.request_id, prompt: data.prompt, roles: data.roles || [] });
         setStatus("Waiting on a gate");
+        setRunActivity(`Waiting for approval: ${data.prompt}`);
       });
       source.addEventListener("gate.resolved", (event) => {
         track(event);
         setGate(null);
         setStatus("Running");
+        setRunActivity("Approval received; finding the next ready card.");
       });
       source.addEventListener("node.started", (event) => {
         track(event);
@@ -193,6 +206,14 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
           current.map((node) => (node.id === data.node_id ? { ...node, state: "running" } : node)),
         );
         note(`▶ ${data.node_id}`);
+        setRunActivity(`Running ${data.title || data.node_id}.`);
+      });
+      source.addEventListener("node.attempt.started", (event) => {
+        track(event);
+        const data = JSON.parse((event as MessageEvent).data);
+        const message = `${data.title || data.node_id} · model attempt ${data.attempt || 1}: ${data.activity || "executing the card"}`;
+        note(`… ${message}`);
+        setRunActivity(message);
       });
       source.addEventListener("node.finished", (event) => {
         track(event);
@@ -203,12 +224,14 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
           ),
         );
         note(`✓ ${data.node_id} ${data.status || ""}`);
+        setRunActivity(`${data.title || data.node_id} finished with status ${data.status || "succeeded"}.`);
       });
       source.addEventListener("run.finished", (event) => {
         track(event);
         const data = JSON.parse((event as MessageEvent).data);
         setStatus(data.status || "finished");
         note(`Run ${data.status || "finished"}`);
+        setRunActivity(`Graph run finished with status ${data.status || "finished"}.`);
       });
       source.addEventListener("run.failed", (event) => {
         track(event);
@@ -395,12 +418,21 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
   async function generate() {
     if (!goal.trim()) return;
     setBusy("generate");
+    setOperationStarted(Date.now());
     setStatus("Drafting…");
     try {
-      const created = await request<{ document: Record<string, unknown> }>("/api/graphs/generate", {
+      const started = await request<{ job_id: string; activity: string }>("/api/graphs/generate/start", {
         method: "POST",
         body: JSON.stringify({ goal, use_ai: true }),
       });
+      setGenerationActivity(started.activity);
+      let created: { status: string; activity: string; document?: Record<string, unknown>; error?: string };
+      do {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+        created = await request(`/api/graphs/generate/status/${started.job_id}`);
+        setGenerationActivity(created.activity);
+      } while (created.status === "running");
+      if (created.status !== "completed" || !created.document) throw new Error(created.error || "Graph authoring failed.");
       adoptDraft(created.document, "Unsaved draft");
       setDraftPath(draftPath || "workflow.agraph.yaml");
       setPath("");
@@ -409,6 +441,8 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
       setStatus("Ready");
     } finally {
       setBusy("");
+      setOperationStarted(null);
+      setGenerationActivity("");
     }
   }
 
@@ -421,6 +455,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         body: JSON.stringify({ path: draftPath.trim(), document: draft }),
       });
       setDraft(null);
+      sessionStorage.removeItem(GRAPH_DRAFT_KEY);
       setPlan(saved);
       setNodes(saved.nodes);
       setStatus("Saved");
@@ -525,6 +560,10 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         </div>
       </section>
 
+      {busy === "generate" && <section className="operation-health" role="status" aria-live="polite"><span className="operation-spinner" aria-hidden="true"/><div><b>Generating and validating the graph</b><p>{elapsed >= 90 ? "This is taking longer than usual; Loro's configured model request timeout remains authoritative. " : ""}{generationActivity || "Starting the graph authoring job…"} You may switch sections; this reports lifecycle progress, not private model reasoning.</p></div><span>{elapsed}s</span></section>}
+
+      {runId && <section className="operation-health" role="status" aria-live="polite"><span className="operation-spinner" aria-hidden="true"/><div><b>Graph runner is active</b><p><strong>Most recent activity:</strong> {runActivity || "Waiting for the first ready card."} This is safe lifecycle visibility, not private model reasoning.</p></div><span>{status}</span></section>}
+
       {draft && (
         <section className="graph-draft" role="status">
           <div>
@@ -543,7 +582,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
                     disabled={busy === "save" || !draftPath.trim()}>
               {busy === "save" ? "Saving…" : "Save graph"}
             </button>
-            <button className="secondary-action" type="button" onClick={() => { setDraft(null); void loadPlan(path); }}>
+            <button className="secondary-action" type="button" onClick={() => { setDraft(null); sessionStorage.removeItem(GRAPH_DRAFT_KEY); void loadPlan(path); }}>
               Discard
             </button>
           </div>

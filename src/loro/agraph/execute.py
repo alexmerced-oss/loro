@@ -53,6 +53,7 @@ class RuntimeResult(Protocol):
 RuntimeFactory = Callable[[LoroConfig], AgentRuntime]
 GateResponse = bool | Mapping[str, Any]
 GateProvider = Callable[[str, tuple[str, ...]], GateResponse]
+EventHandler = Callable[[str, Mapping[str, Any]], None]
 
 
 class GraphExecutionError(RuntimeError):
@@ -70,11 +71,13 @@ class GraphExecutor:
         gate_provider: GateProvider | None = None,
         runtime_factory: RuntimeFactory | None = None,
         external_checkers: Mapping[str, ExternalChecker] | None = None,
+        event_handler: EventHandler | None = None,
     ) -> None:
         self.config = config
         self.workspace = (workspace or Path.cwd()).resolve()
         self.gate_provider = gate_provider
         self.runtime_factory = runtime_factory or (lambda routed: AgentRuntime(routed))
+        self.event_handler = event_handler
         self.protection = DataProtectionEngine(config.safety)
         self.identity = resolve_identity(config.identity)
         self.audit = AuditLogger(config.audit, self.identity, safety_config=config.safety)
@@ -333,6 +336,15 @@ class GraphExecutor:
                 active_groups.add(group)
                 runnable.append(node_id)
                 self.audit.write("agraph.node_started", graph_node_id=node_id)
+                if self.event_handler:
+                    self.event_handler(
+                        "node.started",
+                        {
+                            "node_id": node_id,
+                            "title": str(node.get("title") or node_id),
+                            "status": "running",
+                        },
+                    )
             snapshot = deepcopy(scope)
             with ThreadPoolExecutor(max_workers=max(1, len(runnable))) as pool:
                 futures = {
@@ -365,6 +377,16 @@ class GraphExecutor:
                     status=outcome,
                     output_names=sorted(outputs),
                 )
+                if self.event_handler:
+                    self.event_handler(
+                        "node.finished",
+                        {
+                            "node_id": node_id,
+                            "title": str(graph["nodes"][node_id].get("title") or node_id),
+                            "status": outcome,
+                            "attempts": len(details.get("attempts") or []),
+                        },
+                    )
                 if record.get("run_id"):
                     self.store.save(record)
                 if outcome == "awaiting_human":
@@ -536,6 +558,20 @@ class GraphExecutor:
         outputs: dict[str, Any] = {}
         feedback = ""
         for attempt_number in range(1, maximum + 1):
+            if self.event_handler:
+                self.event_handler(
+                    "node.attempt.started",
+                    {
+                        "node_id": node_id,
+                        "title": str(node.get("title") or node_id),
+                        "attempt": attempt_number,
+                        "status": "running",
+                        "activity": (
+                            "The routed model is executing the card with its declared "
+                            "capabilities."
+                        ),
+                    },
+                )
             if attempt_number > 1 and not self._checkpoints(checkpoints, "on_escalation", scope):
                 return "awaiting_human", outputs, {"attempts": attempts}
             try:

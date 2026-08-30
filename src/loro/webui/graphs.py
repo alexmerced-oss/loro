@@ -251,6 +251,7 @@ class GraphService:
         self.handles: dict[str, GraphRunHandle] = {}
         self.semaphore = threading.BoundedSemaphore(max_concurrent)
         self.lock = threading.Lock()
+        self.drafts: dict[str, dict[str, Any]] = {}
 
     # -- reads ---------------------------------------------------------------
 
@@ -340,6 +341,60 @@ class GraphService:
             return dict(load_graph(staged, max_bytes=config.agraph.max_document_bytes).data)
         finally:
             staged.unlink(missing_ok=True)
+
+    def start_draft(self, goal: str, *, use_ai: bool = True) -> dict[str, Any]:
+        """Start graph authoring without tying it to one browser request."""
+        if not goal.strip():
+            raise ValueError("Describe what the graph should accomplish.")
+        job_id = str(uuid4())
+        state = {
+            "job_id": job_id,
+            "status": "running",
+            "stage": "queued",
+            "activity": "Queued for the configured planning model.",
+        }
+        with self.lock:
+            self.drafts[job_id] = state
+            if len(self.drafts) > 50:
+                for old_id in list(self.drafts)[:-50]:
+                    self.drafts.pop(old_id, None)
+        threading.Thread(
+            target=self._generate_draft, args=(job_id, goal, use_ai), daemon=True
+        ).start()
+        return dict(state)
+
+    def draft_status(self, job_id: str) -> dict[str, Any]:
+        with self.lock:
+            state = self.drafts.get(job_id)
+            if state is None:
+                raise FileNotFoundError("That graph draft job is no longer available.")
+            return dict(state)
+
+    def _generate_draft(self, job_id: str, goal: str, use_ai: bool) -> None:
+        with self.lock:
+            self.drafts[job_id].update(
+                stage="authoring",
+                activity="The planning model is authoring a bounded workflow draft.",
+            )
+        try:
+            document = self.generate(goal, use_ai=use_ai)
+        except Exception as error:  # surfaced through the status endpoint
+            logger.exception("Graph draft generation failed")
+            with self.lock:
+                self.drafts[job_id].update(
+                    status="failed",
+                    stage="failed",
+                    activity="Graph authoring failed.",
+                    error=str(error),
+                )
+            return
+        with self.lock:
+            self.drafts[job_id].update(
+                status="completed",
+                stage="validated",
+                activity="The workflow draft passed graph validation.",
+                document=document,
+            )
 
     def history(self, limit: int = 25) -> list[dict[str, Any]]:
         config = load_config(self.project_root)
@@ -442,6 +497,9 @@ class GraphService:
                 config,
                 workspace=path.parent,
                 gate_provider=gate_provider,
+                event_handler=lambda event_type, payload: handle.publish(
+                    event_type, **dict(payload)
+                ),
             )
             record = executor.run(
                 path,

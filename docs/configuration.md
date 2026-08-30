@@ -188,6 +188,7 @@ max_message_bytes = 100000
 
 [skills]
 enabled = true
+include_bundled = true
 managed_paths = ["/etc/loro/skills"]
 user_paths = ["~/.config/loro/skills"]
 project_paths = [".loro/skills"]

@@ -78,7 +78,7 @@ def test_providers_are_listed_with_their_key_variable(tmp_path: Path) -> None:
 
 
 def test_configure_writes_only_the_route(tmp_path: Path) -> None:
-    """A key written here would land in a file on disk; it must not be accepted."""
+    """Without a submitted key, configuration contains only route metadata."""
     OnboardingService(tmp_path).configure("nous", model="deepseek/deepseek-v4-flash-0731")
     written = (tmp_path / ".loro" / "config.local.toml").read_text(encoding="utf-8")
 
@@ -86,6 +86,24 @@ def test_configure_writes_only_the_route(tmp_path: Path) -> None:
     assert "deepseek/deepseek-v4-flash-0731" in written
     # The env var name may be recorded; a secret value never is.
     assert "api_key =" not in written
+
+
+def test_configure_stores_submitted_key_in_vault_and_only_persists_reference(
+    tmp_path: Path, monkeypatch
+) -> None:
+    stored: dict[str, str] = {}
+    monkeypatch.setattr(
+        "loro.credentials.CredentialVault.set",
+        lambda _self, ref, value: stored.update(ref=ref, value=value),
+    )
+    secret = "test-provider-secret"
+    result = OnboardingService(tmp_path).configure("nous", credential=secret)
+    written = (tmp_path / ".loro" / "config.local.toml").read_text(encoding="utf-8")
+
+    assert stored == {"ref": "vault://provider/nous/webui", "value": secret}
+    assert result["credential_storage"] == "keyring"
+    assert "vault://provider/nous/webui" in written
+    assert secret not in written
 
 
 def test_configure_falls_back_to_the_provider_default_model(tmp_path: Path) -> None:

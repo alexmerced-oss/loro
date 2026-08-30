@@ -5,9 +5,8 @@ everything was already configured: open it on a fresh project and the first
 message simply failed, with no hint that a provider was never chosen.
 
 This exposes the same readiness signal, and lets the browser pick a provider
-and model. Credentials are deliberately not part of it: keys are read from the
-environment or the OS keyring, never accepted through a form and never written
-into the config file.
+and model. A supplied credential is stored only in Loro's OS-keyring-backed
+vault; secret values are never written to project config or returned.
 """
 
 from __future__ import annotations
@@ -130,6 +129,7 @@ class OnboardingService:
         """Providers that can be selected, and where each expects its key."""
         from loro.provider_profiles import PROVIDER_PROFILES
 
+        config = load_config(self.project_root)
         listed = []
         for name, profile in sorted(PROVIDER_PROFILES.items()):
             listed.append(
@@ -140,16 +140,34 @@ class OnboardingService:
                     "small_model": getattr(profile, "small_model", ""),
                     "api_key_env": getattr(profile, "api_key_env", ""),
                     "needs_key": name != OFFLINE_PROVIDER,
+                    "configured": name == config.model.provider,
+                    "credential_ready": (
+                        name == OFFLINE_PROVIDER
+                        or (name == config.model.provider and self._has_credential(config))
+                    ),
                 }
             )
-        return {"ok": True, "providers": listed, "offline_provider": OFFLINE_PROVIDER}
+        return {
+            "ok": True,
+            "providers": listed,
+            "offline_provider": OFFLINE_PROVIDER,
+            "default_provider": config.model.provider,
+            "default_model": config.model.model,
+            "default_small_model": config.model.small_model,
+        }
 
-    def configure(self, provider: str, model: str = "", small_model: str = "") -> dict[str, Any]:
+    def configure(
+        self,
+        provider: str,
+        model: str = "",
+        small_model: str = "",
+        credential: str = "",
+    ) -> dict[str, Any]:
         """Write the provider and model choice into the project config.
 
-        Only the route is written. A key supplied here would end up in a file on
-        disk, so credentials stay in the environment or the OS keyring and the
-        readiness check reports whether one was found.
+        The route is written to project configuration. A supplied key is stored
+        in the configured OS-keyring-backed vault and only its reference is
+        persisted; an omitted key preserves the existing reference.
         """
         from loro.provider_profiles import PROVIDER_PROFILES
 
@@ -164,13 +182,22 @@ class OnboardingService:
         from loro.providers import model_config_from_profile, write_local_model_config
 
         config = load_config(self.project_root)
+        credential_ref = config.model.credential_ref if config.model.provider == provider else None
+        secret = credential.strip()
+        if secret:
+            from loro.credentials import CredentialVault
+
+            credential_ref = f"vault://provider/{provider}/webui"
+            CredentialVault(config.credentials).set(credential_ref, secret)
         config.model = model_config_from_profile(
             provider,
             model=chosen,
             small_model=chosen_small,
             api_key_env=getattr(profile, "api_key_env", None),
-            credential_ref=None,
+            credential_ref=credential_ref,
             base_url=getattr(profile, "base_url", None),
         )
         write_local_model_config(self.project_root / ".loro" / "config.local.toml", config)
-        return self.readiness()
+        result = self.readiness()
+        result["credential_storage"] = "keyring" if secret else "unchanged"
+        return result

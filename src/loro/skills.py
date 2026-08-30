@@ -274,6 +274,12 @@ class SkillRegistry:
         roots: list[tuple[SkillScope, Path]] = [
             ("managed", Path(value).expanduser()) for value in self.config.managed_paths
         ]
+        if self.config.include_bundled:
+            installed = Path(__file__).resolve().parent / "bundled_skills"
+            source = Path(__file__).resolve().parents[2] / "skills"
+            bundled = installed if installed.is_dir() else source
+            if bundled.is_dir():
+                roots.append(("managed", bundled))
         if self.config.allow_user:
             roots.extend(("user", Path(value).expanduser()) for value in self.config.user_paths)
         if self.config.allow_project:

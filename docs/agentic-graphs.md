@@ -27,12 +27,20 @@ loro graph resume RUN_ID
 `loro plan GOAL --format agraph --out FILE` is an equivalent generation entry point. Both commands
 ask the configured model to author a typed workflow of concrete steps and outputs. Loro then
 compiles that substance into exact AGS structure with deterministic bounds, retries, typed outputs,
-success criteria, estimates, and dependencies before validating every static layer and applying
+success criteria, estimates, dependencies, canonical logical-tool requirements, and matching
+portable permissions before validating every static layer and applying
 managed graph policy. Invalid workflow output receives one correction attempt; no graph remains on
 failure. A `mock` provider fails with instructions to run `loro configure` rather than silently
 writing a generic one-node graph. Use `--no-ai` only when an explicit deterministic one-node
-skeleton is useful. The bundled `skills/agentic-graph` package supplies an authoring workflow,
+skeleton is useful. That skeleton conservatively infers its declared tools, portable permissions,
+and workspace mode from the goal, including governed network access for research and write access
+for implementation work. The bundled `skills/agentic-graph` package supplies an authoring workflow,
 schema, expression reference, and starter template.
+
+The authoring prompt publishes Loro's exact logical-tool catalog and refuses invented names such as
+`net_fetch`. External research uses `shell_exec` because Loro's governed curl/wget path is its web
+fetch backend; the compiler pairs that capability with `shell:exec:*` and `net:fetch:*`. Older
+three-field workflow drafts remain compatible through conservative per-step capability inference.
 
 Inspect and install the exact Skill shipped in the wheel through the normal digest review flow:
 

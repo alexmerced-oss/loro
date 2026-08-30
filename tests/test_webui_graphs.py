@@ -8,6 +8,7 @@ a real model.
 from __future__ import annotations
 
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -262,6 +263,20 @@ def test_deterministic_generation_needs_no_provider(tmp_path: Path) -> None:
 def test_generation_rejects_an_empty_goal(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         GraphService(tmp_path).generate("   ")
+
+
+def test_background_generation_reports_lifecycle_and_document(tmp_path: Path) -> None:
+    service = GraphService(tmp_path)
+    started = service.start_draft("Ship the thing", use_ai=False)
+    status = service.draft_status(started["job_id"])
+    for _ in range(100):
+        if status["status"] != "running":
+            break
+        time.sleep(0.01)
+        status = service.draft_status(started["job_id"])
+    assert status["status"] == "completed"
+    assert status["stage"] == "validated"
+    assert status["document"]["kind"] == "AgenticGraph"
 
 
 def test_active_lists_only_runs_still_in_memory(tmp_path: Path) -> None:

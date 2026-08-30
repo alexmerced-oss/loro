@@ -56,12 +56,20 @@ class GraphRunRequest(BaseModel):
 class ProfileImport(BaseModel):
     document: dict[str, Any]
     rename: str | None = Field(default=None, max_length=120)
+    scope: Literal["project", "portable", "universal", "user"] = "project"
+
+
+class ProfileGenerate(BaseModel):
+    prompt: str = Field(min_length=1, max_length=20_000)
+    name: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=120)
+    extends: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=120)
 
 
 class ConfigureRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=60)
     model: str = Field(default="", max_length=200)
     small_model: str = Field(default="", max_length=200)
+    credential: str = Field(default="", max_length=20_000)
 
 
 class AuditVerifyRequest(BaseModel):
@@ -206,9 +214,11 @@ def create_app(
 
     @app.post("/api/onboarding/configure")
     async def onboarding_configure(payload: ConfigureRequest) -> dict[str, Any]:
-        """Write the provider and model route. Credentials are never accepted here."""
+        """Write the route and optionally store a credential in the OS keyring vault."""
         try:
-            return onboarding.configure(payload.provider, payload.model, payload.small_model)
+            return onboarding.configure(
+                payload.provider, payload.model, payload.small_model, payload.credential
+            )
         except ValueError as error:
             raise translate(error) from error
 
@@ -335,6 +345,20 @@ def create_app(
         except ValueError as error:
             raise translate(error) from error
 
+    @app.post("/api/graphs/generate/start")
+    async def start_graph_document(payload: GraphGenerateRequest) -> dict[str, Any]:
+        try:
+            return graphs.start_draft(payload.goal, use_ai=payload.use_ai)
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.get("/api/graphs/generate/status/{job_id}")
+    async def graph_document_status(job_id: str) -> dict[str, Any]:
+        try:
+            return graphs.draft_status(job_id)
+        except FileNotFoundError as error:
+            raise translate(error) from error
+
     @app.get("/api/graphs/runs")
     async def graph_history() -> list[dict[str, Any]]:
         return graphs.history()
@@ -448,6 +472,13 @@ def create_app(
     @app.get("/api/workspace/extensions")
     async def workspace_extensions() -> dict[str, Any]:
         return workspace.extensions()
+
+    @app.post("/api/workspace/extensions")
+    async def manage_workspace_extension(request: Request) -> dict[str, Any]:
+        try:
+            return workspace.manage_extension(await request.json())
+        except Exception as error:
+            raise translate(error) from error
 
     @app.get("/api/workspaces")
     async def workspaces() -> dict[str, Any]:
@@ -683,7 +714,33 @@ def create_app(
     @app.post("/api/profiles", status_code=201)
     async def create_profile(payload: dict[str, Any]) -> dict[str, Any]:
         try:
+            if isinstance(payload.get("document"), dict):
+                return profiles.create(
+                    payload["document"], scope=str(payload.get("scope") or "project")
+                )
             return profiles.create(payload)
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.post("/api/profiles/generate")
+    async def generate_profile(payload: ProfileGenerate) -> dict[str, Any]:
+        try:
+            from loro.agent_profiles.generation import generate_profile_proposal
+            from loro.runtime import AgentRuntime
+
+            config = load_config(root)
+            runtime = AgentRuntime(config, _profile_cwd=root)
+            return generate_profile_proposal(
+                payload.prompt,
+                config,
+                root,
+                lambda author_prompt: (
+                    runtime.run(author_prompt, mode="plan", session_id=None).response
+                ),
+                preferred_name=payload.name,
+                extends=payload.extends,
+                autonomous=False,
+            )
         except Exception as error:
             raise translate(error) from error
 
@@ -725,7 +782,12 @@ def create_app(
     @app.post("/api/profiles/import", status_code=201)
     async def import_profile(payload: ProfileImport) -> dict[str, Any]:
         try:
-            return profiles.import_document(payload.document, rename=payload.rename)
+            document = dict(payload.document)
+            if payload.rename:
+                metadata = dict(document.get("metadata") or {})
+                metadata["name"] = payload.rename
+                document["metadata"] = metadata
+            return profiles.create(document, scope=payload.scope)
         except Exception as error:
             raise translate(error) from error
 

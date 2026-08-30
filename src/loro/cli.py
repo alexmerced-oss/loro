@@ -2448,6 +2448,60 @@ def setup_mcp(
     console.print(f"Wrote MCP config: {written}")
 
 
+@setup_app.command("webmcp")
+def setup_webmcp(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Config file to write."),
+    ] = Path(".loro/config.local.toml"),
+) -> None:
+    """Enable the bundled, origin-restricted alexmerced.app WebMCP server."""
+    config = load_config()
+    server_id = "alexmerced-webmcp"
+    browser_environment = [
+        name
+        for name in (
+            "DISPLAY",
+            "WAYLAND_DISPLAY",
+            "XAUTHORITY",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "LORO_WEBMCP_HEADLESS",
+            "LORO_WEBMCP_PROFILE",
+        )
+        if os.environ.get(name)
+    ]
+    servers = {
+        **config.mcp.servers,
+        server_id: MCPServerConfig(
+            transport="stdio",
+            command="loro-webmcp",
+            env_allowlist=browser_environment,
+            protocol_mode="auto",
+            timeout_seconds=120,
+        ),
+    }
+    allowed_commands = list(
+        dict.fromkeys([*config.mcp.allowed_stdio_commands, "loro-webmcp"])
+    )
+    config.mcp = config.mcp.model_copy(
+        update={
+            "enabled": True,
+            "servers": servers,
+            "allowed_stdio_commands": allowed_commands,
+        }
+    )
+    config.mcp = type(config.mcp).model_validate(config.mcp.model_dump())
+    written = write_config_sections(output, config, ["mcp"])
+    _audit().write(
+        "config.webmcp_written",
+        path=str(written),
+        server_id=server_id,
+        origin="https://alexmerced.app",
+    )
+    console.print(f"Configured {server_id}: {written}")
+    console.print("Install the browser once with: playwright install chromium")
+
+
 @setup_app.command("mcp-server")
 def setup_mcp_server(
     enabled: Annotated[

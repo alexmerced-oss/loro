@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.18",
+  "release_line": "0.19",
   "providers": {
     "protocols": {
       "anthropic": {"status": "supported", "fixture": "anthropic.json"},

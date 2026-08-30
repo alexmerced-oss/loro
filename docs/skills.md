@@ -14,6 +14,7 @@ SHA-256 package digest; the instruction body is loaded only after activation.
 ```toml
 [skills]
 enabled = true
+include_bundled = true
 managed_paths = ["/etc/loro/skills"]
 user_paths = ["~/.config/loro/skills"]
 project_paths = [".loro/skills"]
@@ -30,6 +31,10 @@ max_active = 3
 Managed packages are labeled `enterprise-managed`; user and project packages remain
 `untrusted-local`. Neither label grants tool authority. Experimental `allowed-tools` metadata
 can narrow script execution but cannot override a Loro deny or satisfy an approval.
+
+`include_bundled` makes Loro's reviewed `agentic-graph`, `oap-profile-authoring`, and
+`alexmerced-webmcp` packages available as managed skills. Set it to false only when operator policy
+requires a completely external skill inventory.
 
 ## Commands
 
