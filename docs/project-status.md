@@ -71,7 +71,9 @@ with 3 environment-dependent skips, alongside 29 frontend tests.
 The Web UI also gained a Graphs view, closing the largest gap between the CLI and the browser: Loro
 implements AGS conformance level 3, and none of that runtime was previously reachable from its own
 interface. It discovers, validates, plans, and runs graphs through the same governed executor, holds
-human gates for an explicit decision, and streams node transitions from a replayable cursor.
+human gates for an explicit decision, streams node transitions from a replayable cursor, and lets
+operators edit card instructions, dependencies, profiles, declared tools, and portable permission
+requirements before the validated graph is saved or run.
 
 A Governance view now exposes the evidence surface in the browser: resolved identity, budgets,
 sandbox posture and approval mode; policy explanation for a hypothetical request; and the audit

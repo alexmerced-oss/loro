@@ -547,6 +547,7 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .graph-card small{font:10px 'DM Mono';color:var(--c-8d9b91)}
 .graph-card p{font-size:11.5px;color:var(--c-a9b8ae);margin:0;line-height:1.5}
 .graph-card-foot{display:flex;flex-wrap:wrap;gap:8px;font:9.5px 'DM Mono';color:var(--c-6e7f73);border-top:1px solid var(--c-29332c);padding-top:7px;margin-top:2px}
+.graph-card-edit{justify-self:start;margin-top:3px}.graph-node-editor{width:min(620px,calc(100vw - 30px));max-height:calc(100vh - 40px);overflow:auto}.graph-node-editor select{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:6px;color:var(--ink);padding:9px}.graph-node-editor fieldset{border:1px solid var(--line);border-radius:7px;margin:0 0 15px;padding:10px}.graph-node-editor legend{font-size:10px;color:var(--c-a2afa6);font-weight:600}.graph-dependency-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.graph-dependency-list label{display:flex;align-items:center;gap:7px;margin:0}.graph-editor-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px}.graph-editor-actions .danger{color:var(--c-e7a3a3);border-color:var(--c-6b3838)}
 .chip{border:1px solid var(--c-29332c);border-radius:5px;padding:5px 8px;font:9px 'DM Mono';color:var(--c-89998e);background:transparent;min-height:24px;display:inline-flex;align-items:center;gap:5px}
 .chip.state-running{color:var(--c-d9bd74);border-color:var(--c-735f35)}
 .chip.state-succeeded{color:var(--c-9de7b1);border-color:var(--c-568167)}

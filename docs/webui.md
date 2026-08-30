@@ -80,6 +80,13 @@ There are three ways to get a graph onto the board:
 *Export* downloads the current graph, saved or draft, as a JSON document you can keep, share, or
 commit.
 
+Every card has an editor before execution. It can change the title and instructions, choose a
+profile, select dependencies, and declare the logical tools and portable permissions the node may
+request. Editing a saved graph first creates an unsaved browser draft; **Save graph** then runs the
+normal validation and workspace-confined write path. This keeps an undeclared-tool failure
+recoverable from the board without letting the editor grant authority beyond Loro's effective
+profile and managed policy.
+
 Human gates are the one place the browser participates in execution: a gate pauses the run and waits
 for an explicit Approve or Reject rather than being auto-approved. An unanswered gate times out
 after thirty minutes so it cannot pin a worker indefinitely. Discovery is bounded to four directory

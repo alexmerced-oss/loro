@@ -58,7 +58,7 @@ function laneFor(node: GraphNode): string {
   return LANES.find((lane) => lane.states.includes(state))?.id ?? "pending";
 }
 
-function Card({ node }: { node: GraphNode }) {
+function Card({ node, onEdit }: { node: GraphNode; onEdit: () => void }) {
   return (
     <article className="graph-card">
       <div className="graph-card-top">
@@ -77,6 +77,9 @@ function Card({ node }: { node: GraphNode }) {
         {node.tier && <span>tier {node.tier}</span>}
         {node.profile && <span>@{node.profile}</span>}
       </div>
+      <button className="secondary-action graph-card-edit" type="button" onClick={onEdit}>
+        Edit card
+      </button>
     </article>
   );
 }
@@ -103,6 +106,8 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
   const [draftPath, setDraftPath] = useState("");
   const [goal, setGoal] = useState("");
   const [busy, setBusy] = useState("");
+  const [editing, setEditing] = useState("");
+  const [profiles, setProfiles] = useState<string[]>([]);
   const stream = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -111,6 +116,8 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         const found = await request<GraphFile[]>("/api/graphs");
         setFiles(found);
         if (found[0]) setPath(found[0].path);
+        const available = await request<Array<{ name: string }>>("/api/profiles").catch(() => []);
+        setProfiles(available.map((item) => item.name));
       } catch (problem) {
         setError((problem as Error).message);
       }
@@ -347,6 +354,44 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
     }
   }
 
+  async function editCard(id: string) {
+    if (runId) return;
+    try {
+      if (!draft) {
+        if (!path) return;
+        const loaded = await request<{ document: Record<string, unknown> }>(
+          `/api/graphs/document?path=${encodeURIComponent(path)}`,
+        );
+        adoptDraft(loaded.document, "Unsaved changes");
+        setDraftPath(path);
+      }
+      setEditing(id);
+    } catch (problem) {
+      setError((problem as Error).message);
+    }
+  }
+
+  function patchCard(id: string, patch: Record<string, unknown>) {
+    if (!draft) return;
+    const raw = (draft.nodes ?? {}) as Record<string, Record<string, unknown>>;
+    adoptDraft(
+      { ...draft, nodes: { ...raw, [id]: { ...raw[id], ...patch } } },
+      "Unsaved changes",
+    );
+  }
+
+  function deleteCard(id: string) {
+    if (!draft) return;
+    const raw = { ...((draft.nodes ?? {}) as Record<string, Record<string, unknown>>) };
+    delete raw[id];
+    for (const node of Object.values(raw)) {
+      if (Array.isArray(node.depends_on))
+        node.depends_on = node.depends_on.filter((item) => item !== id);
+    }
+    adoptDraft({ ...draft, nodes: raw }, "Unsaved changes");
+    setEditing("");
+  }
+
   async function generate() {
     if (!goal.trim()) return;
     setBusy("generate");
@@ -570,7 +615,9 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
                   <span className="lane-count">{cards.length}</span>
                 </header>
                 {cards.length ? (
-                  cards.map((node) => <Card key={node.id} node={node} />)
+                  cards.map((node) => (
+                    <Card key={node.id} node={node} onEdit={() => void editCard(node.id)} />
+                  ))
                 ) : (
                   <div className="lane-empty">
                     {lane.id === "pending" ? "Load a graph, start a blank one, or generate one from a goal." : "Nothing here yet."}
@@ -588,6 +635,29 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
           <pre>{log.join("\n")}</pre>
         </section>
       )}
+      {editing && draft && (() => {
+        const raw = (draft.nodes ?? {}) as Record<string, Record<string, any>>;
+        const node = raw[editing];
+        if (!node) return null;
+        const requirements = (node.requirements ?? {}) as Record<string, any>;
+        return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Edit ${String(node.title || editing)}`}>
+          <div className="modal graph-node-editor">
+            <button className="modal-close" type="button" onClick={() => setEditing("")}>×</button>
+            <small>GRAPH CARD</small><h2>Edit {editing}</h2>
+            <label>Title<input value={String(node.title ?? "")} onChange={(event) => patchCard(editing, { title: event.target.value })} /></label>
+            <label>Instructions<textarea rows={4} value={String(node.description ?? "")} onChange={(event) => patchCard(editing, { description: event.target.value })} /></label>
+            <label>Agent profile<select value={String(node["x-agent-profile"] ?? "")} onChange={(event) => patchCard(editing, { "x-agent-profile": event.target.value || undefined })}><option value="">Run default</option>{profiles.map((name) => <option key={name} value={name}>@{name}</option>)}</select></label>
+            <fieldset><legend>Dependencies</legend><div className="graph-dependency-list">{Object.keys(raw).filter((id) => id !== editing).map((id) => { const selected = (node.depends_on ?? []).includes(id); return <label key={id}><input type="checkbox" checked={selected} onChange={() => patchCard(editing, { depends_on: selected ? node.depends_on.filter((item: string) => item !== id) : [...(node.depends_on ?? []), id] })} />{id}</label>; })}</div></fieldset>
+            <label>Required tools <small>comma-separated logical capabilities</small><input value={(requirements.tools ?? []).join(", ")} onChange={(event) => patchCard(editing, { requirements: { ...requirements, tools: csv(event.target.value) } })} placeholder="file_read, file_write, shell_exec" /></label>
+            <label>Permissions <small>comma-separated portable requirements</small><input value={(requirements.permissions ?? []).join(", ")} onChange={(event) => patchCard(editing, { requirements: { ...requirements, permissions: csv(event.target.value) } })} placeholder="fs:read:**, fs:write:src/**" /></label>
+            <div className="graph-editor-actions"><button className="secondary-action danger" type="button" onClick={() => deleteCard(editing)}>Delete card</button><button className="primary-action" type="button" onClick={() => setEditing("")}>Apply changes</button></div>
+          </div>
+        </div>;
+      })()}
     </div>
   );
+}
+
+function csv(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
