@@ -714,6 +714,7 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .memory-row.static .chip{align-self:start;white-space:nowrap}
 .memory-row.static time{display:block;font:10px 'DM Mono';color:var(--c-6e7f73);margin-top:7px}
 .memory-row.static small{font-size:12px;color:var(--c-a9b8ae);line-height:1.5;overflow-wrap:anywhere}
+.memory-actions{display:flex;gap:7px;margin-top:9px}.memory-actions button{padding:5px 9px}.secondary-action.danger{color:var(--c-e7a3a3);border-color:var(--c-684242)}
 .chip.ok{border-color:var(--c-3d6b52);color:var(--c-9de7b1)}
 .citation{display:block;margin-top:8px;font:10px 'DM Mono';color:var(--c-6e7f73);overflow-wrap:anywhere}
 @media (max-width:900px){.memory-stats{grid-template-columns:repeat(2,1fr)}}

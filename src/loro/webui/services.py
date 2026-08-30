@@ -170,6 +170,13 @@ class ProfileService:
         self._write_document(resolved.source_path, raw, previous=previous)
         return self.get(name)
 
+    def delete(self, name: str) -> dict[str, Any]:
+        resolved = self._registry(self._config()).load(name)
+        if resolved.trust not in {"user", "project"} or resolved.source_path is None:
+            raise PermissionError("Managed and imported profiles are read-only.")
+        resolved.source_path.unlink()
+        return {"ok": True, "name": name, "removed": True}
+
     def export(self, name: str) -> dict[str, Any]:
         """The profile as a portable OAP document.
 

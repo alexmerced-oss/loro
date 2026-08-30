@@ -92,6 +92,12 @@ message transcript and retains the associated Loro runtime session id. Conversat
 renamed, archived, or deleted. The first prompt supplies an automatic title that can be renamed
 later.
 
+Conversation creation pins profiles and group participants before the first message, and deletion
+requires confirmation. A running `loro web` process remains intentionally confined to the project
+folder it was launched for. The Workspaces view identifies adjacent Loro projects and provides the
+exact `loro web -C <path>` launch command; it does not silently widen one server's filesystem
+authority to another project.
+
 The Web UI stores its transcript separately from the existing session summary format. This keeps
 the CLI session contract backward compatible while allowing a traditional multi-turn chat. Up to
 40 recent user and assistant messages, bounded to 50,000 UTF-8 bytes, are supplied as explicitly
@@ -124,7 +130,8 @@ silently acquiring different authority.
 ## Profiles
 
 The Profiles view can create project profiles and edit user or project profiles. Managed and
-imported profiles are read-only. A save:
+imported profiles are read-only. Editable profiles can also be deleted after explicit confirmation.
+A save:
 
 1. preserves the profile name;
 2. increments the revision;
@@ -229,9 +236,17 @@ a race and not a fault, and each proposal reports whether it can still be decide
 offer buttons that would be rejected.
 
 **Local memories** lists and searches what this workspace remembers, newest first, bounded and
-reporting when the list was cut. **Shared memory** searches the governed backend and shows the
+reporting when the list was cut. The same view can create, edit, and delete local records, with
+confirmation before deletion and the normal data-protection checks on every write. **Shared
+memory** searches the governed backend and shows the
 citation each record carries, which is how a shared memory is referred to elsewhere. An unreachable
 backend explains itself instead of rendering as an empty result.
+
+## Settings Choices
+
+Provider, primary-model, small-model, and default-profile fields use the discovered provider
+catalog and profile roster instead of accepting arbitrary spelling. Changing provider selects its
+catalog defaults; credentials remain outside the browser in the environment or credential store.
 
 ## Accessibility
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -63,3 +64,42 @@ class LocalMemoryStore:
     def search(self, query: str) -> list[MemoryRecord]:
         normalized = query.casefold()
         return [record for record in self.list() if normalized in record.content.casefold()]
+
+    def update(self, memory_id: str, content: str, scope: str = "local") -> MemoryRecord:
+        if self.protection is not None:
+            self.protection.enforce(content, "memory_local")
+        records = self.list()
+        found: MemoryRecord | None = None
+        for index, record in enumerate(records):
+            if record.memory_id == memory_id:
+                found = replace(record, content=content, scope=scope)
+                records[index] = found
+                break
+        if found is None:
+            raise ValueError(f"memory {memory_id!r} was not found")
+        self._replace(records)
+        return found
+
+    def delete(self, memory_id: str) -> None:
+        records = self.list()
+        kept = [record for record in records if record.memory_id != memory_id]
+        if len(kept) == len(records):
+            raise ValueError(f"memory {memory_id!r} was not found")
+        self._replace(kept)
+
+    def _replace(self, records: list[MemoryRecord]) -> None:
+        temporary = self.path.with_name(f".{self.path.name}.tmp")
+        with temporary.open("w", encoding="utf-8") as file:
+            for record in records:
+                file.write(
+                    json.dumps(
+                        {
+                            "memory_id": record.memory_id,
+                            "content": record.content,
+                            "scope": record.scope,
+                            "created_at": record.created_at.isoformat(),
+                        }
+                    )
+                    + "\n"
+                )
+        temporary.replace(self.path)

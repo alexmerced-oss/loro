@@ -111,6 +111,36 @@ class MemoryService:
             ],
         }
 
+    def create_memory(self, content: str, scope: str = "local") -> dict[str, Any]:
+        content = content.strip()
+        if not content:
+            raise ValueError("Memory content cannot be empty.")
+        record = self._local_store(self._config()).remember(content, scope=scope)
+        return {
+            "ok": True,
+            "memory_id": record.memory_id,
+            "content": record.content,
+            "scope": record.scope,
+            "created_at": record.created_at.isoformat(),
+        }
+
+    def update_memory(self, memory_id: str, content: str, scope: str = "local") -> dict[str, Any]:
+        content = content.strip()
+        if not content:
+            raise ValueError("Memory content cannot be empty.")
+        record = self._local_store(self._config()).update(memory_id, content, scope)
+        return {
+            "ok": True,
+            "memory_id": record.memory_id,
+            "content": record.content,
+            "scope": record.scope,
+            "created_at": record.created_at.isoformat(),
+        }
+
+    def delete_memory(self, memory_id: str) -> dict[str, Any]:
+        self._local_store(self._config()).delete(memory_id)
+        return {"ok": True, "memory_id": memory_id, "removed": True}
+
     # -- proposals ------------------------------------------------------------
 
     def proposals(self, status: str = "") -> dict[str, Any]:

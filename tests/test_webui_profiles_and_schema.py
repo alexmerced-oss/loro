@@ -209,6 +209,14 @@ def test_importing_a_duplicate_name_is_refused(workspace: Path) -> None:
         service.import_document(_profile("reviewer"))
 
 
+def test_project_profile_can_be_deleted(workspace: Path) -> None:
+    service = ProfileService(workspace)
+    service.create(_profile("temporary"))
+
+    assert service.delete("temporary")["removed"] is True
+    assert "temporary" not in {item["name"] for item in service.list()}
+
+
 def test_web_ui_edit_preserves_canonical_fields_it_does_not_render(workspace: Path) -> None:
     service = ProfileService(workspace)
     profile = {

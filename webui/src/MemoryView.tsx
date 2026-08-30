@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { request } from "./api";
 import { Markdown } from "./Markdown";
 
@@ -57,6 +57,7 @@ export function MemoryView({ setError }: { setError: (message: string) => void }
   const [sharedNote, setSharedNote] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState("");
+  const [editing, setEditing] = useState<Memory | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -115,6 +116,30 @@ export function MemoryView({ setError }: { setError: (message: string) => void }
     }
   }
 
+  async function saveMemory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const content = String(data.get("content") || "").trim();
+    const scope = String(data.get("scope") || "local").trim();
+    if (!content) return;
+    try {
+      await request(editing?.memory_id ? `/api/memory/memories/${editing.memory_id}` : "/api/memory/memories", {
+        method: editing?.memory_id ? "PUT" : "POST",
+        body: JSON.stringify({ content, scope }),
+      });
+      setEditing(null);
+      await load();
+    } catch (problem) { setError((problem as Error).message); }
+  }
+
+  async function removeMemory(memory: Memory) {
+    if (!window.confirm("Delete this local memory? This cannot be undone.")) return;
+    try {
+      await request(`/api/memory/memories/${memory.memory_id}`, { method: "DELETE" });
+      await load();
+    } catch (problem) { setError((problem as Error).message); }
+  }
+
   const pending = proposals.filter((item) => item.decidable);
   const decided = proposals.filter((item) => !item.decidable);
 
@@ -126,10 +151,20 @@ export function MemoryView({ setError }: { setError: (message: string) => void }
           <h1>Memory</h1>
           <p>What this workspace remembers, and what the agent is asking to remember.</p>
         </div>
-        <button className="secondary-action" type="button" onClick={() => void load()}>
-          Refresh
-        </button>
+        <div className="profile-actions">
+          {tab === "local" && <button type="button" onClick={() => setEditing({ memory_id: "", content: "", scope: "local", created_at: "" })}>＋ New memory</button>}
+          <button className="secondary-action" type="button" onClick={() => void load()}>Refresh</button>
+        </div>
       </header>
+
+      {editing && <div className="modal-backdrop"><form className="modal" onSubmit={saveMemory}>
+        <button type="button" className="modal-close" onClick={() => setEditing(null)}>×</button>
+        <small>{editing.memory_id ? "EDIT MEMORY" : "NEW MEMORY"}</small>
+        <h2>{editing.memory_id ? "Update local memory" : "Remember something"}</h2>
+        <label>Scope<input name="scope" defaultValue={editing.scope || "local"} required /></label>
+        <label>Content<textarea name="content" defaultValue={editing.content} rows={7} required autoFocus /></label>
+        <button>{editing.memory_id ? "Save memory" : "Create memory"}</button>
+      </form></div>}
 
       {overview?.error && <div className="gov-issues" role="alert">{overview.error}</div>}
 
@@ -256,6 +291,10 @@ export function MemoryView({ setError }: { setError: (message: string) => void }
                 <div>
                   <Markdown>{memory.content}</Markdown>
                   <time>{memory.created_at.slice(0, 19).replace("T", " ")}</time>
+                  <div className="memory-actions">
+                    <button className="secondary-action" type="button" onClick={() => setEditing(memory)}>Edit</button>
+                    <button className="secondary-action danger" type="button" onClick={() => void removeMemory(memory)}>Delete</button>
+                  </div>
                 </div>
               </div>
             ))}

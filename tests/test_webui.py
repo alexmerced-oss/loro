@@ -35,9 +35,47 @@ def _prepare_project(path: Path) -> None:
         'model = "mock-agent"\nsmall_model = "mock-small"\n\n'
         f'[audit]\nenabled = false\npath = "{path / ".loro" / "audit.jsonl"}"\n\n'
         f'[sessions]\npath = "{path / ".loro" / "sessions"}"\n'
-        f'message_path = "{path / ".loro" / "session-messages"}"\n',
+        f'message_path = "{path / ".loro" / "session-messages"}"\n\n'
+        f'[memory.local]\nenabled = true\npath = "{path / ".loro" / "memory"}"\n',
         encoding="utf-8",
     )
+
+
+@pytest.mark.asyncio
+async def test_web_api_local_memory_and_profile_deletion(tmp_path: Path) -> None:
+    _prepare_project(tmp_path)
+    app_instance = create_app(
+        project_root=tmp_path,
+        database_path=tmp_path / "web.sqlite3",
+        database_synchronous="OFF",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_instance), base_url="http://test"
+    ) as client:
+        token = await _csrf(client)
+        created = await client.post(
+            "/api/memory/memories",
+            json={"content": "Prefer evidence", "scope": "preference"},
+            headers=_headers(token),
+        )
+        assert created.status_code == 201
+        memory_id = created.json()["memory_id"]
+        updated = await client.put(
+            f"/api/memory/memories/{memory_id}",
+            json={"content": "Prefer cited evidence", "scope": "preference"},
+            headers=_headers(token),
+        )
+        assert updated.json()["content"] == "Prefer cited evidence"
+        assert (
+            await client.delete(f"/api/memory/memories/{memory_id}", headers=_headers(token))
+        ).status_code == 200
+
+        assert (
+            await client.post("/api/profiles", json=_profile("temporary"), headers=_headers(token))
+        ).status_code == 201
+        removed = await client.delete("/api/profiles/temporary", headers=_headers(token))
+        assert removed.status_code == 200
+        assert removed.json()["removed"] is True
 
 
 def _profile(name: str = "reviewer") -> dict[str, object]:

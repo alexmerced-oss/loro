@@ -100,6 +100,11 @@ class MemoryRejection(BaseModel):
     reason: str = ""
 
 
+class LocalMemoryInput(BaseModel):
+    content: str = Field(min_length=1, max_length=20_000)
+    scope: str = Field(default="local", min_length=1, max_length=120)
+
+
 class SettingsUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
@@ -217,6 +222,27 @@ def create_app(
     @app.get("/api/memory/memories")
     async def memory_list(q: str = "", limit: int = 50) -> dict[str, Any]:
         return memory.memories(q, limit)
+
+    @app.post("/api/memory/memories", status_code=201)
+    async def memory_create(payload: LocalMemoryInput) -> dict[str, Any]:
+        try:
+            return memory.create_memory(payload.content, payload.scope)
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.put("/api/memory/memories/{memory_id}")
+    async def memory_update(memory_id: str, payload: LocalMemoryInput) -> dict[str, Any]:
+        try:
+            return memory.update_memory(memory_id, payload.content, payload.scope)
+        except ValueError as error:
+            raise translate(error) from error
+
+    @app.delete("/api/memory/memories/{memory_id}")
+    async def memory_delete(memory_id: str) -> dict[str, Any]:
+        try:
+            return memory.delete_memory(memory_id)
+        except ValueError as error:
+            raise translate(error) from error
 
     @app.get("/api/memory/proposals")
     async def memory_proposals(status: str = "") -> dict[str, Any]:
@@ -665,6 +691,13 @@ def create_app(
     async def update_profile(name: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return profiles.update(name, payload)
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.delete("/api/profiles/{name}")
+    async def delete_profile(name: str) -> dict[str, Any]:
+        try:
+            return profiles.delete(name)
         except Exception as error:
             raise translate(error) from error
 

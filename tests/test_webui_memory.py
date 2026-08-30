@@ -84,6 +84,25 @@ def test_memories_can_be_searched(service: MemoryService) -> None:
     assert [item["content"] for item in found["memories"]] == ["the user prefers tabs"]
 
 
+def test_local_memories_can_be_created_updated_and_deleted(service: MemoryService) -> None:
+    created = service.create_memory("Prefer concise answers", "preference")
+    memory_id = created["memory_id"]
+
+    updated = service.update_memory(memory_id, "Prefer concise, sourced answers", "preference")
+    assert updated["content"] == "Prefer concise, sourced answers"
+    assert service.memories()["memories"][0]["scope"] == "preference"
+
+    assert service.delete_memory(memory_id)["removed"] is True
+    assert service.memories()["memories"] == []
+
+
+def test_local_memory_mutations_reject_missing_records(service: MemoryService) -> None:
+    with pytest.raises(ValueError, match="was not found"):
+        service.update_memory("missing", "value")
+    with pytest.raises(ValueError, match="was not found"):
+        service.delete_memory("missing")
+
+
 def test_memories_are_bounded_and_say_when_they_were_cut(service: MemoryService) -> None:
     """A store grows without limit; a browser is shown a window of it."""
     store = service._local_store(service._config())
