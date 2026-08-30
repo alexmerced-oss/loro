@@ -52,8 +52,8 @@ jobs:
       - name: Verify secret baseline
         run: |
           cp .secrets.baseline /tmp/loro-secrets-current.json
-          detect-secrets -c 1 scan --all-files \
-            --exclude-files '(^|/)(\.git|\.venv|dist|build|\.loro|\.mypy_cache|\.pytest_cache|\.ruff_cache)(/|$)|^\.secrets\.baseline$|^security-.*\.json$' \
+          detect-secrets -c 1 scan \
+            --exclude-files '(^|/)(\.git|\.venv|dist|build|\.loro|\.mypy_cache|\.pytest_cache|\.ruff_cache)(/|$)|^\.secrets\.baseline$' \
             --baseline /tmp/loro-secrets-current.json
           python scripts/check_secret_baseline.py \
             .secrets.baseline /tmp/loro-secrets-current.json
