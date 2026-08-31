@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { request } from "./api";
 
 /**
@@ -7,7 +8,8 @@ import { request } from "./api";
  * Loro is an AGS level 3 harness whose graph runtime was unreachable from its
  * own UI. This view loads a graph, shows the validated plan as a dependency
  * board, runs it through the same governed executor the CLI drives, and holds
- * human gates for a decision instead of auto-approving them.
+ * human gates and protected tool actions for a browser decision instead of
+ * auto-approving them or falling back to a hidden terminal prompt.
  */
 
 type GraphFile = { path: string; name: string; size_bytes: number };
@@ -631,16 +633,20 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         </>
       )}
 
-      {gate && (
-        <div className="gate-card" role="alertdialog" aria-label="Human gate">
-          <small>HUMAN GATE</small>
-          <h3>{gate.prompt}</h3>
-          {gate.roles.length > 0 && <p>Roles: {gate.roles.join(", ")}</p>}
-          <div>
-            <button className="secondary-action" type="button" onClick={() => void decide(false)}>Reject</button>
-            <button className="primary-action" type="button" onClick={() => void decide(true)}>Approve</button>
+      {gate && createPortal(
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal gate-card" role="alertdialog" aria-modal="true" aria-label="Runtime approval required">
+            <small>RUNTIME APPROVAL REQUIRED</small>
+            <h3>{gate.prompt}</h3>
+            {gate.roles.length > 0 && <p>Requested operator role: {gate.roles.join(", ")}</p>}
+            <p>This graph is paused. Review this exact action before continuing.</p>
+            <div>
+              <button className="secondary-action" type="button" onClick={() => void decide(false)}>Reject</button>
+              <button className="primary-action" type="button" onClick={() => void decide(true)}>Approve once</button>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {(plan || draft) && (

@@ -8,6 +8,7 @@ import { WorkspaceView } from "./WorkspaceView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
+import { ApprovalCenter } from "./ApprovalCenter";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeRun, initialize, request, streamRun } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
@@ -187,6 +188,7 @@ export default function App() {
         {view === "governance" && <GovernanceView setError={setError} />}
         {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} />}
       </main>
+      <ApprovalCenter setError={setError} />
     </div>
   );
 }
@@ -256,8 +258,21 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
               id,
               (eventName, data) => {
                 if (eventName === "assistant.delta") setStreaming((current) => current + data.content);
-                if (eventName === "approval.requested") setApprovals((current) => [...current.filter((item) => item.request_id !== data.request_id), { ...data, runId: id }]);
-                if (eventName === "approval.resolved") setApprovals((current) => current.filter((item) => item.request_id !== data.request_id));
+                if (eventName === "approval.requested") {
+                  const request = data.envelope?.request;
+                  if (request) setApprovals((current) => [...current.filter((item) => item.request_id !== request.id), {
+                    runId: id,
+                    request_id: request.id,
+                    action: request.action?.summary || request.action?.name || "Protected action",
+                    target: request.action?.resource || request.action?.working_directory || "",
+                    arguments_preview: JSON.stringify(request.action?.arguments || {}, null, 2),
+                    scopes: (request.choices || []).filter((choice: any) => choice.decision === "approve").map((choice: any) => choice.scope),
+                  }]);
+                }
+                if (eventName === "approval.resolved") {
+                  const requestId = data.envelope?.resolution?.request_id || data.request_id;
+                  setApprovals((current) => current.filter((item) => item.request_id !== requestId));
+                }
                 // A group hands off between speakers mid-run; label the live
                 // bubble and flush the finished reply so each voice stays a
                 // separate message.

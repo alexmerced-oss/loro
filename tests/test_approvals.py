@@ -1,9 +1,12 @@
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from loro.aais_bridge import AAISBridge
 from loro.approvals import (
     ApprovalError,
     ApprovalExpiredError,
@@ -241,6 +244,34 @@ def test_json_approval_store_rejects_invalid_record_enum(tmp_path: Path) -> None
 
     with pytest.raises(ApprovalError, match="Invalid persisted approval record"):
         JsonApprovalStore(tmp_path / "approvals.json").list()
+
+
+def test_aais_bridge_cancels_only_its_active_requests(tmp_path: Path) -> None:
+    manager = ApprovalManager(ApprovalsConfig(), _identity())
+    bridge = AAISBridge(tmp_path)
+    result: list[object] = []
+    worker = threading.Thread(
+        target=lambda: result.append(
+            bridge.request(
+                _request(manager, content="first"),
+                origin={"run_id": "run-1"},
+                publish=lambda _event, _envelope: None,
+                allow_session=True,
+                cancelled=threading.Event(),
+                timeout=20,
+            )
+        )
+    )
+    worker.start()
+    for _ in range(200):
+        if bridge.snapshot()["snapshot"]["pending"]:
+            break
+        time.sleep(0.01)
+    assert bridge.cancel_active() == 1
+    worker.join(2)
+    assert not worker.is_alive()
+    assert result == [None]
+    assert bridge.snapshot()["snapshot"]["pending"] == []
 
 
 def _request(

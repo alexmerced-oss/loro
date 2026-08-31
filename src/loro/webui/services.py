@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import yaml
 
+from loro.aais_bridge import AAISBridge
 from loro.agent_profiles import AgentProfileRegistry, build_effective_profile, load_path
 from loro.agent_profiles.compat import canonical_document
 from loro.agent_profiles.models import AgentProfileModel
@@ -343,7 +344,12 @@ MAX_RETAINED_RUNS = 50
 
 class RunHandle:
     def __init__(
-        self, run_id: str, conversation_id: str, *, allow_session_scope: bool = True
+        self,
+        run_id: str,
+        conversation_id: str,
+        *,
+        allow_session_scope: bool = True,
+        aais: AAISBridge | None = None,
     ) -> None:
         self.run_id = run_id
         self.conversation_id = conversation_id
@@ -353,6 +359,7 @@ class RunHandle:
         self.finished = False
         self.allow_session_scope = allow_session_scope
         self.approvals: dict[str, ApprovalDecision] = {}
+        self.aais = aais
 
     def snapshot(self) -> dict[str, Any]:
         with self.condition:
@@ -364,11 +371,21 @@ class RunHandle:
                 "cancelled": self.cancelled.is_set(),
                 # A reattaching browser must re-render an outstanding approval,
                 # or the run sits waiting on a question nobody can see.
-                "awaiting_approval": [
-                    request_id
-                    for request_id, decision in self.approvals.items()
-                    if not decision.resolved
-                ],
+                "awaiting_approval": (
+                    [
+                        request
+                        for request in (
+                            self.aais.snapshot()["snapshot"]["pending"] if self.aais else []
+                        )
+                        if request.get("origin", {}).get("run_id") == self.run_id
+                    ]
+                    if self.aais
+                    else [
+                        request_id
+                        for request_id, decision in self.approvals.items()
+                        if not decision.resolved
+                    ]
+                ),
             }
 
     def publish(self, event: str, **payload: Any) -> None:
@@ -377,6 +394,14 @@ class RunHandle:
             self.condition.notify_all()
 
     def approval_provider(self, request: ApprovalRequest) -> ApprovalScope | None:
+        if self.aais is not None:
+            return self.aais.request(
+                request,
+                origin={"run_id": self.run_id},
+                publish=lambda event, envelope: self.publish(event, envelope=dict(envelope)),
+                allow_session=self.allow_session_scope,
+                cancelled=self.cancelled,
+            )
         decision = ApprovalDecision(scope=None)
         with self.condition:
             self.approvals[request.request_id] = decision
@@ -393,7 +418,23 @@ class RunHandle:
             return None
         return decision.scope
 
-    def resolve_approval(self, request_id: str, scope: ApprovalScope | None) -> None:
+    def resolve_approval(
+        self,
+        request_id: str,
+        scope: ApprovalScope | None,
+        *,
+        actor_id: str = "local-user",
+        decision_id: str | None = None,
+    ) -> None:
+        if self.aais is not None:
+            self.aais.decide(
+                request_id,
+                decision="approve" if scope is not None else "deny",
+                scope=scope or "once",
+                actor_id=actor_id,
+                decision_id=decision_id,
+            )
+            return
         if scope == "session" and not self.allow_session_scope:
             raise ValueError("Session-scoped approvals are disabled by policy.")
         with self.condition:
@@ -429,6 +470,7 @@ class RunManager:
         self.handles: dict[str, RunHandle] = {}
         self.active_conversations: set[str] = set()
         self.lock = threading.Lock()
+        self.aais = AAISBridge(self.project_root)
 
     def _participants(self, conversation: dict[str, Any]) -> list[str]:
         """Profiles that speak in one turn, in order."""
@@ -461,6 +503,7 @@ class RunManager:
             run_id,
             conversation_id,
             allow_session_scope=allow_session_scope,
+            aais=self.aais,
         )
         self.handles[run_id] = handle
         self._evict()

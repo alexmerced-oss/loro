@@ -5,6 +5,20 @@ profile management, and workspace defaults. It is an adapter over the existing L
 calls, tools, permissions, approvals, sandboxing, data protection, memory, profiles, sessions, and
 audit behavior remain authoritative.
 
+## Runtime Approvals (AAIS)
+
+The Web UI presents protected tool requests from chats, delegated work, and graph agents in one
+global modal. It shows the exact action, arguments, resource, risk reasons, digest, and authority-
+offered scopes while the originating job remains alive. Loro still owns policy and atomically records
+the resolution before releasing a tool. Graph workflow input gates remain graph inputs; authority
+decisions use AAIS.
+
+Other presenters can launch `loro run --approval-stdio`. Requests are emitted as
+[AAIS 1.0](https://github.com/alexmerced-oss/agent-approval-interchange-spec) NDJSON on standard
+output, decisions return on standard input, and logs remain on standard error. The Web API provides
+snapshot, cursor-based event, and decision endpoints below `/api/approvals` behind the existing
+local-session and CSRF protections.
+
 ## Install And Start
 
 Install the optional server dependencies:
@@ -93,10 +107,14 @@ normal validation and workspace-confined write path. This keeps an undeclared-to
 recoverable from the board without letting the editor grant authority beyond Loro's effective
 profile and managed policy.
 
-Human gates are the one place the browser participates in execution: a gate pauses the run and waits
-for an explicit Approve or Reject rather than being auto-approved. An unanswered gate times out
-after thirty minutes so it cannot pin a worker indefinitely. Discovery is bounded to four directory
-levels and skips dependency and VCS directories, and every path is confined to the workspace.
+Human gates and graph-card tool approvals both participate in browser execution. A gate pauses the
+run and waits for an explicit Approve or Reject rather than being auto-approved; a protected tool
+action shows its redacted action, target, and arguments through the same reconnectable prompt. The
+graph worker never falls back to a terminal question. Parallel requests are serialized so one card
+cannot replace another card's pending decision. An unanswered request times out after thirty minutes
+so it cannot pin a worker indefinitely. The Run center includes graph requests in its awaiting-
+approval count. Discovery is bounded to four directory levels and skips dependency and VCS
+directories, and every path is confined to the workspace.
 
 ## Conversations
 

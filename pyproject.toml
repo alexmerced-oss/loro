@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loro-agent"
-version = "0.19.1"
+version = "0.19.2"
 description = "Enterprise memory-sharing CLI agent harness for coding, governed data, and productivity work."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +27,7 @@ classifiers = [
   "Topic :: System :: Shells",
 ]
 dependencies = [
+  "agent-approval-interchange>=0.1.0,<0.2",
   "agentic-graph-spec>=1.0.1,<2",
   "open-agent-profile>=1.0.1,<2",
   "click>=8.1",

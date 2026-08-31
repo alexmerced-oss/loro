@@ -32,7 +32,7 @@ from loro.agraph.state import matches_type as _matches_type
 from loro.agraph.state import now as _now
 from loro.agraph.store import GraphRunStore
 from loro.agraph.validate import validate_graph
-from loro.approvals import ApprovalManager
+from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger
 from loro.config import LoroConfig
 from loro.data_protection import DataProtectionEngine
@@ -51,6 +51,7 @@ class RuntimeResult(Protocol):
 
 
 RuntimeFactory = Callable[[LoroConfig], AgentRuntime]
+ToolApprovalProvider = Callable[[ApprovalRequest], ApprovalScope | None]
 GateResponse = bool | Mapping[str, Any]
 GateProvider = Callable[[str, tuple[str, ...]], GateResponse]
 EventHandler = Callable[[str, Mapping[str, Any]], None]
@@ -69,6 +70,7 @@ class GraphExecutor:
         *,
         workspace: Path | None = None,
         gate_provider: GateProvider | None = None,
+        approval_provider: ToolApprovalProvider | None = None,
         runtime_factory: RuntimeFactory | None = None,
         external_checkers: Mapping[str, ExternalChecker] | None = None,
         event_handler: EventHandler | None = None,
@@ -76,7 +78,10 @@ class GraphExecutor:
         self.config = config
         self.workspace = (workspace or Path.cwd()).resolve()
         self.gate_provider = gate_provider
-        self.runtime_factory = runtime_factory or (lambda routed: AgentRuntime(routed))
+        self.approval_provider = approval_provider
+        self.runtime_factory = runtime_factory or (
+            lambda routed: AgentRuntime(routed, approval_provider=self.approval_provider)
+        )
         self.event_handler = event_handler
         self.protection = DataProtectionEngine(config.safety)
         self.identity = resolve_identity(config.identity)
@@ -1101,7 +1106,12 @@ class GraphExecutor:
             profile=profile_name,
             spec_digest=profile.resolved.spec_digest,
         )
-        return AgentRuntime(routed, profile=profile, _profile_cwd=self.workspace)
+        return AgentRuntime(
+            routed,
+            approval_provider=self.approval_provider,
+            profile=profile,
+            _profile_cwd=self.workspace,
+        )
 
     def _parallel_limit(self, graph: Mapping[str, Any]) -> int:
         requested = int(graph.get("constraints", {}).get("max_parallel_nodes", 1))

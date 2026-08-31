@@ -61,6 +61,7 @@ path to 1.0. Historical release documents are labeled as such.
 - [Enterprise Evidence Register](enterprise-evidence.md)
 - [External Enterprise Requirements](external-enterprise-requirements.md)
 - [Security And Supply Chain](security-supply-chain.md)
+- [Loro 0.19.2 Release Notes](releases/0.19.2.md)
 - [Loro 0.19.1 Release Notes](releases/0.19.1.md)
 - [Loro 0.19.0 Release Notes](releases/0.19.0.md)
 - [Loro 0.18.0 Release Notes](releases/0.18.0.md)

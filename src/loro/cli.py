@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import shutil
+import sys
+import threading
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -236,7 +238,10 @@ console = Console()
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
-def _runtime(agent_name: str | None = None) -> AgentRuntime:
+def _runtime(
+    agent_name: str | None = None,
+    approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
+) -> AgentRuntime:
     config = load_config()
     profile = None
     selected_agent = agent_name or config.agent_profiles.default_profile
@@ -255,7 +260,8 @@ def _runtime(agent_name: str | None = None) -> AgentRuntime:
     try:
         return AgentRuntime(
             config,
-            approval_provider=(
+            approval_provider=approval_provider
+            or (
                 lambda request: _prompt_for_approval(
                     request,
                     allow_session_scope=config.approvals.allow_session_scope,
@@ -593,9 +599,7 @@ def _create_and_print_artifact(
     _enforce_safe_content(prompt, context=context, allow_sensitive=allow_sensitive)
     if use_ai:
         config = load_config()
-        console.print(
-            f"Drafting {kind} with {config.model.provider}/{config.model.model}..."
-        )
+        console.print(f"Drafting {kind} with {config.model.provider}/{config.model.model}...")
     draft = (
         _generate_artifact_draft(kind, prompt, brief_type=brief_type, agent_name=agent_name)
         if use_ai
@@ -870,7 +874,7 @@ _GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
             "to control the session.",
             "Loro streams assistant text and reports tool starts, completions, approvals, "
             "usage, and the durable session ID.",
-            "Use `loro run \"TASK\"` for one-shot execution and `loro plan \"GOAL\"` for "
+            'Use `loro run "TASK"` for one-shot execution and `loro plan "GOAL"` for '
             "read-only planning.",
         ),
     ),
@@ -883,8 +887,8 @@ _GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
             "governed web retrieval.",
             "For consequential changes, ask Loro to inspect first, implement, run tests, "
             "and summarize evidence.",
-            "Example: `loro run \"Inspect this project, fix the failing tests without "
-            "changing public behavior, run the focused suite, and report changed files.\"`",
+            'Example: `loro run "Inspect this project, fix the failing tests without '
+            'changing public behavior, run the focused suite, and report changed files."`',
         ),
     ),
     "artifacts": (
@@ -901,7 +905,7 @@ _GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
     "graphs": (
         "Multi-step Agentic Graphs",
         (
-            "Generate with `loro graph generate \"GOAL\" --out workflow.agraph.yaml`.",
+            'Generate with `loro graph generate "GOAL" --out workflow.agraph.yaml`.',
             "Review with `loro graph validate workflow.agraph.yaml --strict` and `loro "
             "graph plan workflow.agraph.yaml --json`.",
             "Execute with `loro graph run workflow.agraph.yaml`; Loro asks you to approve "
@@ -914,7 +918,7 @@ _GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
         "Memory and durable sessions",
         (
             "Use local memory for preferences that should remain private to this installation: "
-            "`loro remember --local \"...\"`.",
+            '`loro remember --local "..."`.',
             "Shared memory is explicit and governed: propose, review drafts, then commit "
             "deliberately.",
             "Use `loro sessions list` and `loro sessions show ID` to inspect durable task history.",
@@ -1002,8 +1006,8 @@ def get_started(
             "Check configuration, identity, provider, sandbox, audit, and storage.",
         ),
         ("4", "loro", "Open the streaming folder REPL and start a durable session."),
-        ("5", "loro plan \"GOAL\"", "Preview consequential work before running it."),
-        ("6", "loro run \"TASK\"", "Execute a bounded one-shot task with visible tool activity."),
+        ("5", 'loro plan "GOAL"', "Preview consequential work before running it."),
+        ("6", 'loro run "TASK"', "Execute a bounded one-shot task with visible tool activity."),
     ]
     for row in steps:
         journey.add_row(*row)
@@ -1140,11 +1144,73 @@ def run(
     agent: Annotated[
         str | None, typer.Option("--agent", help="Run from a named Open Agent Profile.")
     ] = None,
+    approval_stdio: Annotated[
+        bool,
+        typer.Option(
+            "--approval-stdio",
+            help="Exchange AAIS 1.0 approval envelopes as NDJSON on stdout/stdin.",
+        ),
+    ] = False,
 ) -> None:
     """Run an agent task, optionally resuming a durable session."""
     try:
+        provider = None
+        if approval_stdio:
+            import signal
+
+            from loro.aais_bridge import AAISBridge
+
+            bridge = AAISBridge(Path.cwd())
+            cancelled = threading.Event()
+
+            def read_decisions() -> None:
+                try:
+                    for line in sys.stdin:
+                        try:
+                            envelope = json.loads(line)
+                            if envelope.get("type") != "approval.decided":
+                                continue
+                            decision = envelope["decision"]
+                            bridge.decide(
+                                str(decision["request_id"]),
+                                decision=str(decision["decision"]),
+                                scope=str(decision["scope"]),
+                                actor_id="stdio-user",
+                                decision_id=str(decision.get("id") or "") or None,
+                            )
+                        except Exception as error:
+                            print(
+                                json.dumps({"type": "aais.error", "error": str(error)}),
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                finally:
+                    cancelled.set()
+
+            def terminate(_signum, _frame) -> None:
+                cancelled.set()
+                bridge.cancel_active()
+                raise SystemExit(143)
+
+            threading.Thread(target=read_decisions, daemon=True, name="loro-aais-stdin").start()
+            signal.signal(signal.SIGTERM, terminate)
+
+            def provider(request):
+                return bridge.request(
+                    request,
+                    origin={},
+                    publish=lambda _event, envelope: print(json.dumps(envelope), flush=True),
+                    allow_session=load_config().approvals.allow_session_scope,
+                    cancelled=cancelled,
+                )
+
         result = _run_task(
-            prompt, mode="run", session_id=resume_session, stream=stream, agent_name=agent
+            prompt,
+            mode="run",
+            session_id=resume_session,
+            stream=stream,
+            agent_name=agent,
+            approval_provider=provider,
         )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
@@ -1160,10 +1226,11 @@ def _run_task(
     agent_name: str | None = None,
     on_token: Callable[[str], None] | None = None,
     on_event: RuntimeEventHandler | None = None,
+    approval_provider: Callable[[ApprovalRequest], ApprovalScope | None] | None = None,
 ):
     """Run one agent task, live-rendering tokens when streaming is requested."""
 
-    runtime = _runtime(agent_name)
+    runtime = _runtime(agent_name, approval_provider=approval_provider)
     if on_token is not None or on_event is not None:
         return runtime.run(
             prompt,
@@ -1227,13 +1294,15 @@ def plan(
                     prompt,
                     out,
                     config,
-                    lambda request: _run_task(
-                        request,
-                        mode="plan",
-                        session_id=None,
-                        stream=False,
-                        agent_name=None,
-                    ).response,
+                    lambda request: (
+                        _run_task(
+                            request,
+                            mode="plan",
+                            session_id=None,
+                            stream=False,
+                            agent_name=None,
+                        ).response
+                    ),
                 )
             )
             console.print(str(path))
@@ -2480,9 +2549,7 @@ def setup_webmcp(
             timeout_seconds=120,
         ),
     }
-    allowed_commands = list(
-        dict.fromkeys([*config.mcp.allowed_stdio_commands, "loro-webmcp"])
-    )
+    allowed_commands = list(dict.fromkeys([*config.mcp.allowed_stdio_commands, "loro-webmcp"]))
     config.mcp = config.mcp.model_copy(
         update={
             "enabled": True,

@@ -7,9 +7,9 @@ and the durable run records the executor already writes.
 
 Nothing here widens authority. Execution goes through `GraphExecutor`, so
 identity, permission policy, sandbox profiles, budgets and the audit log all
-apply exactly as they do from the terminal. Human gates are the one place the
-browser participates: a gate blocks the run until a decision arrives, rather
-than being auto-approved.
+apply exactly as they do from the terminal. Human gates and protected graph
+tool actions reach the browser: the run blocks until an explicit decision
+arrives rather than falling back to an invisible console prompt.
 """
 
 from __future__ import annotations
@@ -25,10 +25,12 @@ from uuid import uuid4
 
 import yaml
 
+from loro.aais_bridge import AAISBridge
 from loro.agraph.document import load_graph
 from loro.agraph.plan import build_plan
 from loro.agraph.store import GraphRunStore
 from loro.agraph.validate import validate_graph
+from loro.approvals import ApprovalRequest, ApprovalScope
 from loro.config import load_config
 from loro.data_protection import DataProtectionEngine
 
@@ -39,8 +41,17 @@ logger = logging.getLogger(__name__)
 MAX_DISCOVERY_DEPTH = 4
 MAX_DISCOVERED = 200
 SKIP_DIRECTORIES = {
-    ".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache",
-    ".pytest_cache", ".ruff_cache", "dist", "build", ".loro",
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".loro",
 }
 
 
@@ -216,6 +227,7 @@ class GraphRunHandle:
         self.record: dict[str, Any] | None = None
         self.error: str | None = None
         self.gate: GateRequest | None = None
+        self.cancelled = threading.Event()
 
     def publish(self, event_type: str, **payload: Any) -> None:
         with self.lock:
@@ -246,12 +258,19 @@ class GraphRunHandle:
 class GraphService:
     """Discovery, planning, and governed execution for the Web UI."""
 
-    def __init__(self, project_root: Path, *, max_concurrent: int = 2) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        max_concurrent: int = 2,
+        aais: AAISBridge | None = None,
+    ) -> None:
         self.project_root = project_root.resolve()
         self.handles: dict[str, GraphRunHandle] = {}
         self.semaphore = threading.BoundedSemaphore(max_concurrent)
         self.lock = threading.Lock()
         self.drafts: dict[str, dict[str, Any]] = {}
+        self.aais = aais or AAISBridge(self.project_root)
 
     # -- reads ---------------------------------------------------------------
 
@@ -466,37 +485,54 @@ class GraphService:
 
             config = load_config(self.project_root)
             path = confined_path(self.project_root, raw_path)
+            approval_lock = threading.RLock()
 
             def gate_provider(prompt: str, roles: Any) -> bool:
                 """Block the run on a browser decision instead of auto-approving."""
-                request = GateRequest(
-                    request_id=str(uuid4()),
-                    prompt=str(prompt),
-                    roles=[str(role) for role in (roles or [])],
+                # The UI intentionally presents one exact decision at a time.
+                # Serialising both human gates and tool approvals prevents a
+                # parallel graph card from replacing another pending prompt.
+                with approval_lock:
+                    request = GateRequest(
+                        request_id=str(uuid4()),
+                        prompt=str(prompt),
+                        roles=[str(role) for role in (roles or [])],
+                    )
+                    handle.gate = request
+                    handle.publish(
+                        "gate.requested",
+                        request_id=request.request_id,
+                        prompt=request.prompt,
+                        roles=request.roles,
+                    )
+                    # A gate that is never answered must not pin a worker forever.
+                    if not request.decided.wait(timeout=1800):
+                        handle.publish("gate.timeout", request_id=request.request_id)
+                        handle.gate = None
+                        return False
+                    handle.publish(
+                        "gate.resolved",
+                        request_id=request.request_id,
+                        approved=request.approved,
+                    )
+                    handle.gate = None
+                    return request.approved
+
+            def approval_provider(request: ApprovalRequest) -> ApprovalScope | None:
+                """Route graph-node tool authority through the same browser gate."""
+                return self.aais.request(
+                    request,
+                    origin={"run_id": handle.run_id},
+                    publish=lambda event, envelope: handle.publish(event, envelope=dict(envelope)),
+                    allow_session=config.approvals.allow_session_scope,
+                    cancelled=handle.cancelled,
                 )
-                handle.gate = request
-                handle.publish(
-                    "gate.requested",
-                    request_id=request.request_id,
-                    prompt=request.prompt,
-                    roles=request.roles,
-                )
-                # A gate that is never answered must not pin a worker forever.
-                if not request.decided.wait(timeout=1800):
-                    handle.publish("gate.timeout", request_id=request.request_id)
-                    return False
-                handle.publish(
-                    "gate.resolved",
-                    request_id=request.request_id,
-                    approved=request.approved,
-                )
-                handle.gate = None
-                return request.approved
 
             executor = GraphExecutor(
                 config,
                 workspace=path.parent,
                 gate_provider=gate_provider,
+                approval_provider=approval_provider,
                 event_handler=lambda event_type, payload: handle.publish(
                     event_type, **dict(payload)
                 ),

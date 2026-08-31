@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import textwrap
 import time
+from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -313,6 +314,64 @@ def test_active_reports_a_run_waiting_on_a_gate(tmp_path: Path) -> None:
     service.handles["run_gate"] = handle
 
     assert service.active()[0]["awaiting_gate"] is True
+
+
+def test_graph_tool_approval_is_answered_through_browser_gate(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A graph tool must never fall back to a hidden terminal prompt."""
+    from loro.approvals import ApprovalRequest
+
+    graph_execute = import_module("loro.agraph.execute")
+
+    observed: dict[str, object] = {}
+
+    class FakeExecutor:
+        def __init__(self, _config: object, **kwargs: object) -> None:
+            observed["provider"] = kwargs["approval_provider"]
+
+        def run(self, _path: Path, **_kwargs: object) -> dict[str, object]:
+            provider = observed["provider"]
+            request = ApprovalRequest(
+                action="shell.run",
+                target="workspace",
+                arguments={"command": "npm test"},
+                identity_subject="operator",
+                identity_tenant="local",
+                identity_session_id="graph-run",
+                policy_decision="ask",
+                policy_version="1",
+                policy_source="test",
+                policy_reason="Shell execution needs confirmation.",
+                risk_reason="Runs a local process.",
+            )
+            observed["decision"] = provider(request)  # type: ignore[operator]
+            return {"status": "succeeded"}
+
+    monkeypatch.setattr(graph_execute, "GraphExecutor", FakeExecutor)
+    service = GraphService(workspace)
+    handle = service.start("release.agraph.yaml")
+    deadline = time.monotonic() + 2
+    pending: list[dict[str, object]] = []
+    while not pending and time.monotonic() < deadline:
+        pending = service.aais.snapshot()["snapshot"]["pending"]
+        time.sleep(0.01)
+
+    assert pending
+    assert pending[0]["action"]["name"] == "shell.run"  # type: ignore[index]
+    assert pending[0]["action"]["arguments"]["command"] == "npm test"  # type: ignore[index]
+    service.aais.decide(
+        str(pending[0]["id"]),
+        decision="approve",
+        scope="once",
+        actor_id="test-operator",
+    )
+
+    deadline = time.monotonic() + 2
+    while handle.status == "running" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert handle.status == "succeeded"
+    assert observed["decision"] == "once"
 
 
 def test_active_is_empty_when_nothing_is_running(tmp_path: Path) -> None:

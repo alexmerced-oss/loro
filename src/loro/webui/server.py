@@ -46,6 +46,14 @@ class MessageCreate(BaseModel):
 class ApprovalResolve(BaseModel):
     decision: Literal["approve", "deny"]
     scope: Literal["once", "session"] = "once"
+    decision_id: str | None = Field(default=None, max_length=200)
+
+
+class AAISDecision(BaseModel):
+    request_id: str = Field(min_length=1, max_length=200)
+    decision: Literal["approve", "deny", "cancel"]
+    scope: Literal["once", "session", "persistent"] = "once"
+    decision_id: str | None = Field(default=None, max_length=200)
 
 
 class GraphRunRequest(BaseModel):
@@ -182,7 +190,7 @@ def create_app(
 
     from loro.webui.graphs import GraphService
 
-    graphs = GraphService(root)
+    graphs = GraphService(root, aais=runs.aais)
     schedules = ScheduleStore(root, lambda path: graphs.start(path))
     scheduler_stop = threading.Event()
 
@@ -685,10 +693,36 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             scope = payload.scope if payload.decision == "approve" else None
-            runs.get(run_id).resolve_approval(request_id, scope)
+            runs.get(run_id).resolve_approval(
+                request_id,
+                scope,
+                decision_id=payload.decision_id,
+            )
             return {"resolved": True, "decision": payload.decision, "scope": scope}
         except Exception as error:
             raise translate(error) from error
+
+    @app.get("/api/approvals/snapshot")
+    async def approval_snapshot() -> dict[str, Any]:
+        return runs.aais.snapshot()
+
+    @app.get("/api/approvals/events")
+    async def approval_events(after: int = 0) -> dict[str, Any]:
+        return {"events": runs.aais.events_after(after)}
+
+    @app.post("/api/approvals/decisions")
+    async def decide_aais(payload: AAISDecision) -> dict[str, Any]:
+        try:
+            resolution = runs.aais.decide(
+                payload.request_id,
+                decision=payload.decision,
+                scope=payload.scope,
+                actor_id="local-user",
+                decision_id=payload.decision_id,
+            )
+            return {"ok": True, "resolution": resolution}
+        except Exception as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.get("/api/profiles")
     async def list_profiles() -> list[dict[str, Any]]:
