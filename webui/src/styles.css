@@ -592,6 +592,7 @@ html:not([data-theme="dark"]) body{background:var(--c-0c100e)}
 .context-chips button,.context-action{border:0;background:transparent;color:var(--c-568167);padding:2px 4px;cursor:pointer}
 .context-action{font-weight:700;margin-right:5px}
 .workspace-switcher,.change-review,.extensions-page>section,.run-center-page>section{border:1px solid var(--c-d2d8d2);border-radius:12px;background:var(--c-fdfdfb);padding:16px;margin-bottom:16px}
+.webmcp-connect{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.webmcp-connect label{margin:0}.webmcp-invoke{margin-top:16px;padding:16px;border:1px solid var(--c-d2d8d2);border-radius:10px}.webmcp-invoke pre{max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--c-f3f5f2);padding:12px;border-radius:8px}.extension-grid article.selected{outline:2px solid var(--accent)}
 .workspace-switcher h2,.change-review h2,.extensions-page h2,.run-center-page h2{margin:0 0 12px;font-size:15px}
 .workspace-switcher article,.schedule-list article{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--c-e7e9e5)}
 .workspace-switcher small,.schedule-list small{display:block;color:var(--c-8d9b91);margin-top:3px}

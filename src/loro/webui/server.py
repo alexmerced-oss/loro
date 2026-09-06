@@ -128,6 +128,21 @@ class SettingsUpdate(BaseModel):
     default_profile: str | None = None
 
 
+class WebMCPNavigate(BaseModel):
+    url: str = Field(default="/", min_length=1, max_length=2_000)
+    wait_ms: int = Field(default=750, ge=0, le=10_000)
+
+
+class WebMCPInvoke(BaseModel):
+    # An empty URL reuses the page already opened by /api/webmcp/open.
+    url: str = Field(default="", max_length=2_000)
+    wait_ms: int = Field(default=750, ge=0, le=10_000)
+    name: str = Field(min_length=1, max_length=200)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    registry_revision: str = Field(default="", max_length=200)
+    approved: bool = False
+
+
 class ScheduleUpdate(BaseModel):
     enabled: bool
 
@@ -147,6 +162,9 @@ def create_app(
     settings = SettingsService(root)
     runs = RunManager(root, store)
     workspace = WorkspaceService(root)
+    from loro.webmcp_bridge import AlexMercedWebMCPBridge
+
+    webmcp = AlexMercedWebMCPBridge()
     sessions: dict[str, str] = {}
     app = FastAPI(title="Loro Web UI", version="1.0", docs_url=None, redoc_url=None)
     app.state.project_root = root
@@ -205,6 +223,7 @@ def create_app(
     @app.on_event("shutdown")
     async def stop_scheduler() -> None:
         scheduler_stop.set()
+        await webmcp.close()
 
     from loro.webui.governance import GovernanceService
     from loro.webui.memory import MemoryService
@@ -487,6 +506,48 @@ def create_app(
             return workspace.manage_extension(await request.json())
         except Exception as error:
             raise translate(error) from error
+
+    @app.get("/api/webmcp/status")
+    async def webmcp_status() -> dict[str, Any]:
+        return webmcp.status()
+
+    @app.post("/api/webmcp/open")
+    async def webmcp_open(payload: WebMCPNavigate) -> dict[str, Any]:
+        try:
+            return await webmcp.open(payload.url, payload.wait_ms)
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.post("/api/webmcp/call")
+    async def webmcp_call(payload: WebMCPInvoke) -> dict[str, Any]:
+        try:
+            inventory = await webmcp.list_tools(payload.url, payload.wait_ms)
+            tool = next((item for item in inventory["tools"] if item["name"] == payload.name), None)
+            if tool is None:
+                raise ValueError("That WebMCP tool is no longer registered. Refresh tools.")
+            annotations = tool.get("annotations") or {}
+            read_only = annotations.get("readOnlyHint") is True
+            if not read_only and not payload.approved:
+                return {
+                    "ok": False,
+                    "approval_required": True,
+                    "message": (
+                        "This site tool may change data. Review its arguments and approve once."
+                    ),
+                    "tool": tool,
+                    "registry_revision": inventory["registry_revision"],
+                }
+            return await webmcp.call_tool(
+                payload.name,
+                payload.arguments,
+                registry_revision=payload.registry_revision or inventory["registry_revision"],
+            )
+        except Exception as error:
+            raise translate(error) from error
+
+    @app.post("/api/webmcp/close")
+    async def webmcp_close() -> dict[str, Any]:
+        return await webmcp.close()
 
     @app.get("/api/workspaces")
     async def workspaces() -> dict[str, Any]:

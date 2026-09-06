@@ -2523,8 +2523,18 @@ def setup_webmcp(
         Path,
         typer.Option("--output", "-o", help="Config file to write."),
     ] = Path(".loro/config.local.toml"),
+    origins: Annotated[
+        str,
+        typer.Option(
+            "--origins",
+            help="Comma-separated exact HTTPS origins allowed for WebMCP navigation.",
+        ),
+    ] = "https://alexmerced.app",
 ) -> None:
-    """Enable the bundled, origin-restricted alexmerced.app WebMCP server."""
+    """Enable Loro's exact-origin, browser-backed WebMCP server."""
+    from loro.webmcp_bridge import normalize_webmcp_origins
+
+    allowed_origins = normalize_webmcp_origins(origins.split(","))
     config = load_config()
     server_id = "alexmerced-webmcp"
     browser_environment = [
@@ -2544,6 +2554,7 @@ def setup_webmcp(
         server_id: MCPServerConfig(
             transport="stdio",
             command="loro-webmcp",
+            args=["--origins", ",".join(allowed_origins)],
             env_allowlist=browser_environment,
             protocol_mode="auto",
             timeout_seconds=120,
@@ -2563,7 +2574,7 @@ def setup_webmcp(
         "config.webmcp_written",
         path=str(written),
         server_id=server_id,
-        origin="https://alexmerced.app",
+        origins=list(allowed_origins),
     )
     console.print(f"Configured {server_id}: {written}")
     console.print("Install the browser once with: playwright install chromium")

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.19",
+  "release_line": "0.20",
   "stability": "stabilization",
   "operating_system": "ubuntu-24.04",
   "python": "3.12",

@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.19.2` is an **experimental feature release built on the release-quality 0.10
+Loro `0.20.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged. Open Agent Profile and Agentic Graph support are aligned with their published 1.0
 specifications and compatible 1.x support libraries, while remaining experimental in Loro's product
@@ -114,7 +114,7 @@ support libraries. CI pins OAP commit `7fb633a1a59dd7636ffb0030d254f2f58934f74a`
 digests, and run records now use the canonical formats; older Loro profile encodings remain
 readable at the storage boundary. Final release evidence must be generated from the tagged commit.
 
-Release 0.19.2 adds the AAIS 1.0 authority/presenter boundary to chats, delegated agents, and graph
+Release 0.20.0 retains the AAIS 1.0 authority/presenter boundary for chats, delegated agents, and graph
 tools. Protected actions are persisted before presentation, resolved by digest-bound decisions,
 and available through the Web UI or the documented bidirectional standard-I/O transport without
 falling back to a hidden terminal prompt. This remains an experimental surface and does not expand

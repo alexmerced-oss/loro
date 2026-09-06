@@ -4,7 +4,7 @@ Loro is a Python CLI agent harness for enterprise coding, governed data work, an
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.19.2` is the current release. The deliberately limited `0.10` stable core remains
+Loro `0.20.0` is the pending release candidate. The deliberately limited `0.10` stable core remains
 the stabilization baseline. The OAP and AGS integrations remain pre-1.0 product surfaces, but are
 implemented against the published 1.0 specifications and compatible 1.x support libraries.
 See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0 gates.
@@ -23,7 +23,7 @@ Optional extras:
 python -m pip install "loro-agent[data]" # Postgres, Iceberg, and PyArrow support
 python -m pip install "loro-agent[aws]"  # AWS Bedrock adapter support
 python -m pip install "loro-agent[mcp]"  # MCP client support
-python -m pip install "loro-agent[webmcp]" # MCP + Playwright bridge for alexmerced.app
+python -m pip install "loro-agent[webmcp]" # MCP + Playwright exact-origin WebMCP bridge
 python -m pip install "loro-agent[gateway]" # Discord and signed chat gateway support
 python -m pip install "loro-agent[webui]" # Local multi-conversation Web UI
 python -m pip install "loro-agent[dev]"  # Development and test tools
@@ -373,9 +373,10 @@ loro setup webmcp
 
 Loro discovers the bundled `alexmerced-webmcp` skill during ordinary PDF, chart, data, media,
 notes, planning, and WebMCP tasks. The skill routes calls through Loro's existing MCP
-permission/profile boundary. The server is restricted to `https://alexmerced.app`, keeps a
-dedicated browser profile under `~/.local/share/loro/webmcp/`, and exposes only navigation, live
-tool discovery, and exact invocation. Webpage content cannot approve calls or widen policy.
+permission/profile boundary. The server defaults to `https://alexmerced.app`, accepts only reviewed
+exact HTTPS origins, keeps origin-isolated browser profiles under `~/.local/share/loro/webmcp/`,
+and exposes navigation, revision-bound discovery/invocation, status, and close operations. The Web
+UI presents the same workflow on Extensions. Webpage content cannot approve calls or widen policy.
 
 Loro can also serve an explicit read-only capability subset and load digest-tracked Agent Skills:
 
