@@ -404,6 +404,15 @@ def create_app(
             raise translate(error) from error
         return {"run_id": handle.run_id}
 
+    @app.get("/api/graphs/runs/{run_id}/recovery")
+    async def graph_recovery(run_id: str):
+        from loro.agraph.recovery import recovery_summary
+
+        try:
+            return recovery_summary(graphs.record(run_id))
+        except (FileNotFoundError, ValueError) as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
     @app.get("/api/graphs/runs/{run_id}/events")
     async def graph_events(run_id: str, after: int = -1):
         try:
@@ -762,6 +771,10 @@ def create_app(
             return {"resolved": True, "decision": payload.decision, "scope": scope}
         except Exception as error:
             raise translate(error) from error
+
+    @app.get("/api/approvals/recovery")
+    async def approval_recovery() -> dict[str, Any]:
+        return runs.aais.recovery()
 
     @app.get("/api/approvals/snapshot")
     async def approval_snapshot() -> dict[str, Any]:

@@ -1,5 +1,7 @@
 # Loro
 
+Next release: [0.21.0 preparation notes](docs/releases/0.21.0.md).
+
 Loro is a Python CLI agent harness for enterprise coding, governed data work, and productivity tasks.
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.

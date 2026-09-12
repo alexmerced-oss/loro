@@ -1,3 +1,4 @@
+import { GraphRecovery } from "./GraphRecovery";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { request } from "./api";
@@ -527,6 +528,8 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
           </button>
         </div>
       </div>
+
+      <GraphRecovery setError={setError} />
 
       <section className="graph-author">
         <div className="graph-author-head">

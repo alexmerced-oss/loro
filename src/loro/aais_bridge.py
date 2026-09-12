@@ -6,8 +6,11 @@ import copy
 import json
 import os
 import re
+import tempfile
 import threading
+import time
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,7 +18,7 @@ from typing import Any
 
 from aais import ApprovalStore, ConflictError, create_decision, create_request, validate
 
-from loro.approvals import ApprovalRequest, ApprovalScope
+from loro.approvals import ApprovalError, ApprovalRequest, ApprovalScope, JsonApprovalStore
 
 Envelope = dict[str, Any]
 Publisher = Callable[[str, Mapping[str, Any]], None]
@@ -45,6 +48,7 @@ class AAISBridge:
         self.project_root = project_root.resolve()
         self.path = self.project_root / ".loro" / "aais-pending.json"
         self._lock = threading.RLock()
+        self._disk = JsonApprovalStore(self.path)
         self._waiters: dict[str, _Waiter] = {}
         self._publishers: dict[str, Publisher] = {}
 
@@ -65,20 +69,36 @@ class AAISBridge:
             return self._empty()
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return self._empty()
-        return value if isinstance(value, dict) else self._empty()
+        except (OSError, json.JSONDecodeError) as error:
+            raise ApprovalError(f"Approval state requires recovery: {self.path}") from error
+        expected = self._empty()
+        if (
+            not isinstance(value, dict)
+            or any(
+                key not in value or not isinstance(value[key], type(default))
+                for key, default in expected.items()
+            )
+            or value["schema"] != expected["schema"]
+        ):
+            raise ApprovalError(f"Invalid approval state; preserve and recover {self.path}")
+        return value
 
     def _write(self, state: Mapping[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        descriptor, name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
+        temporary = Path(name)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(state, handle, sort_keys=True, separators=(",", ":"))
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
+            with suppress(OSError):
+                directory = os.open(self.path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -117,7 +137,7 @@ class AAISBridge:
                 }
             )
         choices.append({"decision": "deny", "scope": "once", "label": "Deny"})
-        with self._lock:
+        with self._lock, self._disk._locked():
             state = self._read()
             now = datetime.now(UTC)
             envelope = create_request(
@@ -142,6 +162,7 @@ class AAISBridge:
                 expires_at=_time(now + timedelta(seconds=timeout)),
             )
             state["pending"][request.request_id] = envelope
+            state.setdefault("owners", {})[request.request_id] = os.getpid()
             state["events"].append(envelope)
             state["events"] = state["events"][-1000:]
             self._write(state)
@@ -149,19 +170,30 @@ class AAISBridge:
             self._waiters[request.request_id] = waiter
             self._publishers[request.request_id] = publish
         publish("approval.requested", envelope)
-        while not waiter.resolved.wait(timeout=0.25):
-            if cancelled.is_set():
-                self.cancel(request.request_id)
-                break
-            timeout -= 0.25
-            if timeout <= 0:
-                self.deny(request.request_id, actor_id="loro.timeout")
-                break
-        with self._lock:
-            scope = waiter.scope
-            self._waiters.pop(request.request_id, None)
-            self._publishers.pop(request.request_id, None)
-        return scope
+        deadline = time.monotonic() + timeout
+        try:
+            while not waiter.resolved.wait(timeout=0.1):
+                with self._lock, self._disk._locked():
+                    resolution = self._read()["resolutions"].get(request.request_id)
+                if resolution:
+                    waiter.resolution = resolution
+                    body = resolution["resolution"]
+                    waiter.scope = (
+                        body.get("effective_scope") if body["outcome"] == "approved" else None
+                    )
+                    publish("approval.resolved", resolution)
+                    break
+                if cancelled.is_set() or time.monotonic() >= deadline:
+                    with suppress(ConflictError):
+                        if cancelled.is_set():
+                            self.cancel(request.request_id)
+                        else:
+                            self.deny(request.request_id, actor_id="loro.timeout")
+            return None if cancelled.is_set() else waiter.scope
+        finally:
+            with self._lock:
+                self._waiters.pop(request.request_id, None)
+                self._publishers.pop(request.request_id, None)
 
     def decide(
         self,
@@ -171,10 +203,11 @@ class AAISBridge:
         scope: str,
         actor_id: str,
         decision_id: str | None = None,
+        reviewed_digest: str | None = None,
     ) -> Envelope:
         publisher: Publisher | None
         waiter: _Waiter | None
-        with self._lock:
+        with self._lock, self._disk._locked():
             state = self._read()
             prior = state["resolutions"].get(request_id)
             previous = state["decisions"].get(request_id)
@@ -188,6 +221,16 @@ class AAISBridge:
             pending = state["pending"].get(request_id)
             if not pending:
                 raise ValueError(f"unknown pending approval: {request_id}")
+            if (
+                reviewed_digest is not None
+                and reviewed_digest != pending["request"]["action_digest"]
+            ):
+                raise ConflictError("Decision digest does not match the reviewed action")
+            owner = state.get("owners", {}).get(request_id)
+            if decision == "approve" and owner is not None and not self._owner_alive(owner):
+                raise ConflictError(
+                    "The issuing process stopped; inspect recovery before starting new work"
+                )
             decided = create_decision(
                 pending,
                 decision=decision,
@@ -214,6 +257,7 @@ class AAISBridge:
             state["decisions"][request_id] = decided
             state["resolutions"][request_id] = resolution
             state["events"].append(resolution)
+            state["events"] = state["events"][-1000:]
             self._write(state)
             waiter = self._waiters.get(request_id)
             publisher = self._publishers.get(request_id)
@@ -244,16 +288,42 @@ class AAISBridge:
                 pass
         return len(request_ids)
 
+    @staticmethod
+    def _owner_alive(pid: int | None) -> bool:
+        from loro.process_liveness import process_alive
+
+        return process_alive(pid)
+
+    def recovery(self) -> Envelope:
+        with self._lock, self._disk._locked():
+            state = self._read()
+            owners = state.get("owners", {})
+            return {
+                "orphaned": [
+                    key
+                    for key in state["pending"]
+                    if key in owners and not self._owner_alive(owners[key])
+                ],
+                "unknown_owner": [key for key in state["pending"] if key not in owners],
+                "receipts": list(state["resolutions"].values())[-100:],
+                "guidance": (
+                    "Stopped owners are not restarted. "
+                    "Inspect completed effects before creating a new run."
+                ),
+            }
+
     def snapshot(self) -> Envelope:
-        with self._lock:
+        with self._lock, self._disk._locked():
             state = self._read()
             machine = ApprovalStore(last_sequence=int(state.get("sequence", 0)))
-            for envelope in state["pending"].values():
-                machine.add(validate(envelope))
+            for key, envelope in state["pending"].items():
+                owner = state.get("owners", {}).get(key)
+                if owner is None or self._owner_alive(owner):
+                    machine.add(validate(envelope))
             return machine.snapshot(stream="loro.approvals")
 
     def events_after(self, sequence: int) -> list[Envelope]:
-        with self._lock:
+        with self._lock, self._disk._locked():
             return [
                 copy.deepcopy(item)
                 for item in self._read()["events"]

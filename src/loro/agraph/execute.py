@@ -214,6 +214,13 @@ class GraphExecutor:
             )
         if isinstance(record.get("nodes"), list):
             record["nodes"] = {node["node_id"]: node for node in record["nodes"]}
+        uncertain = [key for key, node in record["nodes"].items() if node["status"] == "running"]
+        if uncertain and not force:
+            raise GraphExecutionError(
+                "Run has uncertain effects in nodes "
+                + ", ".join(uncertain)
+                + "; inspect `loro graph recovery` and use --force only after reviewing effects"
+            )
         for node in record["nodes"].values():
             if node["status"] == "awaiting_human":
                 node["status"] = "pending"
@@ -572,8 +579,7 @@ class GraphExecutor:
                         "attempt": attempt_number,
                         "status": "running",
                         "activity": (
-                            "The routed model is executing the card with its declared "
-                            "capabilities."
+                            "The routed model is executing the card with its declared capabilities."
                         ),
                     },
                 )

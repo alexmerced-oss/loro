@@ -2,8 +2,6 @@ import asyncio
 import json
 import os
 import shutil
-import sys
-import threading
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -954,6 +952,18 @@ _GET_STARTED_TOPICS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+@app.command("capabilities")
+def capabilities_cmd(json_output: bool = typer.Option(True, "--json/--no-json")) -> None:
+    """Inspect installed runtime capabilities without running a model or opening a site."""
+    from loro.capability_readiness import capability_report
+
+    report = capability_report()
+    if json_output:
+        console.print_json(data=report)
+    else:
+        console.print(report)
+
+
 @app.command("get-started")
 def get_started(
     topic: Annotated[
@@ -1156,53 +1166,9 @@ def run(
     try:
         provider = None
         if approval_stdio:
-            import signal
+            from loro.aais_stdio import create_stdio_provider
 
-            from loro.aais_bridge import AAISBridge
-
-            bridge = AAISBridge(Path.cwd())
-            cancelled = threading.Event()
-
-            def read_decisions() -> None:
-                try:
-                    for line in sys.stdin:
-                        try:
-                            envelope = json.loads(line)
-                            if envelope.get("type") != "approval.decided":
-                                continue
-                            decision = envelope["decision"]
-                            bridge.decide(
-                                str(decision["request_id"]),
-                                decision=str(decision["decision"]),
-                                scope=str(decision["scope"]),
-                                actor_id="stdio-user",
-                                decision_id=str(decision.get("id") or "") or None,
-                            )
-                        except Exception as error:
-                            print(
-                                json.dumps({"type": "aais.error", "error": str(error)}),
-                                file=sys.stderr,
-                                flush=True,
-                            )
-                finally:
-                    cancelled.set()
-
-            def terminate(_signum, _frame) -> None:
-                cancelled.set()
-                bridge.cancel_active()
-                raise SystemExit(143)
-
-            threading.Thread(target=read_decisions, daemon=True, name="loro-aais-stdin").start()
-            signal.signal(signal.SIGTERM, terminate)
-
-            def provider(request):
-                return bridge.request(
-                    request,
-                    origin={},
-                    publish=lambda _event, envelope: print(json.dumps(envelope), flush=True),
-                    allow_session=load_config().approvals.allow_session_scope,
-                    cancelled=cancelled,
-                )
+            provider = create_stdio_provider(Path.cwd())
 
         result = _run_task(
             prompt,

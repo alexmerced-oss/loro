@@ -1,31 +1,71 @@
 {
   "schema_version": "1.0",
-  "release_line": "0.20",
+  "release_line": "0.21",
   "stability": "stabilization",
   "python": {
-    "supported": ["3.11", "3.12", "3.13", "3.14"]
+    "supported": [
+      "3.11",
+      "3.12",
+      "3.13",
+      "3.14"
+    ]
   },
   "operating_systems": {
-    "supported": ["linux"],
-    "experimental": ["macos", "windows"]
+    "supported": [
+      "linux"
+    ],
+    "experimental": [
+      "macos",
+      "windows"
+    ]
   },
   "memory_backends": {
-    "supported": ["local", "postgres"],
-    "experimental": ["iceberg"]
+    "supported": [
+      "local",
+      "postgres"
+    ],
+    "experimental": [
+      "iceberg"
+    ]
   },
   "provider_protocols": {
-    "supported": ["openai-compatible", "anthropic", "gemini"],
-    "experimental": ["bedrock"]
+    "supported": [
+      "openai-compatible",
+      "anthropic",
+      "gemini"
+    ],
+    "experimental": [
+      "bedrock"
+    ]
   },
   "governed_data": {
-    "experimental": ["polaris-cli", "iceberg-rest"]
+    "experimental": [
+      "polaris-cli",
+      "iceberg-rest"
+    ]
   },
   "extensions": {
-    "supported": ["agent-skills", "claude-skill-import", "pi-skill-import"],
-    "experimental": ["mcp", "agentic-graphs", "open-agent-profile-v1", "local-webui"]
+    "supported": [
+      "agent-skills",
+      "claude-skill-import",
+      "pi-skill-import"
+    ],
+    "experimental": [
+      "mcp",
+      "agentic-graphs",
+      "open-agent-profile-v1",
+      "local-webui"
+    ]
   },
   "remote_gateways": {
-    "experimental": ["slack", "discord", "telegram", "teams", "signal-bridge", "generic"]
+    "experimental": [
+      "slack",
+      "discord",
+      "telegram",
+      "teams",
+      "signal-bridge",
+      "generic"
+    ]
   },
   "known_limitations": [
     "Production identity assertion verification is deployment-owned.",

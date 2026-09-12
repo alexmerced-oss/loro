@@ -39,6 +39,7 @@
       "meeting",
       "project"
     ],
+    "capabilities": [],
     "config": [
       "check",
       "show",
@@ -91,6 +92,7 @@
       "generate",
       "plan",
       "policy",
+      "recovery",
       "resume",
       "run",
       "skill-path",
@@ -233,13 +235,13 @@
     ]
   },
   "digests": {
-    "data_support_matrix": "sha256:2cb8eb4b2ece92d502e2024f54627631f76ff42d6e4b30fd41eb647937c9ae2d",
-    "interoperability_matrix": "sha256:4139f0f1746be12e177a0ac4b70bd0d6f893cf259de33b3235e9d3693ab39998",
-    "oap_conformance": "sha256:9298070bb93d023134eba0a8976bec2262086dd56e1d47a343782ba59664994d",
+    "data_support_matrix": "sha256:c81c733f1db924476fb792bf82cff71c9f0b19e604f90870c92f43e86c3746b9",
+    "interoperability_matrix": "sha256:6a0a2c88adf004d27fff9ed7ce74c8646a63b946c0aa25a33dee8cc3295d2615",
+    "oap_conformance": "sha256:9eac9acbb1f9b1b93b5b4a118fbb7b33f5f3341594aeccd1a807fbc8c1fdbf93",
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
-    "reference_deployment": "sha256:292ff64be890f40408b4f1b5255a8491b132026fdb9a9a6b71d85ff7dc2c9975",
+    "reference_deployment": "sha256:b23aab83d94450613e3ebfca68e22504454a430db2c29620c4f38fe8277e6f6e",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:8f18f9634a5a6638a455956c164caa448272fbffaacc4d4395453a8ed4cc8d95"
+    "support_matrix": "sha256:fc1b3c7c6f3e039165dba107195aaeeab16f07fae163f341a818863f6b508add"
   },
   "experimental": {
     "extensions": [
@@ -280,7 +282,7 @@
     "production-backup-restore-and-disaster-recovery",
     "production-provider-audit-and-gateway-evidence"
   ],
-  "package_version": "0.20.0",
+  "package_version": "0.21.0",
   "protocols": {
     "agentic_graph": "1.0",
     "mcp": [
@@ -296,7 +298,7 @@
       "openai-compatible"
     ]
   },
-  "release_line": "0.20",
+  "release_line": "0.21",
   "schema_version": "1.0",
   "schemas": {
     "approval": "1.0",

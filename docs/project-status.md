@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.20.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.21.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged. Open Agent Profile and Agentic Graph support are aligned with their published 1.0
 specifications and compatible 1.x support libraries, while remaining experimental in Loro's product

@@ -1,5 +1,7 @@
 # Loro Roadmap To 1.0
 
+The 0.21.0 release candidate focuses on durable approvals, capability readiness and explicit graph recovery. See [release preparation notes](releases/0.21.0.md). The stable-core and enterprise GA boundaries below remain unchanged.
+
 ## Purpose
 
 This is the single authoritative roadmap for work remaining after Loro `0.17.0`. It records the
