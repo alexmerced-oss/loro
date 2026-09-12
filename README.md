@@ -1,6 +1,6 @@
 # Loro
 
-Next release: [0.21.0 preparation notes](docs/releases/0.21.0.md).
+Release: [0.21.0 release notes](docs/releases/0.21.0.md).
 
 Loro is a Python CLI agent harness for enterprise coding, governed data work, and productivity tasks.
 
