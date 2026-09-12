@@ -289,12 +289,10 @@ class AAISBridge:
         return len(request_ids)
 
     @staticmethod
-    def _owner_alive(pid: int) -> bool:
-        try:
-            os.kill(pid, 0)
-            return True
-        except (OSError, TypeError, ValueError):
-            return False
+    def _owner_alive(pid: int | None) -> bool:
+        from loro.process_liveness import process_alive
+
+        return process_alive(pid)
 
     def recovery(self) -> Envelope:
         with self._lock, self._disk._locked():
