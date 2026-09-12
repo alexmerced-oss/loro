@@ -174,6 +174,19 @@ def graph_status(run_id: Annotated[str, typer.Argument(help="Durable graph run i
     console.print_json(data=record)
 
 
+@graph_app.command("recovery")
+def graph_recovery(run_id: Annotated[str, typer.Argument(help="Durable graph run id.")]) -> None:
+    """Show completed, pending and uncertain work before deciding to resume."""
+    from loro.agraph.recovery import recovery_summary
+
+    config = load_config()
+    try:
+        record = GraphRunStore(config.agraph, DataProtectionEngine(config.safety)).get(run_id)
+        console.print_json(data=recovery_summary(record))
+    except (FileNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+
+
 @graph_app.command("resume")
 def graph_resume(
     run_id: Annotated[str, typer.Argument(help="Durable graph run id.")],
@@ -240,9 +253,7 @@ def graph_generate(
                 goal,
                 output,
                 config,
-                lambda prompt: runtime.run(
-                    prompt, mode="plan", session_id=None
-                ).response,
+                lambda prompt: runtime.run(prompt, mode="plan", session_id=None).response,
             )
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error

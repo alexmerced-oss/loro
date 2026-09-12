@@ -639,3 +639,26 @@ def test_fallback_and_global_budget_failure(tmp_path: Path) -> None:
     ).run(path, plan_approved=True)
     assert record["status"] == "failed"
     assert record["diagnostics"][0]["code"] == "RT031"
+
+
+def test_recovery_refuses_uncertain_node_without_explicit_review(tmp_path):
+    from loro.agraph.execute import GraphExecutionError
+    from loro.agraph.recovery import recovery_summary
+
+    record = {
+        "run_id": "run-recovery",
+        "status": "running",
+        "graph_digest": "sha256:old",
+        "metadata": {},
+        "nodes": {"done": {"status": "succeeded"}, "write": {"status": "running"}},
+    }
+    report = recovery_summary(record)
+    assert report["completed_nodes"] == ["done"]
+    assert report["uncertain_nodes"] == ["write"]
+    config = LoroConfig.model_validate(
+        {"agraph": {"state_path": str(tmp_path / "runs")}, "safety": {"enabled": False}}
+    )
+    executor = GraphExecutor(config, workspace=tmp_path)
+    executor.store.save(record)
+    with pytest.raises(GraphExecutionError, match="uncertain effects"):
+        executor.resume("run-recovery")

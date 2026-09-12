@@ -66,7 +66,7 @@ This map reflects Loro 0.17.0. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
+loro: capabilities, agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
 loro agents: apply, configure, create, digest, explain, forget, generate, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list
@@ -77,7 +77,7 @@ loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, 
 loro docs: create
 loro file: read, search
 loro gateway: doctor, serve, setup
-loro graph: generate, plan, policy, resume, run, skill-path, status, validate
+loro graph: recovery, generate, plan, policy, resume, run, skill-path, status, validate
 loro identity: doctor, show
 loro mcp: add, auth-add, auth-list, auth-remove, call, doctor, extension-add, extensions, inspect, list, listen, prompt, prompts, read, remove, resources, serve, server-inspect, task-cancel, task-get, task-start, task-update, tasks, test, tools
 loro config: check, show, summary

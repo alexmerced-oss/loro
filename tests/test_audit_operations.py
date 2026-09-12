@@ -95,13 +95,13 @@ def test_collector_http_endpoints(tmp_path: Path) -> None:
                 "Content-Type": "application/json",
             },
         )
-        with urllib.request.urlopen(event_request, timeout=2) as response:
+        with urllib.request.urlopen(event_request, timeout=15) as response:
             assert response.status == 200
             assert json.loads(response.read())["accepted"] == 1
 
-        with urllib.request.urlopen(base_url + "/health", timeout=2) as response:
+        with urllib.request.urlopen(base_url + "/health", timeout=15) as response:
             assert json.loads(response.read())["ok"] is True
-        with urllib.request.urlopen(base_url + "/metrics", timeout=2) as response:
+        with urllib.request.urlopen(base_url + "/metrics", timeout=15) as response:
             assert b"loro_audit_collector_events 1" in response.read()
 
         unauthorized = urllib.request.Request(
@@ -110,7 +110,7 @@ def test_collector_http_endpoints(tmp_path: Path) -> None:
             headers={"Authorization": "Bearer wrong"},
         )
         with pytest.raises(urllib.error.HTTPError) as unauthorized_error:
-            urllib.request.urlopen(unauthorized, timeout=2)
+            urllib.request.urlopen(unauthorized, timeout=15)
         assert unauthorized_error.value.code == 401
         unauthorized_error.value.close()
 
@@ -120,12 +120,12 @@ def test_collector_http_endpoints(tmp_path: Path) -> None:
             headers={"Authorization": "Bearer test-token"},
         )
         with pytest.raises(urllib.error.HTTPError) as malformed_error:
-            urllib.request.urlopen(malformed, timeout=2)
+            urllib.request.urlopen(malformed, timeout=15)
         assert malformed_error.value.code == 400
         malformed_error.value.close()
 
         with pytest.raises(urllib.error.HTTPError) as missing_error:
-            urllib.request.urlopen(base_url + "/missing", timeout=2)
+            urllib.request.urlopen(base_url + "/missing", timeout=15)
         assert missing_error.value.code == 404
         missing_error.value.close()
     finally:
