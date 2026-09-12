@@ -25,7 +25,8 @@ def capability_report() -> dict[str, Any]:
                 + json.dumps(str(Path(cli).parent))
                 + ").chromium.executablePath())"
             )
-            result = subprocess.run(
+            # Installed Playwright driver and fixed script; no user command or shell.
+            result = subprocess.run(  # nosec B603
                 [node, "-e", script], capture_output=True, text=True, timeout=3, check=True
             )
             browser = Path(result.stdout).is_file()
