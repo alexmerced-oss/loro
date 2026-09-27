@@ -18,6 +18,7 @@ loro graph validate release.agraph.yaml --strict
 loro graph plan release.agraph.yaml --json
 loro graph run release.agraph.yaml --dry-run
 loro graph run release.agraph.yaml --params '{"release":"0.3.0"}'
+loro graph run release.agraph.yaml --param release=0.3.0 --param-file defaults.json
 loro graph run release.agraph.yaml --yes \
   --remember-outcome "Release 0.3.0 passed the approved readiness graph."
 loro graph status RUN_ID
@@ -107,9 +108,10 @@ loro graph resume RUN_ID --params '{"endpoint": "..."}'
 loro graph resume RUN_ID --param-file values.json   # a JSON object
 ```
 
-`--param NAME=VALUE` is repeatable; its value is text for `string` params and JSON for other
-declared types (`--param retries=3`). When sources overlap, `--params` is applied first, then
-`--param-file`, then each `--param`. In a terminal, Loro asks for each missing value with hidden
+`graph run` and `graph resume` share these options and one parser. `--param NAME=VALUE` is
+repeatable; its value is text for `string` params and JSON for other declared types
+(`--param retries=3`). When sources overlap, `--params` is applied first, then `--param-file`,
+then each `--param`. In a terminal, Loro asks for each missing value with hidden
 input. Without a terminal it exits with code 2 and names the params to supply. The executor also
 refuses any param that contains a marker, whoever starts the run, and it checks before
 consuming a `--force` approval, so the command can be retried with the values.

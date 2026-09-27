@@ -1,4 +1,5 @@
-"""Resuming a graph run must never feed a redaction marker back in place of a real value."""
+"""Graph params on the CLI: shared --param/--params/--param-file parsing, and resume never
+feeding a redaction marker back in place of a real value."""
 
 from __future__ import annotations
 
@@ -173,3 +174,50 @@ def test_cli_param_rejects_malformed_pairs(tmp_path, monkeypatch) -> None:
     _cli_env(tmp_path, monkeypatch)
     result = CliRunner().invoke(app, ["graph", "resume", run_id, "--param", "novalue"])
     assert result.exit_code == 2 and "NAME=VALUE" in result.output
+
+
+def _dry_run(tmp_path: Path, monkeypatch, *extra: str) -> dict:
+    _cli_env(tmp_path, monkeypatch)
+    graph = tmp_path / "params.agraph.yaml"
+    graph.write_text(GRAPH, encoding="utf-8")
+    result = CliRunner().invoke(app, ["graph", "run", str(graph), "--dry-run", *extra])
+    assert result.exit_code == 0, result.output
+    return json.loads(result.output)
+
+
+def test_cli_run_shares_the_resume_param_options_and_precedence(tmp_path, monkeypatch) -> None:
+    values = tmp_path / "values.json"
+    values.write_text(json.dumps({"endpoint": "https://file.example.test", "retries": 2}))
+    record = _dry_run(
+        tmp_path,
+        monkeypatch,
+        "--params",
+        json.dumps({"endpoint": "https://params.example.test", "retries": 1}),
+        "--param-file",
+        str(values),
+        "--param",
+        "endpoint=https://param.example.test",
+    )
+    # --params, then --param-file, then each --param; --param-file wins for retries.
+    assert record["metadata"]["params"] == {
+        "endpoint": "https://param.example.test",
+        "retries": 2,
+    }
+
+
+def test_cli_run_param_values_use_json_for_non_string_types(tmp_path, monkeypatch) -> None:
+    record = _dry_run(tmp_path, monkeypatch, "--param", "endpoint=3", "--param", "retries=3")
+    assert record["metadata"]["params"] == {"endpoint": "3", "retries": 3}
+
+
+def test_cli_run_rejects_malformed_param_sources(tmp_path, monkeypatch) -> None:
+    _cli_env(tmp_path, monkeypatch)
+    graph = tmp_path / "params.agraph.yaml"
+    graph.write_text(GRAPH, encoding="utf-8")
+    runner = CliRunner()
+    bad_pair = runner.invoke(app, ["graph", "run", str(graph), "--dry-run", "--param", "x"])
+    assert bad_pair.exit_code == 2 and "NAME=VALUE" in bad_pair.output
+    missing = runner.invoke(
+        app, ["graph", "run", str(graph), "--dry-run", "--param-file", str(tmp_path / "no.json")]
+    )
+    assert missing.exit_code == 2 and "--param-file" in missing.output

@@ -95,12 +95,66 @@ def graph_policy_explain(
         raise typer.Exit(code=1)
 
 
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _param_value(raw: str, spec: Mapping[str, Any] | None) -> Any:
+    """A --param or prompted value: text for string params, JSON for other declared types."""
+
+    if spec is None or spec.get("type") in (None, "string"):
+        return raw
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _param_values(
+    params: str, param_file: Path | None, pairs: list[str], specs: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Merge --params, then --param-file, then each --param NAME=VALUE (later wins)."""
+
+    values: dict[str, Any] = {}
+    sources: list[tuple[str, str]] = [("--params", params)]
+    if param_file is not None:
+        try:
+            sources.append((f"--param-file {param_file}", param_file.read_text(encoding="utf-8")))
+        except OSError as error:
+            raise ValueError(f"cannot read --param-file {param_file}: {error.strerror}") from error
+    for label, text in sources:
+        try:
+            loaded = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{label} is not valid JSON: {error.msg}") from error
+        if not isinstance(loaded, dict):
+            raise ValueError(f"{label} must be a JSON object")
+        values.update(loaded)
+    for pair in pairs:
+        name, separator, raw = pair.partition("=")
+        if not separator or not name:
+            raise ValueError(f"--param expects NAME=VALUE, got {pair.split('=')[0]!r}")
+        values[name] = _param_value(raw, specs.get(name))
+    return values
+
+
 @graph_app.command("run")
 def graph_run(
     path: Annotated[Path, typer.Argument(help="AGS JSON or YAML document.")],
     params: Annotated[
         str, typer.Option("--params", help="JSON object of graph parameters.")
     ] = "{}",
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            help="One graph parameter as NAME=VALUE (repeatable; JSON for non-string types).",
+        ),
+    ] = None,
+    param_file: Annotated[
+        Path | None,
+        typer.Option("--param-file", help="JSON file with graph parameters."),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Validate and persist a plan without executing.")
     ] = False,
@@ -116,14 +170,16 @@ def graph_run(
         ),
     ] = None,
 ) -> None:
-    """Execute a governed Agentic Graph."""
+    """Execute a governed Agentic Graph.
+
+    Parameters come from --params, then --param-file, then each --param (later wins).
+    """
     config = load_config()
     if yes and not config.approvals.allow_non_interactive:
         raise typer.BadParameter("--yes is denied by approvals.allow_non_interactive")
     try:
-        values = json.loads(params)
-        if not isinstance(values, dict):
-            raise ValueError("params must be an object")
+        specs = (_load(path).data.get("params") or {}) if path.is_file() else {}
+        values = _param_values(params, param_file, list(param or []), specs)
         executor = GraphExecutor(
             config,
             workspace=path.resolve().parent,
@@ -189,49 +245,6 @@ def graph_recovery(run_id: Annotated[str, typer.Argument(help="Durable graph run
         raise typer.BadParameter(str(error)) from error
 
 
-def _interactive() -> bool:
-    return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def _param_value(raw: str, spec: Mapping[str, Any] | None) -> Any:
-    """A --param or prompted value: text for string params, JSON for other declared types."""
-
-    if spec is None or spec.get("type") in (None, "string"):
-        return raw
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def _resume_values(
-    params: str, param_file: Path | None, pairs: list[str], specs: Mapping[str, Any]
-) -> dict[str, Any]:
-    """Merge --params, then --param-file, then each --param NAME=VALUE (later wins)."""
-
-    values: dict[str, Any] = {}
-    sources: list[tuple[str, str]] = [("--params", params)]
-    if param_file is not None:
-        try:
-            sources.append((f"--param-file {param_file}", param_file.read_text(encoding="utf-8")))
-        except OSError as error:
-            raise ValueError(f"cannot read --param-file {param_file}: {error.strerror}") from error
-    for label, text in sources:
-        try:
-            loaded = json.loads(text)
-        except json.JSONDecodeError as error:
-            raise ValueError(f"{label} is not valid JSON: {error.msg}") from error
-        if not isinstance(loaded, dict):
-            raise ValueError(f"{label} must be a JSON object")
-        values.update(loaded)
-    for pair in pairs:
-        name, separator, raw = pair.partition("=")
-        if not separator or not name:
-            raise ValueError(f"--param expects NAME=VALUE, got {pair.split('=')[0]!r}")
-        values[name] = _param_value(raw, specs.get(name))
-    return values
-
-
 @graph_app.command("resume")
 def graph_resume(
     run_id: Annotated[str, typer.Argument(help="Durable graph run id.")],
@@ -273,7 +286,7 @@ def graph_resume(
         specs: Mapping[str, Any] = {}
         if source and Path(source).is_file():
             specs = _load(Path(source)).data.get("params", {}) or {}
-        values = _resume_values(params, param_file, list(param or []), specs)
+        values = _param_values(params, param_file, list(param or []), specs)
         executor = GraphExecutor(
             config,
             workspace=workspace,
