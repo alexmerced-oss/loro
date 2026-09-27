@@ -240,6 +240,21 @@ def mcp_resource(
     )
 
 
+def web_resource(url: str, *, operation: str = "fetch") -> NormalizedResource:
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return NormalizedResource(
+        kind="web",
+        fields={
+            "operation": operation,
+            "scheme": parts.scheme,
+            "host": (parts.hostname or "").lower(),
+            "url": url,
+        },
+    )
+
+
 def resource_from_payload(payload: Mapping[str, Any]) -> NormalizedResource:
     kind = payload.get("kind")
     if not isinstance(kind, str) or not kind.strip():

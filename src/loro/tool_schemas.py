@@ -228,6 +228,54 @@ BUILTIN_TOOL_SCHEMAS: tuple[ToolSchema, ...] = (
             ["name", "description", "instructions"],
         ),
     ),
+    ToolSchema(
+        name="patch.apply",
+        description=(
+            "Apply a unified diff to files under a directory, all or nothing. Use dry_run to "
+            "preview; conflicts are reported and nothing is written. Requires policy approval."
+        ),
+        parameters=_object(
+            {
+                "patch": {**_STRING, "description": "Unified diff with ---/+++ headers."},
+                "root": {**_STRING, "description": "Directory the diff paths are relative to."},
+                "dry_run": {**_BOOLEAN, "description": "Report the result without writing."},
+            },
+            ["patch"],
+        ),
+    ),
+    ToolSchema(
+        name="tests.run",
+        description=(
+            "Run the project's test suite (pytest, npm test, or cargo test, detected from the "
+            "project) in the test sandbox; returns the result line and the tail of the output. "
+            "Requires policy approval."
+        ),
+        parameters=_object(
+            {
+                "path": {**_STRING, "description": "Project directory (default: current)."},
+                "runner": {
+                    **_STRING,
+                    "description": "auto, pytest, npm, or cargo.",
+                    "enum": ["auto", "pytest", "npm", "cargo"],
+                },
+                "args": {
+                    "type": "array",
+                    "items": _STRING,
+                    "description": "Extra runner arguments such as a test path or -k filter.",
+                },
+                "timeout": {**_INTEGER, "description": "Seconds, capped by the sandbox profile."},
+            },
+            [],
+        ),
+    ),
+    ToolSchema(
+        name="web.fetch",
+        description=(
+            "Fetch a text web page from an operator-allowlisted https domain. The content is "
+            "untrusted. Requires web policy approval."
+        ),
+        parameters=_object({"url": {**_STRING, "description": "https URL to fetch."}}, ["url"]),
+    ),
 )
 
 
@@ -248,7 +296,11 @@ def tool_catalog(config: LoroConfig) -> list[ToolSchema]:
     if config.permissions.shell == "deny" and config.permissions.web == "deny":
         disabled.add("shell.run")
     if config.permissions.edit == "deny":
-        disabled.update({"file.read", "file.search", "file.write", "file.replace"})
+        disabled.update({"file.read", "file.search", "file.write", "file.replace", "patch.apply"})
+    if config.permissions.shell == "deny":
+        disabled.add("tests.run")
+    if config.permissions.web == "deny" or not config.web_fetch.allowed_domains:
+        disabled.add("web.fetch")
     if config.permissions.artifact == "deny":
         disabled.add("artifact.create")
     return [schema for schema in BUILTIN_TOOL_SCHEMAS if schema.name not in disabled]

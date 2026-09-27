@@ -204,6 +204,20 @@ def _default_sandbox_profiles() -> dict[str, SandboxProfileConfig]:
             max_seconds=60,
             max_output_bytes=250_000,
         ),
+        "test-runner": SandboxProfileConfig(
+            # npm-cli.js is what an nvm-installed npm resolves to.
+            allowed_executables=[
+                "python*",
+                "pytest",
+                "npm",
+                "npm-cli.js",
+                "node",
+                "cargo",
+                "rustc",
+            ],
+            max_seconds=900,
+            max_output_bytes=2_000_000,
+        ),
     }
 
 
@@ -214,6 +228,7 @@ class SandboxConfig(BaseModel):
     governed_data_profile: str = "governed-data"
     mcp_stdio_profile: str = "mcp-stdio"
     skill_profile: str = "skill-script"
+    test_profile: str = "test-runner"
     profiles: dict[str, SandboxProfileConfig] = Field(default_factory=_default_sandbox_profiles)
 
     @model_validator(mode="before")
@@ -230,6 +245,7 @@ class SandboxConfig(BaseModel):
             str(data.get("governed_data_profile", "governed-data")),
             str(data.get("mcp_stdio_profile", "mcp-stdio")),
             str(data.get("skill_profile", "skill-script")),
+            str(data.get("test_profile", "test-runner")),
         ):
             if selected not in profiles and selected in defaults:
                 profiles[selected] = defaults[selected]
@@ -242,6 +258,7 @@ class SandboxConfig(BaseModel):
         "governed_data_profile",
         "mcp_stdio_profile",
         "skill_profile",
+        "test_profile",
     )
     @classmethod
     def _normalize_profile_name(cls, value: str) -> str:
@@ -260,6 +277,7 @@ class SandboxConfig(BaseModel):
                 self.governed_data_profile,
                 self.mcp_stdio_profile,
                 self.skill_profile,
+                self.test_profile,
             )
             if name not in self.profiles
         }
@@ -741,6 +759,17 @@ class AuditConfig(BaseModel):
     forward: AuditForwardConfig = Field(default_factory=AuditForwardConfig)
 
 
+class WebFetchConfig(BaseModel):
+    """The web.fetch tool. It is refused until domains are allowlisted and web policy allows."""
+
+    allowed_domains: list[str] = Field(default_factory=list)  # exact hosts or "*.example.com"
+    allow_http: bool = False
+    max_bytes: int = Field(default=500_000, ge=1024, le=10_000_000)
+    timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    max_redirects: int = Field(default=3, ge=0, le=10)
+    user_agent: str = "Loro web.fetch (+https://github.com/alexmerced-oss/loro)"
+
+
 class TelemetryConfig(BaseModel):
     """OpenTelemetry traces and metrics (requires the loro-agent[otel] extra)."""
 
@@ -1030,6 +1059,7 @@ class LoroConfig(BaseModel):
     sessions: SessionConfig = Field(default_factory=SessionConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+    web_fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
