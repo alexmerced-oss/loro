@@ -20,6 +20,7 @@ path to 1.0. Historical release documents are labeled as such.
 - [Run Evidence Bundles](run-evidence.md)
 - [Multi-User Server Mode](multi-user.md)
 - [Plugins And Hooks](plugins.md)
+- [General Availability Readiness](ga-readiness.md)
 - [Coding Tools: Patches, Tests, And Web Fetch](coding-tools.md)
 - [Observability: OpenTelemetry And SIEM Forwarding](observability.md)
 - [Reference Audit Collector](audit-collector.md)

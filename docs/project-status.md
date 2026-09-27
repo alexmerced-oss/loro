@@ -189,3 +189,6 @@ private interface and may change between minor releases.
 | Official conformance scenarios for 2026-07-28 | Not met: the published runner has no 2026-07-28 scenarios yet |
 | stdio servers run under an OS-enforced sandbox by default | Not met: the default `mcp-stdio` profile uses the process backend |
 | Protected deployment evidence with real third-party servers | Not met (external) |
+
+The full path to an enterprise 1.0, including the gates only others can meet, is in
+[General Availability Readiness](ga-readiness.md).
