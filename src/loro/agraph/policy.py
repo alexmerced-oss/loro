@@ -112,7 +112,10 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
             findings.append(
                 PolicyFinding(
                     "LP006",
-                    "command criteria are disabled by managed policy",
+                    (
+                        "command criteria are disabled by graph policy; an administrator can "
+                        "enable them with [agraph] allow_command_criteria = true"
+                    ),
                     f"{pointer}/success/criteria",
                 )
             )
@@ -120,7 +123,10 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
             findings.append(
                 PolicyFinding(
                     "LP007",
-                    "external criteria are disabled by managed policy",
+                    (
+                        "external criteria are disabled by graph policy; an administrator can "
+                        "enable them with [agraph] allow_external_criteria = true"
+                    ),
                     f"{pointer}/success/criteria",
                 )
             )

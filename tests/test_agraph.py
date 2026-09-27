@@ -662,3 +662,14 @@ def test_recovery_refuses_uncertain_node_without_explicit_review(tmp_path):
     executor.store.save(record)
     with pytest.raises(GraphExecutionError, match="uncertain effects"):
         executor.resume("run-recovery")
+
+
+def test_command_criteria_finding_names_the_setting_that_enables_it() -> None:
+    config = LoroConfig()
+    graph = generate_graph("Prepare evidence", config)
+    graph["nodes"]["execute"]["success"] = {"criteria": [{"kind": "command", "command": ["true"]}]}
+    [finding] = [f for f in evaluate_policy(graph, config.agraph) if f.code == "LP006"]
+    # The default config, not a managed overlay, disables command criteria, so the message
+    # must not blame managed policy and must say how to enable them.
+    assert "managed" not in finding.message
+    assert "allow_command_criteria = true" in finding.message
