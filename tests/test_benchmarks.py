@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -42,7 +43,18 @@ def test_reference_benchmark_rejects_invalid_counts(
         run_reference_benchmarks(iterations=iterations, warmup=warmup)
 
 
-def test_operations_benchmark_cli_writes_evidence(tmp_path: Path) -> None:
+@pytest.mark.parametrize("passed", [True, False])
+def test_operations_benchmark_cli_writes_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, passed: bool
+) -> None:
+    # Measure for real, then pin the verdict: whether wall-clock p95 targets are met depends
+    # on machine load, while this test covers evidence output and the --strict exit code.
+    real = run_reference_benchmarks
+
+    def pinned(**kwargs):
+        return dataclasses.replace(real(**kwargs), passed=passed)
+
+    monkeypatch.setattr("loro.cli.run_reference_benchmarks", pinned)
     output = tmp_path / "benchmark.json"
 
     result = CliRunner().invoke(
@@ -60,5 +72,5 @@ def test_operations_benchmark_cli_writes_evidence(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.exit_code == 0, result.output
-    assert json.loads(output.read_text(encoding="utf-8"))["passed"] is True
+    assert result.exit_code == (0 if passed else 1), result.output
+    assert json.loads(output.read_text(encoding="utf-8"))["passed"] is passed
