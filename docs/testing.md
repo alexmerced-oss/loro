@@ -5,6 +5,7 @@ Run the standard suite:
 ```bash
 python -m pytest
 python -m ruff check .
+python -m ruff format --check .
 python -m mypy
 python -m compileall src tests
 ```
@@ -34,7 +35,7 @@ still growing.
 The main GitHub Actions workflow runs on pushes and pull requests to `main`:
 
 - install `.[dev]`
-- `python -m ruff check .`
+- `python -m ruff check .` and `python -m ruff format --check .`
 - `python -m mypy`
 - `python scripts/check_release_metadata.py` (advisory on branches, strict on release tags)
 - `python -m pytest --cov --cov-report=term-missing --cov-report=xml`

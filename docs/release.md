@@ -7,6 +7,7 @@ Use this checklist before tagging or publishing Loro.
 ```bash
 python -m pip install -e ".[dev]"
 python -m ruff check .
+python -m ruff format --check .
 PYTHONPATH=src python scripts/check_audit_inventory.py
 PYTHONPATH=src python scripts/check_enterprise_evidence.py
 python scripts/check_data_support_matrix.py
