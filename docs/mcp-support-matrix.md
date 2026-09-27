@@ -1,5 +1,9 @@
 # MCP Support Matrix
 
+Support status (0.22): Loro's MCP server at `2025-11-25` is a supported surface; the MCP client
+and the `2026-07-28` revision remain experimental. See
+[Promotion Gates](project-status.md#promotion-gates-022).
+
 This matrix defines what Loro advertises. A combination is supported only when its unit,
 interoperability, and official conformance evidence is green for the release commit.
 

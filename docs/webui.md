@@ -5,6 +5,10 @@ profile management, and workspace defaults. It is an adapter over the existing L
 calls, tools, permissions, approvals, sandboxing, data protection, memory, profiles, sessions, and
 audit behavior remain authoritative.
 
+Support status (0.22): the loopback, launch-token, single-user mode is supported. OIDC sign-in,
+non-loopback binding and multi-user use are experimental. See
+[Promotion Gates](project-status.md#promotion-gates-022).
+
 ## Runtime Approvals (AAIS)
 
 The Web UI presents protected tool requests from chats, delegated work, and graph agents in one

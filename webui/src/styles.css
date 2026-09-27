@@ -763,3 +763,36 @@ select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
 .account-card b{font-size:14px}
 .account-card span{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-card button{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:8px 12px;font-size:12px;flex:none}
+
+/* Extensions view: it inherited browser-default buttons and inputs (white fields in dark mode)
+   and light-only borders. Scoped here so other views are unaffected. */
+.extensions-page section{border:1px solid var(--line);border-radius:12px;padding:0 18px 18px;margin-bottom:18px;background:var(--c-121814)}
+.extensions-page .section-heading{padding:18px 0 12px;align-items:flex-start;gap:12px}
+.extensions-page .section-heading h2 span{font:500 10px 'DM Mono';letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 8px;margin-left:8px;vertical-align:middle}
+.extensions-page section>p,.extensions-page .webmcp-panel>p{color:var(--muted);font-size:12px;margin:6px 0 0}
+.extensions-page section>p b{color:var(--ink)}
+.extensions-page button:not(.secondary-action):not(.modal-close){border:0;background:var(--green);color:var(--c-102015);border-radius:7px;padding:9px 14px;font-weight:700;font-size:12px;white-space:nowrap;flex:none}
+.extensions-page button:disabled{opacity:.5}
+.extensions-page .secondary-action{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:6px 10px;font-size:11px}
+.extensions-page .secondary-action.danger{color:var(--c-e7a3a3)}
+.extensions-page label{display:grid;gap:6px;color:var(--c-a2afa6);font-size:10px;font-weight:600}
+.extensions-page input,.extensions-page textarea,.extensions-page select{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:6px;color:var(--ink);padding:9px;font-size:12px;min-width:0}
+.extensions-page input:focus-visible,.extensions-page textarea:focus-visible,.extensions-page button:focus-visible{outline:2px solid var(--c-82c899);outline-offset:2px}
+.extensions-page .extension-grid article{border-color:var(--line);background:var(--c-0e1310)}
+.extensions-page .extension-grid p,.extensions-page .extension-grid small{color:var(--muted);font-size:11px}
+.extensions-page .webmcp-invoke{border-color:var(--line)}
+.extensions-page .webmcp-invoke pre{background:var(--c-0e1310);color:var(--ink)}
+@media(max-width:680px){.extensions-page .webmcp-connect{grid-template-columns:1fr}.extensions-page .section-heading{flex-wrap:wrap}.extensions-page section{padding:0 14px 14px}}
+.extensions-page section>h2,.extensions-page section>div>h2:only-child{margin:18px 0 6px}
+/* Run center and workspace controls use the themed button and field styles too. */
+.run-center-page .page-header>div:last-child{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.run-center-page button:not(.secondary-action),.workspace-page button:not(.secondary-action):not(.modal-close){border:0;background:var(--green);color:var(--c-102015);border-radius:7px;padding:9px 14px;font-weight:700;font-size:12px;white-space:nowrap}
+.run-center-page button:disabled{opacity:.5}
+.run-center-page .secondary-action,.workspace-page .secondary-action{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:8px 12px;font-size:12px}
+.run-center-page label,.workspace-page label{display:grid;gap:6px;color:var(--c-a2afa6);font-size:10px;font-weight:600}
+.run-center-page input,.run-center-page select,.workspace-page input,.workspace-page select{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:6px;color:var(--ink);padding:9px;font-size:12px;min-width:0}
+.run-center-page button:focus-visible,.run-center-page input:focus-visible,.run-center-page select:focus-visible{outline:2px solid var(--c-82c899);outline-offset:2px}
+.schedule-section form{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:10px;align-items:end}
+.run-empty{color:var(--muted);font-size:12px;margin:4px 0 0}
+.run-metrics b{font-size:22px}
+@media(max-width:680px){.schedule-section form{grid-template-columns:1fr}.run-center-page .page-header{flex-direction:column;gap:12px}.run-center-page .page-header>div:last-child{justify-content:flex-start}}

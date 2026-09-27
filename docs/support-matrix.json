@@ -48,13 +48,17 @@
     "supported": [
       "agent-skills",
       "claude-skill-import",
-      "pi-skill-import"
+      "pi-skill-import",
+      "local-webui",
+      "mcp-server-2025-11-25"
     ],
     "experimental": [
-      "mcp",
       "agentic-graphs",
       "open-agent-profile-v1",
-      "local-webui"
+      "mcp-client",
+      "mcp-2026-07-28",
+      "webui-oidc-signin",
+      "webui-non-loopback"
     ]
   },
   "remote_gateways": {
@@ -68,12 +72,14 @@
     ]
   },
   "known_limitations": [
-    "Production identity assertion verification is deployment-owned.",
+    "OIDC token verification is available but experimental; identity provider configuration, token lifetimes, and review remain deployment-owned.",
     "Process sandbox mode is not an operating-system security boundary.",
-    "Iceberg, Polaris, MCP, and remote gateways require protected deployment evidence before stable support.",
+    "Iceberg, Polaris, the MCP client, and remote gateways require protected deployment evidence before stable support.",
     "Per-user and per-tenant period budgets require an external shared gateway or coordinator.",
     "The reference audit collector needs deployment-managed TLS, immutable retention, and external chain anchoring.",
     "The declared recovery targets require validation in each organization's managed environment.",
-    "OAP and AGS are aligned to pinned 1.0.1 schemas and conformance fixtures but remain experimental Loro product surfaces until the 1.0 compatibility promise is promoted."
+    "OAP and AGS are aligned to pinned 1.0.1 schemas and conformance fixtures but remain experimental Loro product surfaces until the 1.0 compatibility promise is promoted.",
+    "Stable Web UI support covers the loopback, launch-token, single-user mode only; OIDC sign-in, non-loopback binding and multi-user use are experimental.",
+    "Stable MCP support covers Loro's MCP server (read-only tool exports, resources, prompts) at protocol revision 2025-11-25; the MCP client and the 2026-07-28 revision are experimental."
   ]
 }

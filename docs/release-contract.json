@@ -247,14 +247,16 @@
     "reference_compose": "sha256:076021813f8488de4b31e948639f9b2848e4ddc7c1916bcc6fbe653b6e2fcf17",
     "reference_deployment": "sha256:b23aab83d94450613e3ebfca68e22504454a430db2c29620c4f38fe8277e6f6e",
     "reference_managed_policy": "sha256:0f92465c2dc186eaec64434c705ecdc11b017558458bfeec31753691d58b19f1",
-    "support_matrix": "sha256:fc1b3c7c6f3e039165dba107195aaeeab16f07fae163f341a818863f6b508add"
+    "support_matrix": "sha256:ebd137d2049343b17e678e325417e2e11bbbcaa90ce3039ed1ed55539b66af6d"
   },
   "experimental": {
     "extensions": [
-      "mcp",
       "agentic-graphs",
       "open-agent-profile-v1",
-      "local-webui"
+      "mcp-client",
+      "mcp-2026-07-28",
+      "webui-oidc-signin",
+      "webui-non-loopback"
     ],
     "governed_data": [
       "polaris-cli",
@@ -321,7 +323,9 @@
     "extensions": [
       "agent-skills",
       "claude-skill-import",
-      "pi-skill-import"
+      "pi-skill-import",
+      "local-webui",
+      "mcp-server-2025-11-25"
     ],
     "memory_backends": [
       "local",

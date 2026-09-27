@@ -20,8 +20,11 @@ The versioned [support matrix](support-matrix.json) is authoritative. Its suppor
 - Agent Skills plus reviewed Claude and Pi Skill import;
 - governed coding tools and document, presentation, spreadsheet, and brief artifacts.
 
-Iceberg/Polaris, MCP, Agentic Graphs, Bedrock, the local Web UI, and remote chat gateways remain experimental in
-the 0.10 compatibility promise. Their implementations, policy controls, tests, and documentation
+Iceberg/Polaris, the MCP client, Agentic Graphs, Bedrock, OIDC sign-in, non-loopback and
+multi-user Web UI use, and remote chat gateways remain experimental. From 0.22 the local Web UI
+(loopback, launch token, single user) and Loro's MCP server at protocol revision 2025-11-25 are
+supported; the gates that justified each promotion, and the ones that keep the rest experimental,
+are in [Promotion Gates](#promotion-gates-022). Their implementations, policy controls, tests, and documentation
 are available for controlled qualification, but they are not silently promoted into the stable
 surface.
 
@@ -137,3 +140,52 @@ The [Roadmap To 1.0](roadmap-1.0.md) is the sole forward roadmap. The
 [External Enterprise Requirements](external-enterprise-requirements.md) and
 [Enterprise Evidence Register](enterprise-evidence.md) define the evidence needed to promote
 the stabilization baseline without overstating readiness.
+
+## Promotion Gates (0.22)
+
+A surface moves from experimental to supported only when every gate below is met with evidence in
+this repository or its CI. Gates that need evidence Loro cannot produce itself (a penetration test,
+a protected deployment, a pilot organization) keep a surface experimental until that evidence is
+linked.
+
+### Local Web UI: loopback, launch token, single user (promoted to supported)
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Every API route family has automated tests, including authentication, CSRF and origin checks | Met | `tests/test_webui*.py` (about 120 tests) |
+| Frontend type-checks and unit tests pass, and the committed bundle matches its source | Met | `.github/workflows/webui.yml` (vitest, rebuild, stale-bundle check, start-up smoke test) |
+| Stored conversations survive upgrades | Met | Versioned SQLite schema with migration tests (`test_migration_preserves_existing_conversations`) |
+| Every view reviewed at 1440 and 375 px in light and dark themes with no horizontal overflow | Met for the 0.22 branch | Automated overflow audit plus reviewed screenshots of all ten views; fixes in this release: composer pushed off-screen in long chats, 375 px overflow, unstyled Extensions and Run center controls |
+| Keyboard access, focus and contrast audits | Met | Two audit passes recorded in [Local Web UI](webui.md#accessibility); new sign-in controls have visible focus |
+| It uses the same runtime, policy, approvals and audit as the CLI | Met | Web UI runs through `AgentRuntime`; approvals through the AAIS store |
+
+Scope of the promise: `loro web` on a loopback address with the per-launch token, one user. The
+browser UI, its URL, and stored conversations are covered; the `/api/*` routes are the UI's
+private interface and may change between minor releases.
+
+### Web UI OIDC sign-in, non-loopback binding, multi-user use (still experimental)
+
+| Gate | Status |
+| --- | --- |
+| Verified identity for every request | Met in 0.22 (`loro web --auth oidc`), new in this release, so not yet proven in use |
+| Role-based access control per user | Not met in 0.22 (planned with multi-user server mode) |
+| Shared, durable session and approval storage for more than one server process | Not met |
+| Independent security review or penetration test of the remote configuration | Not met (external) |
+| Deployment evidence behind a TLS proxy with a production identity provider | Not met (external) |
+
+### MCP server, protocol revision 2025-11-25 (promoted to supported)
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Official conformance scenarios for every advertised server capability pass | Met | `MCP Conformance` workflow: `@modelcontextprotocol/conformance` 0.1.16 server scenarios, green on the v0.21.0 tag and weekly on `main`; must be green again on the 0.22.0 tag |
+| Official SDK interoperability tests pass | Met | `tests/test_mcp_sdk.py`, `tests/test_mcp_server.py` |
+| Least privilege: only explicitly exported read-only tools, deny by default | Met | `mcp.server.export_tools` ceiling tests; [MCP](mcp.md) |
+| DNS-rebinding protection on Streamable HTTP | Met | `dns-rebinding-protection` conformance scenario |
+
+### MCP client, and protocol revision 2026-07-28 (still experimental)
+
+| Gate | Status |
+| --- | --- |
+| Official conformance scenarios for 2026-07-28 | Not met: the published runner has no 2026-07-28 scenarios yet |
+| stdio servers run under an OS-enforced sandbox by default | Not met: the default `mcp-stdio` profile uses the process backend |
+| Protected deployment evidence with real third-party servers | Not met (external) |
