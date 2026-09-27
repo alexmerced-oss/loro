@@ -8,6 +8,7 @@ import { WorkspaceView } from "./WorkspaceView";
 import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
+import { messageMeta } from "./messageMeta";
 import { ApprovalCenter } from "./ApprovalCenter";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeRun, initialize, request, streamRun } from "./api";
@@ -277,6 +278,12 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
                 // bubble and flush the finished reply so each voice stays a
                 // separate message.
                 if (eventName === "speaker.started") setSpeaker(String(data.profile || ""));
+                // Earlier turns were folded into a summary to fit the context budget;
+                // say so, since the reply can no longer quote them word for word.
+                if (eventName === "context.compacted") {
+                  const count = Number(data.compacted_messages || 0);
+                  setNotice(`Summarized ${count} earlier message${count === 1 ? "" : "s"} to fit the context budget.`);
+                }
                 if (eventName === "speaker.finished") { setSpeaker(""); void refresh(); }
                 if (["run.failed", "run.cancelled"].includes(eventName)) setError(data.error);
               },
@@ -416,7 +423,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
 }
 
 function MessageBubble({ message }: { message: Message }) {
-  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? (String(message.metadata?.profile || "") || "Loro") : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{String(message.metadata.stop_reason)} · {String((message.metadata.usage as any)?.total_tokens || 0)} tokens</div>}</div>;
+  return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? (String(message.metadata?.profile || "") || "Loro") : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{messageMeta(message.metadata)}</div>}</div>;
 }
 
 function EmptyChat({ onNew }: { onNew: () => void }) { return <div className="welcome-message"><div className="avatar">🦜</div><h2>Your local agent workspace</h2><p>Create a conversation to begin.</p><button className="primary-action" onClick={onNew}>New conversation</button></div>; }

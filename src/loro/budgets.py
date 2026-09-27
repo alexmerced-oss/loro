@@ -115,6 +115,12 @@ def _integer(payload: dict[str, Any], *names: str) -> int:
     return 0
 
 
+def estimate_tokens(content: str) -> int:
+    """Rough provider-neutral token estimate (about four characters per token)."""
+
+    return _estimate_tokens(content)
+
+
 def _estimate_tokens(content: str) -> int:
     if not content:
         return 0

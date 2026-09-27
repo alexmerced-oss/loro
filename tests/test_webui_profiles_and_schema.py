@@ -320,8 +320,10 @@ def _run_group(
             self.profile = kwargs.get("profile")
 
         def run(self, prompt, **kwargs):
-            # Record which profile spoke and what it could see.
-            seen.append(prompt)
+            # Record which profile spoke and what it could see: the prompt plus any
+            # native history turns (context.mode = messages).
+            history = kwargs.get("history") or []
+            seen.append("\n\n".join([prompt, *(item.content for item in history)]))
             name = getattr(self.profile, "name", None) or "default"
             return _FakeResult(f"reply from {name}")
 
@@ -373,7 +375,12 @@ def _config_stub():
         safety=SimpleNamespace(),
         approvals=SimpleNamespace(allow_session_scope=True),
         model=SimpleNamespace(provider="mock", model="mock-agent"),
+        context=SimpleNamespace(mode=_CONTEXT_MODE[0]),
     )
+
+
+# Tests switch the stub between context modes; messages is the product default.
+_CONTEXT_MODE = ["messages"]
 
 
 def test_every_participant_speaks_once_per_turn(monkeypatch, tmp_path: Path) -> None:
@@ -462,3 +469,14 @@ def test_a_solo_conversation_is_unchanged(monkeypatch, tmp_path: Path) -> None:
         if message["role"] == "assistant"
     ]
     assert len(replies) == 1
+
+
+def test_summary_mode_flattens_the_transcript_into_the_prompt(monkeypatch, tmp_path: Path) -> None:
+    _CONTEXT_MODE[0] = "summary"
+    try:
+        _, _, _, prompts = _run_group(monkeypatch, tmp_path, ["reviewer", "release-notes"])
+    finally:
+        _CONTEXT_MODE[0] = "messages"
+    assert "<conversation-history" not in prompts[0]
+    assert '<conversation-history authority="untrusted">' in prompts[1]
+    assert "ASSISTANT: reply from reviewer" in prompts[1]

@@ -395,6 +395,10 @@ loro run --resume-session <recipient-id> "Continue."
 Relayed messages are durable untrusted context and never carry user authority. See
 [Cross-Session Messaging](session-messaging.md).
 
+Resuming a session (`--resume-session`, `/resume ID`, or consecutive REPL turns) sends its earlier
+turns to the model as native messages, compacted to a token budget, unless `context.mode` is
+`summary`. See [Conversation Context](configuration.md#conversation-context).
+
 ## Safety
 
 ```bash

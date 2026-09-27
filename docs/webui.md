@@ -129,10 +129,19 @@ folder it was launched for. The Workspaces view identifies adjacent Loro project
 exact `loro web -C <path>` launch command; it does not silently widen one server's filesystem
 authority to another project.
 
-The Web UI stores its transcript separately from the existing session summary format. This keeps
-the CLI session contract backward compatible while allowing a traditional multi-turn chat. Up to
-40 recent user and assistant messages, bounded to 50,000 UTF-8 bytes, are supplied as explicitly
-untrusted context on the next turn. This context cannot grant authority or bypass policy.
+The Web UI stores its transcript in its own database. With the default `context.mode =
+"messages"` (see [Conversation Context](configuration.md#conversation-context)), each turn sends
+the earlier user and assistant messages to the model as native turns through the same runtime path
+as `loro run --resume-session`: every message passes the model-input data-protection policy, the
+oldest turns are compacted into a summary when the history exceeds the context token budget, and
+each compaction is written to the audit log as `runtime.context_compacted`. In a group
+conversation a speaker's own replies are assistant turns, and other participants' replies arrive as
+labelled, untrusted user turns. When a reply was produced from a compacted history, its footer says
+how many earlier messages were summarized.
+
+With `context.mode = "summary"` the pre-0.22 behavior applies: up to 40 recent user and assistant
+messages, bounded to 50,000 UTF-8 bytes, are flattened into one explicitly untrusted block in the
+next prompt. In either mode the history cannot grant authority or bypass policy.
 
 The default database is `.loro/webui.sqlite3`. Schema version 1 contains:
 

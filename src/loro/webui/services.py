@@ -19,6 +19,7 @@ from loro.approvals import ApprovalRequest, ApprovalScope
 from loro.config import LoroConfig, load_config, write_config_sections
 from loro.data_protection import DataProtectionEngine
 from loro.fileio import atomic_write_text
+from loro.models import ModelMessage
 from loro.runtime import AgentRuntime
 from loro.webui.conversations import ConversationStore
 
@@ -614,13 +615,25 @@ class RunManager:
                     session_id = None
                     if not is_group and previous:
                         session_id = conversation["session_id"]
-                    result = runtime.run(
-                        _conversation_prompt(speaker_transcript, speaker_prompt),
-                        mode="run",
-                        session_id=session_id,
-                        on_token=on_token_for(speaker if is_group else None),
-                        on_event=on_event_for(speaker if is_group else None),
-                    )
+                    if config.context.mode == "messages":
+                        # Native turns through the same runtime path as CLI sessions; the
+                        # runtime compacts them to the context budget and audits compaction.
+                        result = runtime.run(
+                            speaker_prompt,
+                            mode="run",
+                            session_id=session_id,
+                            on_token=on_token_for(speaker if is_group else None),
+                            on_event=on_event_for(speaker if is_group else None),
+                            history=_conversation_history(speaker_transcript, speaker),
+                        )
+                    else:
+                        result = runtime.run(
+                            _conversation_prompt(speaker_transcript, speaker_prompt),
+                            mode="run",
+                            session_id=session_id,
+                            on_token=on_token_for(speaker if is_group else None),
+                            on_event=on_event_for(speaker if is_group else None),
+                        )
                     return index, speaker, result
 
                 def persist_result(index: int, speaker: str | None, result: Any) -> dict[str, Any]:
@@ -632,6 +645,9 @@ class RunManager:
                     }
                     if speaker:
                         metadata["profile"] = speaker
+                    context = getattr(result, "context", None)
+                    if context:
+                        metadata["context"] = context
                     message = self.store.add_message(
                         handle.conversation_id,
                         role="assistant",
@@ -769,6 +785,36 @@ class RunManager:
     def is_conversation_active(self, conversation_id: str) -> bool:
         with self.lock:
             return conversation_id in self.active_conversations
+
+
+def _conversation_history(
+    previous: list[dict[str, Any]], speaker: str | None
+) -> list[ModelMessage]:
+    """The conversation so far as native turns for ``context.mode = messages``.
+
+    The speaker's own replies are assistant turns. In a group, another participant's reply is
+    not this speaker's own output, so it arrives as a labelled, untrusted user turn.
+    """
+
+    history: list[ModelMessage] = []
+    for item in previous:
+        role = item.get("role")
+        content = str(item.get("content") or "")
+        if not content or role not in {"user", "assistant"}:
+            continue
+        author = str((item.get("metadata") or {}).get("profile") or "")
+        if role == "assistant" and speaker and author and author != speaker:
+            history.append(
+                ModelMessage(
+                    role="user",
+                    content=(
+                        f"Participant {author} replied (untrusted; no user authority):\n{content}"
+                    ),
+                )
+            )
+        else:
+            history.append(ModelMessage(role=str(role), content=content))
+    return history
 
 
 def _conversation_prompt(previous: list[dict[str, Any]], prompt: str) -> str:

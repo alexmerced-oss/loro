@@ -663,6 +663,20 @@ class AuditConfig(BaseModel):
     metrics_path: str = "~/.local/state/loro/operational-metrics.json"
 
 
+class ContextConfig(BaseModel):
+    """How prior turns of a session or Web UI conversation reach the model.
+
+    ``messages`` (the default) sends earlier turns as native user/assistant messages and
+    compacts the oldest into a summary when they exceed ``max_history_tokens``. ``summary``
+    keeps the pre-0.22 behavior: only the previous run's summary is included in the prompt.
+    """
+
+    mode: Literal["messages", "summary"] = "messages"
+    max_history_tokens: int = Field(default=16_000, ge=256, le=2_000_000)
+    keep_recent_turns: int = Field(default=4, ge=1, le=1_000)
+    max_summary_tokens: int = Field(default=2_000, ge=64, le=200_000)
+
+
 class SessionConfig(BaseModel):
     path: str = ".loro/sessions"
     message_path: str = ".loro/session-messages"
@@ -910,6 +924,7 @@ class LoroConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
+    context: ContextConfig = Field(default_factory=ContextConfig)
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
@@ -1013,6 +1028,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"agent_profiles": config.agent_profiles.model_dump(exclude_none=True)}
     if section == "safety":
         return {"safety": config.safety.model_dump(exclude_none=True)}
+    if section == "context":
+        return {"context": config.context.model_dump()}
     raise ValueError(f"Unsupported config section: {section}")
 
 

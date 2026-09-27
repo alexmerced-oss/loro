@@ -335,6 +335,40 @@ concurrent tenant quotas require a shared model gateway or another distributed c
 See [Managed Data Protection](data-protection.md) for surface defaults, decision semantics, and
 the remaining enterprise integration requirements.
 
+## Conversation Context
+
+The `[context]` section controls how earlier turns of a resumed CLI session
+(`loro run --resume-session`, the REPL) and of a Web UI conversation reach the model:
+
+```toml
+[context]
+mode = "messages"          # or "summary"
+max_history_tokens = 16000 # budget for earlier turns plus the compaction summary
+keep_recent_turns = 4      # user turns always kept verbatim, with their replies
+max_summary_tokens = 2000  # bound on the compaction summary itself
+```
+
+- `messages` (the default) sends earlier turns as native user and assistant messages ahead of the
+  current task. The session record stores them in `messages` alongside the existing `summary`.
+- `summary` keeps the behavior of releases before 0.22: only the previous run's summary is
+  included in the prompt (the Web UI flattens its recent transcript instead). History is still
+  stored, so a session can switch modes later.
+
+Every stored or supplied message passes the `model_input` data-protection surface again before it
+is sent. When earlier turns exceed `max_history_tokens`, the oldest are folded into a summary
+message until the history fits, always keeping the last `keep_recent_turns` user turns. Compaction
+is deterministic and extractive: each folded message becomes one line holding its role and the
+first 240 characters of its text, and the summary keeps its most recent lines within
+`max_summary_tokens`. It does not call a model, so it is free and sends nothing extra to a
+provider, but it is lossy: detail beyond the first 240 characters of a folded message is gone.
+Every compaction writes a `runtime.context_compacted` audit event with the token counts before and
+after. Token counts use the same character estimate as the runtime budgets; the hard limits in
+`[runtime]` (`max_model_input_bytes`, `max_input_tokens`) still apply to the whole request.
+
+Sessions saved before 0.22 have no stored messages; resuming one in `messages` mode falls back to
+its summary for that turn and stores native history from then on. Stored history records each
+turn's final reply and the names of tools it used, not the full tool output.
+
 ## Permission Rules
 
 Rules are evaluated before the per-tool defaults. Legacy rules use simple case-insensitive glob

@@ -1,6 +1,6 @@
 import json
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -19,6 +19,12 @@ from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger, prompt_preview
 from loro.budgets import BudgetExceeded, UsageBudget
 from loro.config import LoroConfig
+from loro.context import (
+    compact_history,
+    history_from_payload,
+    history_to_payload,
+    render_history,
+)
 from loro.data_protection import DataProtectionEngine
 from loro.identity import IdentityContext, resolve_identity
 from loro.memory.base import SharedMemorySearchRecord
@@ -48,6 +54,7 @@ class AgentResult:
     steps: int
     usage: dict[str, int | float]
     emitted_outputs: dict[str, object]
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 RuntimeEventHandler = Callable[[str, Mapping[str, Any]], None]
@@ -104,7 +111,14 @@ class AgentRuntime:
         session_id: str | None = None,
         on_token: Callable[[str], None] | None = None,
         on_event: RuntimeEventHandler | None = None,
+        history: Sequence[ModelMessage] | None = None,
     ) -> AgentResult:
+        """Run one task.
+
+        ``history`` supplies earlier conversation turns explicitly (the Web UI passes its
+        transcript). Without it, a resumed ``session_id`` supplies the stored history. How
+        prior turns reach the model is set by ``context.mode``.
+        """
         self.usage = UsageBudget(self.config.runtime, self.config.model)
         self.tools.graph_outputs = {}
         task_started = monotonic()
@@ -171,6 +185,35 @@ class AgentRuntime:
                 self.config.agent_profiles.max_bytes,
                 Path.cwd(),
             )
+        history_messages, history_summary, previous_summary = self._prior_context(
+            previous_session, history
+        )
+        compaction = compact_history(
+            history_messages,
+            history_summary,
+            max_tokens=self.config.context.max_history_tokens,
+            keep_recent_turns=self.config.context.keep_recent_turns,
+            max_summary_tokens=self.config.context.max_summary_tokens,
+        )
+        if compaction.compacted:
+            self.audit.write(
+                "runtime.context_compacted",
+                mode=self.config.context.mode,
+                session_id=active_session_id,
+                compacted_messages=compaction.compacted_messages,
+                retained_messages=len(compaction.messages),
+                tokens_before=compaction.tokens_before,
+                tokens_after=compaction.tokens_after,
+                budget_tokens=self.config.context.max_history_tokens,
+            )
+            _emit_runtime_event(
+                on_event,
+                "context.compacted",
+                {
+                    "compacted_messages": compaction.compacted_messages,
+                    "retained_messages": len(compaction.messages),
+                },
+            )
         tool_executions: list[ToolExecution] = []
         initial_calls = parse_tool_calls(prompt)
         initial_budget_stop: str | None = None
@@ -193,7 +236,7 @@ class AgentRuntime:
             mode=mode,
             memory_section=memory_section,
             tool_executions=tool_executions,
-            previous_summary=(str(previous_session.get("summary", "")) if previous_session else ""),
+            previous_summary=previous_summary,
             inbound_messages=inbound_messages,
             activated_skills=activated_skills,
             mcp_server_ids=(sorted(self.config.mcp.servers) if self.config.mcp.enabled else []),
@@ -203,7 +246,30 @@ class AgentRuntime:
             profile_on_demand=profile_on_demand,
         )
         initial_content = self.protection.enforce(initial_content, "model_input").content
-        messages = [ModelMessage(role="user", content=initial_content)]
+        current_message = ModelMessage(role="user", content=initial_content)
+        if self.config.context.mode == "messages":
+            # Stored and supplied turns are untrusted input like the prompt itself, so each one
+            # passes the model-input policy again before it reaches the provider.
+            messages = render_history(
+                [
+                    ModelMessage(
+                        role=item.role,
+                        content=self.protection.enforce(item.content, "model_input").content,
+                    )
+                    for item in compaction.messages
+                ],
+                self.protection.enforce(compaction.summary, "model_input").content
+                if compaction.summary
+                else "",
+                current_message,
+            )
+        else:
+            messages = [current_message]
+        context_info: dict[str, Any] = {
+            "mode": self.config.context.mode,
+            "history_messages": len(compaction.messages),
+            "compacted_messages": compaction.compacted_messages,
+        }
         provider_scope = provider_resource(
             operation="complete",
             provider=self.config.model.provider,
@@ -410,6 +476,17 @@ class AgentRuntime:
                 identity=self.identity.to_payload(),
                 stop_reason=stop_reason,
                 usage=self.usage.payload(),
+                messages=history_to_payload(
+                    [
+                        *compaction.messages,
+                        ModelMessage(role="user", content=_strip_control_directives(prompt)),
+                        ModelMessage(
+                            role="assistant",
+                            content=_history_reply(model_response_content, tool_executions),
+                        ),
+                    ]
+                ),
+                context_summary=compaction.summary,
                 session_id=active_session_id,
                 agent_name=(self.profile.resolved.document.metadata.name if self.profile else None),
                 agent_revision=(
@@ -453,7 +530,33 @@ class AgentRuntime:
             steps=steps,
             usage=self.usage.payload(),
             emitted_outputs=dict(self.tools.graph_outputs),
+            context=context_info,
         )
+
+    def _prior_context(
+        self,
+        previous_session: Mapping[str, Any] | None,
+        history: Sequence[ModelMessage] | None,
+    ) -> tuple[list[ModelMessage], str, str]:
+        """Return (history messages, compaction summary, legacy previous summary).
+
+        In ``messages`` mode the history comes from ``history`` when supplied, else from the
+        resumed session. A session saved before 0.22 has no stored messages, so it falls back
+        to its summary. In ``summary`` mode the history is still carried (and bounded) so the
+        session can switch modes later, but only the previous summary reaches the model.
+        """
+
+        stored = previous_session or {}
+        stored_messages = history_from_payload(stored.get("messages") or [])
+        stored_summary = str(stored.get("context_summary") or "")
+        previous_summary = str(stored.get("summary", "")) if previous_session else ""
+        if history is not None:
+            return list(history), "", ""
+        if self.config.context.mode == "summary":
+            return stored_messages, stored_summary, previous_summary
+        if previous_session is not None and "messages" not in previous_session:
+            return [], "", previous_summary
+        return stored_messages, stored_summary, ""
 
     def run_subagent(self, profile_name: str, prompt: str, *, mode: str = "run") -> AgentResult:
         if self.profile is None or profile_name not in self.profile.subagents:
@@ -706,6 +809,18 @@ def _initial_model_prompt(
         "User task: "
         f"{_strip_control_directives(prompt)}{extra_context}{memory_section}{tool_section}"
     )
+
+
+def _history_reply(response: str, executions: list[ToolExecution]) -> str:
+    # Keep the stored turn even when the model returned no text (for example a reasoning
+    # model that spent its output budget), so user and assistant turns stay paired.
+    response = response if response.strip() else "(no text reply)"
+    if not executions:
+        return response
+    used = ", ".join(
+        f"{execution.call.name} ({'ok' if execution.ok else 'error'})" for execution in executions
+    )
+    return f"{response}\n\n[Tools used this turn: {used}]"
 
 
 def _strip_control_directives(prompt: str) -> str:
