@@ -234,6 +234,7 @@ audit_app.command("report")(ops_audit_report)
 memory_app.command("sweep")(ops_memory_sweep)
 
 console = Console()
+error_console = Console(stderr=True)
 DEFAULT_ARTIFACT_DIR = Path("artifacts")
 
 
@@ -1144,7 +1145,26 @@ def repl(
 
 @app.command(cls=RunCommand)
 def run(
-    prompt: Annotated[str, typer.Argument(help="Task prompt for Loro.")],
+    prompt: Annotated[
+        str | None,
+        typer.Argument(
+            help="Task prompt for Loro. Omit when using --prompt-file.", show_default=False
+        ),
+    ] = None,
+    prompt_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--prompt-file",
+            help=(
+                "Read the task prompt from a UTF-8 file, for prompts too large for the command "
+                "line. '-' is not accepted: stdin is reserved for --approval-stdio decisions."
+            ),
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print one JSON object with the result instead of a report."),
+    ] = False,
     resume_session: Annotated[
         str | None,
         typer.Option("--resume-session", help="Resume a saved session and deliver its inbox."),
@@ -1165,11 +1185,18 @@ def run(
 ) -> None:
     """Run an agent task, optionally resuming a durable session.
 
-    Examples: loro run "Summarize the README" ; loro run --resume-session ID "Continue."
+    Examples: loro run "Summarize the README" ; loro run --prompt-file task.md --json ;
+    loro run --resume-session ID "Continue."
+
+    Exit codes: 0 when the run finished (including budget or step limits), 1 when the provider
+    failed or policy blocked the task, 2 for usage errors.
 
     Evidence: loro run list ; loro run export RUN_ID --out run.zip ; loro run verify run.zip.
     Use `loro run -- export` for a task whose whole prompt is one of those words.
     """
+    if json_output and stream:
+        raise typer.BadParameter("--json cannot be combined with --stream.")
+    task = _task_prompt(prompt, prompt_file)
     try:
         provider = None
         if approval_stdio:
@@ -1178,7 +1205,7 @@ def run(
             provider = create_stdio_provider(Path.cwd())
 
         result = _run_task(
-            prompt,
+            task,
             mode="run",
             session_id=resume_session,
             stream=stream,
@@ -1187,14 +1214,87 @@ def run(
         )
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
-    console.print(result.summary)
-    if result.run_id:
-        console.print(
-            f"\nRun {result.run_id} (export: loro run export {result.run_id} --out run.zip)",
-            style="dim",
-            highlight=False,
-            soft_wrap=True,
+    except ValueError as error:
+        # Data-protection blocks and profile/session mismatches are policy outcomes, not bugs.
+        error_console.print(f"[bold red]Error:[/bold red] {error}", highlight=False)
+        raise typer.Exit(code=1) from error
+    failed = result.stop_reason == "provider_error"
+    if json_output:
+        typer.echo(json.dumps(_run_payload(result), default=str))
+    else:
+        console.print(result.summary)
+        if result.run_id:
+            console.print(
+                f"\nRun {result.run_id} (export: loro run export {result.run_id} --out run.zip)",
+                style="dim",
+                highlight=False,
+                soft_wrap=True,
+            )
+        if failed:
+            error_console.print(
+                "The provider request failed. Check the key and endpoint with "
+                "`loro providers smoke --execute` and `loro doctor`.",
+                highlight=False,
+                soft_wrap=True,
+            )
+    if failed:
+        raise typer.Exit(code=1)
+
+
+def _task_prompt(prompt: str | None, prompt_file: Path | None) -> str:
+    """The task text from the argument or --prompt-file, with actionable usage errors."""
+
+    if prompt is not None and prompt_file is not None:
+        raise typer.BadParameter("Pass either a PROMPT or --prompt-file, not both.")
+    if prompt_file is None:
+        if prompt is None or not prompt.strip():
+            raise typer.BadParameter(
+                'Missing task prompt. Example: loro run "Summarize the README" '
+                "or loro run --prompt-file task.md"
+            )
+        return prompt
+    if str(prompt_file) == "-":
+        raise typer.BadParameter(
+            "--prompt-file - is not supported: stdin is reserved for --approval-stdio "
+            "decisions. Write the prompt to a file and pass its path."
         )
+    path = prompt_file.expanduser()
+    if not path.is_file():
+        raise typer.BadParameter(f"Prompt file not found: {path}")
+    limit = load_config().runtime.max_model_input_bytes
+    size = path.stat().st_size
+    if size > limit:
+        raise typer.BadParameter(
+            f"Prompt file is {size} bytes; the model input limit is {limit} bytes "
+            "(runtime.max_model_input_bytes)."
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise typer.BadParameter(f"Prompt file is not UTF-8 text: {path}") from error
+    if not text.strip():
+        raise typer.BadParameter(f"Prompt file is empty: {path}")
+    return text
+
+
+def _run_payload(result: Any) -> dict[str, Any]:
+    return {
+        "ok": result.stop_reason != "provider_error",
+        "run_id": result.run_id,
+        "session_id": result.session_id,
+        "mode": result.mode,
+        "provider": result.provider,
+        "model": result.model,
+        "stop_reason": result.stop_reason,
+        "steps": result.steps,
+        "response": result.response,
+        "usage": result.usage,
+        "context": result.context,
+        "tool_calls": [
+            {"tool": execution.call.name, "ok": execution.ok}
+            for execution in result.tool_executions
+        ],
+    }
 
 
 def _run_task(

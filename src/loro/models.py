@@ -78,7 +78,16 @@ class BaseModelClient:
         return provider_tool_payload(protocol, self.tools)
 
     def _base_url(self, default: str) -> str:
-        base_url = (self.config.base_url or default).rstrip("/")
+        # Configured URL, then the named provider's profile URL, then the protocol default.
+        # Without the profile step a config naming only `provider = "nous"` sent requests to
+        # api.openai.com, while `loro providers smoke` (which applies profile defaults) worked.
+        profile_url = get_provider_profile(self.config.provider).base_url
+        if not self.config.base_url and profile_url and _placeholder_url(profile_url):
+            raise ModelProviderError(
+                f"{self.config.provider} needs model.base_url: its profile default "
+                f"{profile_url} is a placeholder. Run `loro setup provider` or set it in config."
+            )
+        base_url = (self.config.base_url or profile_url or default).rstrip("/")
         parsed = urlsplit(base_url)
         host = (parsed.hostname or "").casefold()
         allowed = {item.casefold() for item in self.config.allowed_base_url_hosts}
@@ -104,6 +113,11 @@ class BaseModelClient:
                 return CredentialVault().get(self.config.credential_ref)
             except CredentialError as error:
                 raise ModelProviderError(f"Credential vault lookup failed: {error}") from error
+        if not self.config.api_key_env:
+            # The provider profile's documented variable, as `loro providers smoke` uses.
+            profile_env = get_provider_profile(self.config.provider).api_key_env
+            if profile_env:
+                return os.environ.get(profile_env) or None
         return None
 
     def _optional_provider_headers(self) -> dict[str, str]:
@@ -856,3 +870,8 @@ def _supports_gemini_temperature(model: str) -> bool:
         or model == "gemini-3.5-flash-lite"
         or model.startswith("gemini-3.5-flash-lite-")
     )
+
+
+def _placeholder_url(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").casefold()
+    return "your-" in host or host in {"example.com", "www.example.com"}

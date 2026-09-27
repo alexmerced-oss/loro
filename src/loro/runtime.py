@@ -56,6 +56,8 @@ class AgentResult:
     emitted_outputs: dict[str, object]
     context: dict[str, Any] = field(default_factory=dict)
     run_id: str = ""
+    provider: str = ""
+    model: str = ""
 
 
 RuntimeEventHandler = Callable[[str, Mapping[str, Any]], None]
@@ -537,6 +539,8 @@ class AgentRuntime:
             emitted_outputs=dict(self.tools.graph_outputs),
             context=context_info,
             run_id=trace_id,
+            provider=self.config.model.provider,
+            model=self.config.model.model,
         )
 
     def _prior_context(

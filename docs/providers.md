@@ -23,6 +23,13 @@ unavailable, malformed, unauthenticated, or unsupported by a custom endpoint, th
 the problem and falls back to bundled choices plus a custom model entry. Pass
 `--no-discover-models` to skip network discovery explicitly.
 
+A configuration that names only `provider` and `model` uses the provider profile's base URL and
+API key environment variable (for example `https://inference-api.nousresearch.com/v1` and
+`NOUS_API_KEY` for `nous`), the same defaults `loro providers smoke --provider` applies. Explicit
+`base_url`, `api_key_env` and `credential_ref` settings take precedence. Profiles whose default
+URL is a placeholder, such as `azure-openai`, fail with a message asking for `model.base_url`
+instead of sending the request elsewhere.
+
 `loro setup provider` is an alias-style entrypoint for the same provider wizard. Use
 `loro setup quickstart` to run provider setup together with identity, approvals, audit, local
 memory, shared memory, and Polaris setup.

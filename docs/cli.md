@@ -33,6 +33,21 @@ loro graph plan release.agraph.yaml --json
 loro graph run release.agraph.yaml --dry-run
 ```
 
+`loro run` is also the machine interface used by brokers such as Merced AI:
+
+```bash
+loro run --prompt-file task.md --json
+loro run "Summarize the README" --json
+```
+
+`--prompt-file` reads the task from a UTF-8 file, so large prompts avoid command-line length
+limits; it is bounded by `runtime.max_model_input_bytes`, and `-` is rejected because stdin
+carries `--approval-stdio` decisions. `--json` prints one JSON object (`ok`, `run_id`,
+`session_id`, `provider`, `model`, `stop_reason`, `steps`, `response`, `usage`, `context`,
+`tool_calls`) instead of the text report and cannot be combined with `--stream`. `loro run` exits
+`0` when the run finished (including budget or step limits), `1` when the provider failed or policy
+blocked the task, and `2` for usage errors.
+
 Plain `loro` opens a folder-oriented REPL with provider, model, agent, memory, and durable session
 metadata. Its responsive status panel keeps the ASCII parrot, workspace details, and live session,
 memory, sandbox, and audit markers together at wide and narrow terminal sizes. Use `/status`,
