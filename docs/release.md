@@ -158,6 +158,9 @@ Unreleased work for the next version collects in [0.22.0](releases/0.22.0.md) un
 - Confirm `README.md` examples still match CLI behavior.
 - Confirm `docs/roadmap-1.0.md` statuses and remaining gates are current.
 - Confirm `scripts/generate_release_contract.py --check` passes without unreviewed drift.
+- Confirm `scripts/check_release_metadata.py --strict` passes after the version bump: mark the
+  release notes page as released (replace its `Unreleased` line), point the README "Current
+  release" line at it, and set the roadmap milestone row to `Released`.
 - Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
 - Confirm the MCP support matrix matches green conformance workflow artifacts for the release

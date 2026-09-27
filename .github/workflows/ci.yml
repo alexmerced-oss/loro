@@ -40,6 +40,11 @@ jobs:
           python scripts/check_reference_deployment.py
           python scripts/generate_release_contract.py --check
 
+      # Advisory on branches and pull requests (a version bump may be in progress);
+      # the release-evidence workflow runs the same check with --strict on tags.
+      - name: Check release metadata
+        run: python scripts/check_release_metadata.py
+
       - name: Test with coverage
         run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
 

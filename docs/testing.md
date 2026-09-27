@@ -59,6 +59,17 @@ loro operations release-readiness --output loro-readiness.json
 loro operations release-readiness --strict
 ```
 
+`scripts/check_release_metadata.py` checks that the package version in `pyproject.toml` agrees
+with `loro.__version__`, the Web UI package files, the release contract, the OAP and AGS
+conformance evidence, the README "Current release" line, the newest released notes page in
+`docs/releases/`, and the current row of the 1.0 roadmap milestone table. It also fails when the
+README calls an already shipped version pending. CI runs it as an advisory check on branches and
+with `--strict` on release tags; `--json` prints a machine-readable report:
+
+```bash
+python scripts/check_release_metadata.py --strict
+```
+
 Normal readiness exits nonzero on failed checks. Strict readiness also blocks warnings. External
 gates are always reported separately and cannot be closed by the local command.
 

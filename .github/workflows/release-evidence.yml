@@ -35,6 +35,10 @@ jobs:
           package_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "${GITHUB_REF_NAME#v}" = "$package_version"
 
+      - name: Verify release metadata agrees with the tag
+        if: github.ref_type == 'tag'
+        run: python scripts/check_release_metadata.py --strict
+
       - name: Verify signed release tag
         if: github.ref_type == 'tag'
         run: |
