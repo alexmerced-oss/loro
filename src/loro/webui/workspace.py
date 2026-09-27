@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import builtins
 import json
 import mimetypes
 import re
@@ -350,7 +351,7 @@ class ScheduleStore:
         except (OSError, ValueError, TypeError):
             return []
 
-    def _save(self, records: list[dict[str, Any]]) -> None:
+    def _save(self, records: builtins.list[dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.tmp")
         temporary.write_text(json.dumps(records, indent=2), encoding="utf-8")
@@ -389,7 +390,7 @@ class ScheduleStore:
             self._save(records)
             return record
 
-    def tick(self, now: datetime | None = None) -> list[dict[str, Any]]:
+    def tick(self, now: datetime | None = None) -> builtins.list[dict[str, Any]]:
         current = now or _now()
         changed: list[dict[str, Any]] = []
         with self.lock:

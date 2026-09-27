@@ -8,6 +8,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from loro.config import SandboxConfig, SandboxProfileConfig
 
@@ -108,7 +109,7 @@ class SandboxRunner:
             os_enforced=os_enforced,
         )
 
-    def diagnose(self) -> dict[str, object]:
+    def diagnose(self) -> dict[str, Any]:
         profiles: dict[str, object] = {}
         for name, profile in self.config.profiles.items():
             backend_available = profile.backend == "process" or shutil.which("bwrap") is not None

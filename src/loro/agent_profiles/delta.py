@@ -24,7 +24,7 @@ def apply_delta(
     delta: AgentStateDelta,
     config: AgentProfilesConfig,
     safety: SafetyConfig,
-    event_handler: Callable[[str, dict[str, Any]], None] | None = None,
+    event_handler: Callable[[str, dict[str, Any]], object] | None = None,
 ) -> AgentProfileModel:
     try:
         with file_lock(path):

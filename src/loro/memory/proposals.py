@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -34,7 +35,7 @@ class MemoryProposalStore:
         with file_lock(self.path):
             return self._list_unlocked()
 
-    def _list_unlocked(self) -> list[MemoryProposal]:
+    def _list_unlocked(self) -> builtins.list[MemoryProposal]:
         if not self.path.exists():
             return []
         proposals: list[MemoryProposal] = []

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -467,7 +468,7 @@ def _file_lock(path: Path) -> Iterator[None]:
     lock_path = path.with_suffix(path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as lock:
-        if os.name == "nt":  # pragma: no cover - exercised on Windows CI when available.
+        if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI when available.
             import msvcrt
 
             if lock.tell() == 0:

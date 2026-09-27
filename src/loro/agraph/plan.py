@@ -94,7 +94,10 @@ def _topological_order(nodes: dict[str, Any], edges: tuple[dict[str, Any], ...])
         if source in nodes and target in nodes:
             incoming[target] += 1
             outgoing[source].append(target)
-    ready = sorted((node for node, count in incoming.items() if count == 0), key=declaration.get)
+    ready = sorted(
+        (node for node, count in incoming.items() if count == 0),
+        key=lambda node: declaration.get(node, len(declaration)),
+    )
     result: list[str] = []
     while ready:
         node = ready.pop(0)
@@ -103,7 +106,7 @@ def _topological_order(nodes: dict[str, Any], edges: tuple[dict[str, Any], ...])
             incoming[target] -= 1
             if incoming[target] == 0:
                 ready.append(target)
-                ready.sort(key=declaration.get)
+                ready.sort(key=lambda node: declaration.get(node, len(declaration)))
     return result
 
 

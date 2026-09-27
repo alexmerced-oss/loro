@@ -85,8 +85,8 @@ class OperationalMetrics:
                 "# TYPE loro_operational_value_sum counter",
             ]
         )
-        for key, value in sorted(snapshot.sums.items()):
-            lines.append(f'loro_operational_value_sum{{metric="{key}"}} {value}')
+        for key, total in sorted(snapshot.sums.items()):
+            lines.append(f'loro_operational_value_sum{{metric="{key}"}} {total}')
         return "\n".join(lines) + "\n"
 
     def _merge(self, counters: dict[str, int], sums: dict[str, float]) -> None:
@@ -95,8 +95,8 @@ class OperationalMetrics:
             payload = self._load_unlocked()
             for key, value in counters.items():
                 payload["counters"][key] = int(payload["counters"].get(key, 0)) + value
-            for key, value in sums.items():
-                payload["sums"][key] = float(payload["sums"].get(key, 0)) + value
+            for key, amount in sums.items():
+                payload["sums"][key] = float(payload["sums"].get(key, 0)) + amount
             payload["updated_at"] = datetime.now(UTC).isoformat()
             temporary = self.path.with_suffix(self.path.suffix + f".{os.getpid()}.tmp")
             temporary.write_text(

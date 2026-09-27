@@ -225,6 +225,12 @@ class BaseModelClient:
         if delay:
             time.sleep(delay)
 
+    def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
+        raise NotImplementedError
+
+    def complete(self, messages: list[ModelMessage]) -> ModelResponse:
+        raise NotImplementedError
+
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
         chunks: list[str] = []
         self.stream_complete(messages, chunks.append)

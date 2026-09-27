@@ -5,8 +5,18 @@ Run the standard suite:
 ```bash
 python -m pytest
 python -m ruff check .
+python -m mypy
 python -m compileall src tests
 ```
+
+## Type Checking
+
+`python -m mypy` runs a lenient baseline configured in `pyproject.toml` (`check_untyped_defs`,
+`no_implicit_optional`, missing third-party stubs ignored) over `src/loro`. Modules that do not
+yet pass are listed in a single `[[tool.mypy.overrides]]` block with `ignore_errors = true`. That
+list is a backlog that can only shrink: `tests/test_type_check_ratchet.py` fails when a listed
+module starts passing (remove it from the list and lower `IGNORE_CEILING`) or when an unlisted
+module gains errors (fix the errors rather than listing the module).
 
 Install development extras to enable coverage reporting:
 
@@ -25,6 +35,8 @@ The main GitHub Actions workflow runs on pushes and pull requests to `main`:
 
 - install `.[dev]`
 - `python -m ruff check .`
+- `python -m mypy`
+- `python scripts/check_release_metadata.py` (advisory on branches, strict on release tags)
 - `python -m pytest --cov --cov-report=term-missing --cov-report=xml`
 - `python -m compileall src tests`
 

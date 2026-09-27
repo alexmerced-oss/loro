@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import hmac
 import json
@@ -112,7 +113,7 @@ class SessionMailbox:
             messages = [message for message in messages if message.status != "acknowledged"]
         return messages
 
-    def deliver(self, recipient_session_id: str) -> list[SessionMessage]:
+    def deliver(self, recipient_session_id: str) -> builtins.list[SessionMessage]:
         self.sessions.get(recipient_session_id)
         delivered: list[SessionMessage] = []
         now = datetime.now(UTC).isoformat()

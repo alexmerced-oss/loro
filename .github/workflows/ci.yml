@@ -31,6 +31,11 @@ jobs:
       - name: Lint
         run: python -m ruff check .
 
+      # Lenient mypy baseline from pyproject.toml. The per-module ignore list is a
+      # backlog that tests/test_type_check_ratchet.py only lets shrink.
+      - name: Type check
+        run: python -m mypy
+
       - name: Verify governance inventories
         run: |
           python scripts/check_audit_inventory.py

@@ -665,7 +665,7 @@ class RunManager:
                         last_message = persist_result(index, speaker, result)
                         last_result = result
                 else:
-                    ordered_roster: list[str | None] = list(roster or [None])
+                    ordered_roster: list[str | None] = [*roster] if roster else [None]
                     coordinator = conversation.get("coordinator_profile")
                     if is_group and group_mode == "coordinator" and coordinator:
                         ordered_roster = [item for item in ordered_roster if item != coordinator]

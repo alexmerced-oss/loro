@@ -294,7 +294,8 @@ def approvals_list(
     table.add_column("tenant")
     table.add_column("action", overflow="fold")
     for event in events:
-        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        raw_details = event.get("details")
+        details: dict[str, Any] = raw_details if isinstance(raw_details, dict) else {}
         table.add_row(
             str(event.get("timestamp", "")),
             str(event.get("event_type", "")),

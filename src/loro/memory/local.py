@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 from dataclasses import replace
 from datetime import datetime
@@ -61,7 +62,7 @@ class LocalMemoryStore:
             )
         return records
 
-    def search(self, query: str) -> list[MemoryRecord]:
+    def search(self, query: str) -> builtins.list[MemoryRecord]:
         normalized = query.casefold()
         return [record for record in self.list() if normalized in record.content.casefold()]
 
@@ -87,7 +88,7 @@ class LocalMemoryStore:
             raise ValueError(f"memory {memory_id!r} was not found")
         self._replace(kept)
 
-    def _replace(self, records: list[MemoryRecord]) -> None:
+    def _replace(self, records: builtins.list[MemoryRecord]) -> None:
         temporary = self.path.with_name(f".{self.path.name}.tmp")
         with temporary.open("w", encoding="utf-8") as file:
             for record in records:

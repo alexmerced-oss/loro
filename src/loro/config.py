@@ -2,8 +2,9 @@ import hashlib
 import os
 import re
 import secrets
+import tomllib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
 import tomli_w
@@ -11,14 +12,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from loro.fileio import atomic_write_text
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib
-
-
 PermissionDecision = Literal["allow", "ask", "deny"]
-CONFIG_SCHEMA_VERSION = "1.0"
+CONFIG_SCHEMA_VERSION: Final = "1.0"
 IdentityField = Literal[
     "subject",
     "display_name",

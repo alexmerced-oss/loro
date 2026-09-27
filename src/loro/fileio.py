@@ -14,6 +14,7 @@ concurrent writer cannot leave a partial file or silently drop another writer's 
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -29,7 +30,7 @@ def file_lock(path: Path) -> Iterator[None]:
     lock_path = path.with_suffix(path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as lock:
-        if os.name == "nt":  # pragma: no cover - exercised on Windows CI when available.
+        if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI when available.
             import msvcrt
 
             if lock.tell() == 0:

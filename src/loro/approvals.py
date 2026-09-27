@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -19,7 +20,7 @@ from loro.identity import IdentityContext
 ApprovalScope = Literal["once", "session"]
 ApprovalMethod = Literal["interactive", "non_interactive"]
 ApprovalStatus = Literal["active", "used", "denied", "expired"]
-ApprovalEventHandler = Callable[[str, Mapping[str, Any]], None]
+ApprovalEventHandler = Callable[[str, Mapping[str, Any]], object]
 
 
 class ApprovalError(PermissionError):
@@ -296,7 +297,7 @@ class JsonApprovalStore:
             _restrict_permissions(lock_path)
             if self.path.exists():
                 _restrict_permissions(self.path)
-            if os.name == "nt":  # pragma: no cover - Windows CI exercises this when available.
+            if sys.platform == "win32":  # pragma: no cover - Windows CI exercises this.
                 import msvcrt
 
                 lock.seek(0)

@@ -5,7 +5,7 @@ from typing import Any, Protocol, TypeAlias
 
 import typer
 from rich.align import Align
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.status import Status
 from rich.table import Table
@@ -225,6 +225,7 @@ def _render_header(
 ) -> None:
     metadata = _metadata_table(config, session_id=session_id, agent_name=agent_name)
     parrot = Text(PARROT, style="bold bright_green", overflow="crop")
+    body: RenderableType
     if console.width >= WIDE_REPL_PANEL:
         body = Table.grid(expand=True, padding=(0, 2))
         body.add_column(width=19, no_wrap=True)

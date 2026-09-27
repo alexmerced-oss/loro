@@ -278,7 +278,7 @@ class DataProtectionEngine:
         labels = [match.group(1).lower() for match in self.LABEL_PATTERN.finditer(text)]
         if not labels:
             return None
-        return max(labels, key=lambda item: CLASSIFICATION_ORDER[item])  # type: ignore[index,return-value]
+        return max(labels, key=lambda item: CLASSIFICATION_ORDER[item])  # type: ignore[arg-type,index,return-value]
 
     def _redact(self, text: str, findings: tuple[DataFinding, ...]) -> str:
         if not findings:
