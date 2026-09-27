@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -80,7 +83,13 @@ from pathlib import Path
 from loro.aais_bridge import AAISBridge
 from loro.approvals import ApprovalRequest
 
+import loro.aais_bridge as aais_bridge
+
 root, mode, count = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+if len(sys.argv) > 4:
+    # Under a loaded parallel run, fsync stalls can exceed the production lock timeout; the
+    # contention test proves exclusion, not latency, so give it room.
+    aais_bridge.LOCK_TIMEOUT_SECONDS = float(sys.argv[4])
 bridge = AAISBridge(root)
 
 def make():
@@ -127,9 +136,12 @@ def _env() -> dict[str, str]:
     }
 
 
-def _spawn(root: Path, mode: str, count: int = 1) -> subprocess.Popen[str]:
+def _spawn(
+    root: Path, mode: str, count: int = 1, lock_timeout: float | None = None
+) -> subprocess.Popen[str]:
+    extra = [] if lock_timeout is None else [str(lock_timeout)]
     return subprocess.Popen(
-        [sys.executable, "-c", WORKER, str(root), mode, str(count)],
+        [sys.executable, "-c", WORKER, str(root), mode, str(count), *extra],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -151,13 +163,32 @@ def _wait_for_pending(root: Path, count: int = 1, timeout: float = 30) -> list[d
     raise AssertionError("pending request never appeared")
 
 
-def test_concurrent_processes_never_lose_or_reuse_sequences(tmp_path: Path) -> None:
-    workers = [_spawn(tmp_path, "add", 6) for _ in range(4)]
+@pytest.fixture
+def store_dir(tmp_path: Path) -> Iterator[Path]:
+    """A project directory on tmpfs when available, as the AAIS suite does.
+
+    Every store transaction fsyncs, and on a loaded disk that alone can take a large fraction
+    of a second; locking semantics are identical on tmpfs.
+    """
+
+    shm = Path("/dev/shm")
+    if not (sys.platform.startswith("linux") and shm.is_dir() and os.access(shm, os.W_OK)):
+        yield tmp_path
+        return
+    directory = Path(tempfile.mkdtemp(prefix="loro-aais-", dir=shm))
+    try:
+        yield directory
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_concurrent_processes_never_lose_or_reuse_sequences(store_dir: Path) -> None:
+    workers = [_spawn(store_dir, "add", 6, lock_timeout=300) for _ in range(4)]
     for worker in workers:
-        _out, err = worker.communicate(timeout=600)
+        _out, err = worker.communicate(timeout=900)
         assert worker.returncode == 0, err
 
-    pending = _pending(tmp_path)
+    pending = _pending(store_dir)
     assert len(pending) == 24
     sequences = [int(item["sequence"]) for item in pending]
     assert sorted(sequences) == list(range(1, 25))
