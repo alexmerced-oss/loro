@@ -65,6 +65,11 @@ The implementations follow the current official contracts for
 - Request bodies, workers, pending tasks, response size, and HTTP client timeouts are bounded.
 - Listener body reads have a bounded timeout; deploy the loopback service behind ingress connection
   and rate limits for complete slow-client protection.
+- An endpoint with `oidc_audience = "..."` also requires `Authorization: Bearer <token>` issued
+  by `identity.oidc.issuer` for that audience, verified like any Loro token. A bridge's service
+  token labels the run `<platform>-signed-webhook+oidc-bridge` and records `bridge_subject` in the
+  `gateway.accepted` audit event. A user-delegated token whose subject equals the mapped user's
+  subject runs as a verified identity (`auth_method = "oidc"`, `verified = true`).
 - Remote content is labeled untrusted before it reaches `AgentRuntime`.
 - Existing permissions, budgets, sandboxing, data protection, memory rules, and audit still apply.
 - `ask`-gated actions cannot be approved by message text. Consequential remote work requires a

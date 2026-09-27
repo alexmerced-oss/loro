@@ -71,6 +71,9 @@ webmcp = [
 gateway = [
   "cryptography>=50.0.0",
 ]
+oidc = [
+  "cryptography>=50.0.0",
+]
 webui = [
   "fastapi>=0.115,<1",
   "starlette>=1.3.1,<2",

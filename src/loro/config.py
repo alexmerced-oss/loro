@@ -268,6 +268,68 @@ class SandboxConfig(BaseModel):
         return self
 
 
+OIDC_ALGORITHMS = (
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "EdDSA",
+)
+
+
+class OIDCConfig(BaseModel):
+    """OpenID Connect issuer used to verify identities (CLI tokens, Web UI login, gateways)."""
+
+    enabled: bool = False
+    issuer: str | None = None
+    client_id: str | None = None
+    # Confidential clients name the environment variable holding the secret; public clients
+    # (the default for a local Web UI) rely on PKCE alone.
+    client_secret_env: str | None = None
+    audience: str | None = None
+    scopes: list[str] = Field(default_factory=lambda: ["openid", "profile", "email"])
+    algorithms: list[str] = Field(default_factory=lambda: ["RS256", "ES256"])
+    clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+    jwks_cache_seconds: int = Field(default=3600, ge=60, le=86_400)
+    discovery_url: str | None = None
+    jwks_uri: str | None = None
+    token_env: str = "LORO_ID_TOKEN"
+    required: bool = False
+    subject_claim: str = "sub"
+    display_name_claim: str = "name"
+    tenant_claim: str | None = None
+    organization_claim: str | None = None
+    groups_claim: str = "groups"
+    roles_claim: str = "roles"
+    web_session_seconds: int = Field(default=28_800, ge=300, le=86_400)
+
+    @field_validator("algorithms")
+    @classmethod
+    def _validate_algorithms(cls, values: list[str]) -> list[str]:
+        unknown = [value for value in values if value not in OIDC_ALGORITHMS]
+        if unknown:
+            raise ValueError(
+                f"Unsupported OIDC algorithms {unknown}; 'none' and HMAC algorithms are never "
+                f"accepted. Choose from {', '.join(OIDC_ALGORITHMS)}."
+            )
+        if not values:
+            raise ValueError("At least one OIDC algorithm is required.")
+        return values
+
+    @model_validator(mode="after")
+    def _require_issuer(self) -> "OIDCConfig":
+        if self.enabled and not self.issuer:
+            raise ValueError("identity.oidc.enabled requires identity.oidc.issuer.")
+        if self.enabled and not (self.client_id or self.audience):
+            raise ValueError("identity.oidc.enabled requires client_id or audience.")
+        return self
+
+
 class IdentityConfig(BaseModel):
     subject: str | None = None
     display_name: str | None = None
@@ -281,6 +343,7 @@ class IdentityConfig(BaseModel):
     environment_enabled: bool = True
     environment_prefix: str = "LORO_IDENTITY_"
     required_fields: list[IdentityField] = Field(default_factory=list)
+    oidc: OIDCConfig = Field(default_factory=OIDCConfig)
 
 
 class PermissionsConfig(BaseModel):
@@ -710,6 +773,9 @@ class GatewayEndpointConfig(BaseModel):
     # teams/signal/generic bridges HMAC the body with no timestamp of their own, so
     # freshness depends on the envelope carrying a signed `timestamp` field.
     require_signed_timestamp: bool = True
+    # When set, the bridge must also send `Authorization: Bearer <JWT>` from identity.oidc with
+    # this audience. A token whose subject is the mapped user's subject makes the run verified.
+    oidc_audience: str | None = None
 
     @field_validator("route")
     @classmethod

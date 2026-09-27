@@ -735,3 +735,31 @@ textarea:focus-visible,
 select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
 .persistent-view{display:none;min-height:0;min-width:0;flex:1}.persistent-view.active{display:flex}.persistent-view>.page{flex:1;min-width:0}.operation-health{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-soft);margin:14px 0}.operation-health b,.operation-health p{display:block;margin:0}.operation-health p{font-size:11px;color:var(--muted);margin-top:3px}.operation-spinner{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:operation-spin .8s linear infinite}@keyframes operation-spin{to{transform:rotate(360deg)}}
 .approval-backdrop{z-index:1200}.approval-modal{width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}.approval-risk{display:flex;gap:8px;flex-wrap:wrap;border:1px solid var(--line);padding:10px;border-radius:8px}.approval-risk.high,.approval-risk.critical{border-color:var(--c-a85858);background:var(--c-292316)}.approval-detail{display:grid;gap:8px}.approval-detail>div{display:grid;grid-template-columns:110px 1fr;gap:12px}.approval-detail dt{color:var(--muted);font-size:10px;text-transform:uppercase}.approval-detail dd{margin:0;overflow-wrap:anywhere}.approval-detail pre{white-space:pre-wrap;max-height:180px;overflow:auto}.approval-modal>.approval-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+
+/* OIDC sign-in and the signed-in user chip. */
+.signin{min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(circle at 50% 0%,var(--c-18221b),transparent 60%)}
+.signin-card{width:min(420px,100%);border:1px solid var(--line);background:var(--c-121814);border-radius:16px;padding:32px 28px;text-align:center;box-shadow:0 25px 70px var(--c-0005)}
+.signin-card .parrot{font-size:38px}
+.signin-card h1{font-size:22px;margin:10px 0 8px}
+.signin-card p{color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 20px}
+.signin-card small{display:block;color:var(--muted);font-size:11px;margin-top:14px;line-height:1.5}
+.signin-button{display:block;background:var(--green);color:var(--c-102015);text-decoration:none;font-weight:700;font-size:14px;border-radius:9px;padding:12px 16px}
+.signin-button:hover{filter:brightness(1.07)}
+.signin-button:focus-visible{outline:3px solid var(--c-82c899);outline-offset:3px}
+.signin-error{text-align:left;border:1px solid var(--c-a85353);background:var(--c-4c2626);color:var(--c-ffe6e6);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:16px}
+.user-chip{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 8px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:8px;margin:10px 0 8px;font-size:11px}
+.user-chip .avatar-dot{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--c-1c271f);color:var(--ink);font-weight:700}
+.user-chip .user-name{min-width:0}
+.user-chip .user-name b,.user-chip .user-name small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-chip .user-name small{color:var(--muted);font-size:10px}
+.user-chip button{grid-column:1/-1;border:1px solid var(--line);background:transparent;color:var(--c-8d9b91);border-radius:6px;padding:5px;font-size:11px}
+.user-chip button:hover{color:var(--ink)}
+.user-chip button:focus-visible{outline:2px solid var(--c-82c899);outline-offset:2px}
+@media(max-width:900px){.user-chip{grid-template-columns:1fr}.user-chip .user-name{display:none}.user-chip .avatar-dot{margin:auto}}
+@media(max-width:680px){.user-chip{display:none}}
+.account-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 18px;max-width:920px}
+.account-card div{min-width:0;display:grid;gap:2px}
+.account-card small{font:500 10px 'DM Mono';letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.account-card b{font-size:14px}
+.account-card span{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-card button{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:8px 12px;font-size:12px;flex:none}

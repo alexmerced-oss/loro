@@ -1,8 +1,11 @@
 # Identity Context
 
 Loro resolves one typed identity context for runtime tasks, tool attribution, shared-memory
-defaults, sessions, and audit events. Identity is loaded only from resolved configuration,
-approved environment variables, or the local operating-system user fallback. Prompt text,
+defaults, sessions, and audit events. Identity is loaded from a verified OpenID Connect token
+(see [Verified Identity With OIDC](#verified-identity-with-oidc)), resolved configuration,
+approved environment variables, or the local operating-system user fallback. Only the first is
+verified: the context's `verified` field is `true` only for identities whose token signature and
+claims Loro checked itself. Prompt text,
 model output, repository content, memories, and tool results are never identity sources.
 
 ## Commands
@@ -114,17 +117,56 @@ Diagnostic commands remain available so operators can see what is missing.
   the active identity when flags are omitted.
 - Runtime tool events carry subject, tenant, and identity session correlation.
 
+## Verified Identity With OIDC
+
+Configure the issuer once; the CLI, the Web UI and gateways all use it:
+
+```toml
+[identity.oidc]
+enabled = true
+issuer = "https://login.example.com/realms/data"
+client_id = "loro-web"          # Web UI sign-in client (public client with PKCE)
+audience = "loro-api"           # expected `aud` for CLI and API bearer tokens
+algorithms = ["RS256", "ES256"] # allowlist; "none" and HMAC algorithms are rejected
+clock_skew_seconds = 60
+tenant_claim = "tid"            # optional claim mappings
+roles_claim = "roles"           # dotted paths such as "realm_access.roles" work
+groups_claim = "groups"
+required = true                 # fail closed when no valid token is present
+```
+
+Verification fetches the issuer's discovery document and JWKS over HTTPS (plain HTTP only for a
+loopback issuer, which the tests use), caches the keys for `jwks_cache_seconds`, and refetches
+once when a token names an unknown `kid` (key rotation, rate limited to one refetch per 30
+seconds). Every token is checked for its signature, an allowed algorithm matching the key type,
+`iss`, `aud`, `exp`, `nbf` and `iat` within the clock skew, and a subject claim. Browser sign-ins
+also check `nonce` and, for multi-audience tokens, `azp`. RSA keys under 2,048 bits are refused.
+Signature checks use the `cryptography` package (a default dependency on Linux; install
+`loro-agent[oidc]` elsewhere).
+
+- **CLI and runtime:** put an ID or access token for `audience` in `LORO_ID_TOKEN` (or the
+  variable named by `token_env`). `loro identity show` then reports `auth_method = "oidc"`,
+  `verified = true` and the mapped subject, tenant, roles and groups. With `required = true`, a
+  missing or invalid token stops the run instead of falling back to environment assertions.
+- **Web UI:** `loro web --auth oidc` signs users in with the authorization-code flow and PKCE
+  (S256); register `http://HOST:PORT/auth/callback` as the redirect URI. API clients may instead
+  send `Authorization: Bearer <token>`. Runs, approval decisions and audit events use the signed-in
+  identity. See [Local Web UI](webui.md#sign-in-with-oidc).
+- **Gateways:** set `oidc_audience` on an endpoint to require a bearer token from the chat bridge
+  in addition to the platform signature. See [Channel Gateways](channel-gateways.md).
+
+Loro does not perform device flow, token refresh, or directory group lookups; group and role
+membership come only from token claims.
+
 ## Security Boundary And Current Limitations
 
 Environment variables are assertions, not authentication by themselves. Enterprise deployments
-must inject them through a trusted managed launcher, workload environment, or gateway and stop
-untrusted users from replacing that launch context. Loro does not currently validate OIDC/JWT
-signatures, perform device flow, fetch directory groups, or cryptographically bind identity to
-managed policy.
+must either inject them through a trusted managed launcher, workload environment, or gateway, or
+use OIDC with `required = true` so only verified tokens are accepted. Identity is not
+cryptographically bound to managed policy.
 
 Identity supplies attribution and safe defaults; it is not by itself an authorization decision.
 Approval records bind exact canonical arguments to subject, tenant, identity session, normalized
 resource, policy version/decision, and expiration. Managed identity mode rejects caller-selected
 tenant mismatches across shared-memory command, adapter, draft, and runtime-tool boundaries.
-Corporate assertion verification and cryptographic identity-to-policy binding remain external
-deployment requirements.
+Cryptographic identity-to-policy binding remains an external deployment requirement.

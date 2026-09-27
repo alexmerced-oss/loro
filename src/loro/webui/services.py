@@ -481,7 +481,9 @@ class RunManager:
         single = conversation.get("profile_name")
         return [str(single)] if single else []
 
-    def start(self, conversation_id: str, content: str) -> RunHandle:
+    def start(
+        self, conversation_id: str, content: str, *, identity: Any = None
+    ) -> RunHandle:
         prompt = content.strip()
         if not prompt:
             raise ValueError("Message cannot be empty.")
@@ -512,7 +514,7 @@ class RunManager:
         handle.publish("run.started", run_id=run_id, message=user_message)
         thread = threading.Thread(
             target=self._execute,
-            args=(handle, conversation, prompt, previous),
+            args=(handle, conversation, prompt, previous, identity),
             name=f"loro-web-{run_id[:8]}",
             daemon=True,
         )
@@ -549,6 +551,7 @@ class RunManager:
         conversation: dict[str, Any],
         prompt: str,
         previous: list[dict[str, Any]],
+        identity: Any = None,
     ) -> None:
         try:
             with self.semaphore:
@@ -611,6 +614,7 @@ class RunManager:
                         approval_provider=handle.approval_provider,
                         profile=profile,
                         _profile_cwd=self.project_root,
+                        identity=identity,
                     )
                     session_id = None
                     if not is_group and previous:

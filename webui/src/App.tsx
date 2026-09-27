@@ -11,7 +11,7 @@ import { Markdown } from "./Markdown";
 import { messageMeta } from "./messageMeta";
 import { ApprovalCenter } from "./ApprovalCenter";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { activeRun, initialize, request, streamRun } from "./api";
+import { activeRun, initialize, LoginRequiredError, loginHref, request, signOut, streamRun, takeAuthError, type AuthInfo, type Identity } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
 type View = "chat" | "runs" | "workspace" | "graphs" | "bots" | "profiles" | "extensions" | "memory" | "governance" | "settings";
@@ -35,6 +35,9 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [login, setLogin] = useState<AuthInfo | null>(null);
+  const [authError] = useState(takeAuthError);
+  const [identity, setIdentity] = useState<Identity | null>(null);
 
   const shortcuts = useMemo<Shortcut[]>(() => [
     { key: "k", mod: true, describe: "Focus the message box", run: () => {
@@ -78,6 +81,7 @@ export default function App() {
       try {
         const session = await initialize();
         setWorkspace(session.workspace);
+        setIdentity(session.identity || null);
         // Ask whether this folder can actually run a turn before showing a
         // workspace whose composer would fail on the first message.
         const readiness = await request<{ ready?: boolean }>("/api/onboarding/readiness").catch(
@@ -94,7 +98,8 @@ export default function App() {
         await Promise.all([refreshConversations(), refreshProfiles()]);
         setReady(true);
       } catch (reason) {
-        setError(String(reason));
+        if (reason instanceof LoginRequiredError) setLogin(reason.info);
+        else setError(String(reason));
       }
     })();
   }, [refreshConversations, refreshProfiles]);
@@ -116,6 +121,7 @@ export default function App() {
     } catch (reason) { setError(String(reason)); }
   }
 
+  if (login) return <SignIn info={login} error={authError} />;
   if (!ready) return <Splash error={error} />;
   // A fresh folder has no provider; showing an empty workspace whose first
   // message will fail is worse than saying so.
@@ -143,6 +149,13 @@ export default function App() {
           ))}
         </nav>
         <div className="workspace" title={workspace}><span className="status-dot" />Local workspace<br/><small>{workspace.split("/").pop()}</small></div>
+        {identity && (
+          <div className="user-chip" title={`${identity.subject} · signed in with OIDC`}>
+            <span className="avatar-dot" aria-hidden="true">{(identity.display_name || identity.subject).slice(0, 1).toUpperCase()}</span>
+            <span className="user-name"><b>{identity.display_name || identity.subject}</b><small>{identity.roles.length ? identity.roles.join(", ") : identity.tenant}</small></span>
+            <button type="button" onClick={() => void signOut()}>Sign out</button>
+          </div>
+        )}
         <button
           className="theme-toggle"
           type="button"
@@ -187,10 +200,27 @@ export default function App() {
         {view === "extensions" && <ExtensionsView setError={setError} />}
         {view === "memory" && <MemoryView setError={setError} />}
         {view === "governance" && <GovernanceView setError={setError} />}
-        {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} />}
+        {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} identity={identity} />}
       </main>
       <ApprovalCenter setError={setError} />
     </div>
+  );
+}
+
+/** Shown when the workspace uses OIDC and this browser has not signed in yet. */
+export function SignIn({ info, error }: { info: AuthInfo; error: string }) {
+  const provider = info.issuer_name || "your identity provider";
+  return (
+    <main className="signin">
+      <section className="signin-card" aria-labelledby="signin-title">
+        <div className="parrot" aria-hidden="true">🦜</div>
+        <h1 id="signin-title">Sign in to Loro</h1>
+        <p>This workspace verifies who you are with {provider} before it runs agents or records approvals in your name.</p>
+        {error && <div className="signin-error" role="alert"><b>Sign-in did not complete.</b> {error}</div>}
+        <a className="signin-button" href={loginHref(info)}>Continue with {provider}</a>
+        <small>You will come back to this page after signing in. Loro never sees your password.</small>
+      </section>
+    </main>
   );
 }
 
@@ -627,7 +657,7 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
   </div>;
 }
 
-function SettingsView({ profiles, refreshProfiles, setError }: { profiles: Profile[]; refreshProfiles: () => Promise<void>; setError: (error: string) => void }) {
+function SettingsView({ profiles, refreshProfiles, setError, identity }: { profiles: Profile[]; refreshProfiles: () => Promise<void>; setError: (error: string) => void; identity?: Identity | null }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<Array<{ name: string; display_name: string; default_model: string; small_model: string; needs_key?: boolean; api_key_env?: string; credential_ready?: boolean }>>([]);
   const [credential, setCredential] = useState("");
@@ -640,6 +670,7 @@ function SettingsView({ profiles, refreshProfiles, setError }: { profiles: Profi
   if (!settings) return <div className="page"><PageHeader eyebrow="Workspace configuration" title="Settings" description="Loading effective defaults…" /></div>;
   const selectedProvider = providers.find((item) => item.name === settings.model.provider);
   return <div className="page settings-page"><PageHeader eyebrow="Workspace configuration" title="Default settings" description="Changes are written to the local project overlay; managed policy still wins." />
+    {identity && <section className="account-card" aria-label="Signed-in account"><div><small>Signed in</small><b>{identity.display_name || identity.subject}</b><span>{identity.subject}{identity.roles.length ? ` · ${identity.roles.join(", ")}` : ""}</span></div><button type="button" onClick={() => void signOut()}>Sign out</button></section>}
     <form onSubmit={save}><section className="settings-card"><div><h2>Model route</h2><p>The provider and models used by conversations without a profile override.</p></div><div className="settings-fields"><label>Provider<select value={settings.model.provider} onChange={(event) => { const provider = providers.find((item) => item.name === event.target.value); setSettings({ ...settings, model: { ...settings.model, provider: event.target.value, model: provider?.default_model || settings.model.model, small_model: provider?.small_model || provider?.default_model || settings.model.small_model } }); }}>{providers.map((provider) => <option value={provider.name} key={provider.name}>{provider.display_name}</option>)}</select></label><label>Primary model<select value={settings.model.model} onChange={(event) => setSettings({ ...settings, model: { ...settings.model, model: event.target.value } })}>{Array.from(new Set([settings.model.model, providers.find((item) => item.name === settings.model.provider)?.default_model].filter(Boolean))).map((model) => <option key={model} value={model}>{model}</option>)}</select></label><label>Small model<select value={settings.model.small_model} onChange={(event) => setSettings({ ...settings, model: { ...settings.model, small_model: event.target.value } })}>{Array.from(new Set([settings.model.small_model, providers.find((item) => item.name === settings.model.provider)?.small_model, settings.model.model].filter(Boolean))).map((model) => <option key={model} value={model}>{model}</option>)}</select></label><div className="credential-state"><span className={settings.model.credential_configured ? "ok" : "warn"} />{settings.model.credential_configured ? "Credential reference configured" : "No credential reference detected"}</div></div></section>
       {selectedProvider?.needs_key && <section className="settings-card"><div><h2>Provider credential</h2><p>Add or rotate the key for {selectedProvider.display_name}. It is stored in Loro's OS-keyring-backed vault and is never returned to the browser.</p></div><div className="settings-fields"><label>API key<input type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={selectedProvider.credential_ready || settings.model.credential_configured ? "Credential configured · leave blank to keep it" : `Enter key or export ${selectedProvider.api_key_env || "the provider variable"}`} /></label></div></section>}
       <section className="settings-card"><div><h2>Default bot</h2><p>New conversations use this profile unless you select a bot explicitly.</p></div><div className="settings-fields"><label>Default profile<select value={settings.agent_profiles.default_profile || ""} onChange={(event) => setSettings({ ...settings, agent_profiles: { ...settings.agent_profiles, default_profile: event.target.value || null } })}><option value="">No profile</option>{profiles.map((profile) => <option value={profile.name} key={profile.name}>{profile.name} · {profile.source_scope || profile.trust}</option>)}</select></label><div className="setting-facts"><span>Writeback <b>{settings.agent_profiles.writeback}</b></span><span>Local memory <b>{settings.memory.local_enabled ? "on" : "off"}</b></span><span>Shared memory <b>{settings.memory.shared_enabled ? "on" : "off"}</b></span></div></div></section>

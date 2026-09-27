@@ -19,15 +19,55 @@ function stubApi(readiness: Record<string, unknown>) {
 }
 
 const readiness = { current: READY as Record<string, unknown> };
-vi.mock("./api", () => ({
-  initialize: async () => ({ workspace: "/workspace/loro" }),
-  request: async (path: string) => stubApi(readiness.current).request(path),
-  streamRun: async () => undefined,
-}));
+const session = { current: async (): Promise<Record<string, unknown>> => ({ workspace: "/workspace/loro" }) };
+vi.mock("./api", () => {
+  class LoginRequiredError extends Error {
+    info: Record<string, unknown>;
+    constructor(info: Record<string, unknown>) {
+      super("Sign in");
+      this.info = info;
+    }
+  }
+  return {
+    LoginRequiredError,
+    initialize: () => session.current(),
+    loginHref: () => "/auth/login?next=%2F",
+    takeAuthError: () => "",
+    signOut: async () => undefined,
+    request: async (path: string) => stubApi(readiness.current).request(path),
+    streamRun: async () => undefined,
+  };
+});
 
 describe("App", () => {
   beforeEach(() => {
     readiness.current = READY;
+    session.current = async () => ({ workspace: "/workspace/loro" });
+  });
+
+  it("asks an OIDC workspace to sign in before loading anything", async () => {
+    const api = await import("./api");
+    session.current = async () => {
+      throw new (api.LoginRequiredError as unknown as new (info: object) => Error)({
+        mode: "oidc",
+        issuer_name: "login.example.com",
+      });
+    };
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Sign in to Loro" })).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Continue with login.example.com" });
+    expect(link).toHaveAttribute("href", "/auth/login?next=%2F");
+    expect(screen.queryByText("Conversations")).not.toBeInTheDocument();
+  });
+
+  it("shows who is signed in and offers sign out", async () => {
+    session.current = async () => ({
+      workspace: "/workspace/loro",
+      identity: { subject: "alex@example.com", display_name: "Alex Example", tenant: "acme", roles: ["approver"], groups: [], auth_method: "oidc", verified: true },
+    });
+    render(<App />);
+    expect(await screen.findByText("Alex Example")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
   // Without this each render stacks in the same document, so a "not present"

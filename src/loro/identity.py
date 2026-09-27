@@ -4,9 +4,11 @@ import getpass
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from functools import lru_cache
+from typing import Any
 from uuid import uuid4
 
-from loro.config import IdentityConfig, IdentityField
+from loro.config import IdentityConfig, IdentityField, OIDCConfig
 
 
 class IdentityConfigurationError(ValueError):
@@ -24,6 +26,8 @@ class IdentityContext:
     auth_method: str
     session_id: str
     source: str
+    # True only when the identity came from a token whose signature and claims Loro checked.
+    verified: bool = False
 
     def to_payload(self) -> dict[str, str | list[str] | None]:
         payload = asdict(self)
@@ -117,8 +121,16 @@ def diagnose_identity(
     config: IdentityConfig,
     *,
     environ: Mapping[str, str] | None = None,
+    token: str | None = None,
 ) -> IdentityDiagnostic:
     values = environ if environ is not None else os.environ
+    verified = _verified_context(config, values, token)
+    if verified is not None:
+        context, asserted = verified
+        missing = tuple(field for field in config.required_fields if field not in asserted)
+        return IdentityDiagnostic(
+            context=context, required_fields=tuple(config.required_fields), missing_fields=missing
+        )
     context = build_identity_context(config, environ=values)
     asserted = _asserted_fields(config, values)
     missing = tuple(
@@ -135,12 +147,90 @@ def resolve_identity(
     config: IdentityConfig,
     *,
     environ: Mapping[str, str] | None = None,
+    token: str | None = None,
 ) -> IdentityContext:
-    diagnostic = diagnose_identity(config, environ=environ)
+    diagnostic = diagnose_identity(config, environ=environ, token=token)
     if not diagnostic.ok:
         fields = ", ".join(diagnostic.missing_fields)
         raise IdentityConfigurationError(f"Required identity fields are missing: {fields}")
     return diagnostic.context
+
+
+@lru_cache(maxsize=8)
+def _provider_for(serialized: str) -> Any:
+    from loro.oidc import OIDCProvider
+
+    return OIDCProvider(OIDCConfig.model_validate_json(serialized))
+
+
+def oidc_provider(config: OIDCConfig) -> Any:
+    """A cached provider per issuer configuration, so JWKS is not refetched on every call."""
+
+    return _provider_for(config.model_dump_json())
+
+
+def identity_from_claims(
+    config: OIDCConfig, claims: Mapping[str, Any], *, session_id: str | None = None
+) -> IdentityContext:
+    """Map verified token claims onto a Loro identity."""
+
+    from loro.oidc import claim_value, claim_values
+
+    subject = str(claim_value(claims, config.subject_claim))
+    return IdentityContext(
+        subject=subject,
+        display_name=claim_value(claims, config.display_name_claim) or subject,
+        organization=claim_value(claims, config.organization_claim),
+        tenant=claim_value(claims, config.tenant_claim) or "default",
+        groups=claim_values(claims, config.groups_claim),
+        roles=claim_values(claims, config.roles_claim),
+        auth_method="oidc",
+        session_id=session_id or _PROCESS_SESSION_ID,
+        source=f"oidc:{str(claims.get('iss', '')).rstrip('/')}",
+        verified=True,
+    )
+
+
+def _verified_context(
+    config: IdentityConfig, environ: Mapping[str, str], token: str | None
+) -> tuple[IdentityContext, set[str]] | None:
+    oidc = config.oidc
+    if not oidc.enabled:
+        return None
+    supplied = token or _clean(environ.get(oidc.token_env))
+    if not supplied:
+        if oidc.required:
+            raise IdentityConfigurationError(
+                f"A verified identity is required: set {oidc.token_env} to an ID or access "
+                f"token from {oidc.issuer}, or sign in through the Web UI."
+            )
+        return None
+    from loro.oidc import OIDCError
+
+    try:
+        claims = oidc_provider(oidc).verify(supplied)
+    except OIDCError as error:
+        raise IdentityConfigurationError(f"OIDC token rejected: {error}") from error
+    context = identity_from_claims(oidc, claims)
+    asserted = {"subject", "display_name", "auth_method", "session_id", "source"}
+    for field, claim in (
+        ("tenant", oidc.tenant_claim),
+        ("organization", oidc.organization_claim),
+        ("groups", oidc.groups_claim),
+        ("roles", oidc.roles_claim),
+    ):
+        if claim and claim_present(claims, claim):
+            asserted.add(field)
+    return context, asserted
+
+
+def claim_present(claims: Mapping[str, Any], name: str) -> bool:
+    value: Any = claims
+    for part in name.split("."):
+        if not isinstance(value, Mapping) or part not in value:
+            return False
+        value = value[part]
+    return True
 
 
 def _environment_values(

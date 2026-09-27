@@ -187,6 +187,9 @@ loro setup quickstart
 - Read-only Agentic Graph validation and planning over explicitly exported MCP tools.
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 - OS-keyring credential vault references with named provider and integration accounts.
+- Verified identity through OpenID Connect: checked JWT signatures and claims for CLI tokens,
+  Web UI sign-in (authorization code + PKCE) and gateway bridges (experimental; see
+  [Identity Context](docs/identity.md#verified-identity-with-oidc)).
 - Signed, identity-mapped Slack, Discord, Telegram, Teams, Signal-bridge, and generic gateways.
 - Open Agent Profile 1.0 Level 3 named agents with fail-closed narrowing, untrusted state,
   digest-bound proposals, canonical `/state`-only atomic writeback, a complete profile wizard, and

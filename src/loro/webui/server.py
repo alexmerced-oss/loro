@@ -5,15 +5,18 @@ import json
 import mimetypes
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from loro.agent_profiles import AgentProfileRegistry
-from loro.config import load_config
+from loro.config import OIDCConfig, load_config
+from loro.oidc import OIDCError
+from loro.webui.auth import SESSION_COOKIE, WebAuth, login_error_redirect
 from loro.webui.conversations import ConversationStore
 from loro.webui.services import MAX_GROUP_PARTICIPANTS, ProfileService, RunManager, SettingsService
 from loro.webui.workspace import (
@@ -147,6 +150,13 @@ class ScheduleUpdate(BaseModel):
     enabled: bool
 
 
+def _actor(request: Request) -> str:
+    """The verified signed-in subject, or the local user in launch-token mode."""
+
+    identity = getattr(request.state, "identity", None)
+    return identity.subject if identity is not None else "local-user"
+
+
 def create_app(
     *,
     project_root: Path | None = None,
@@ -154,6 +164,8 @@ def create_app(
     auth_token: str | None = None,
     static_path: Path | None = None,
     database_synchronous: str = "FULL",
+    auth_mode: str = "token",
+    oidc_config: OIDCConfig | None = None,
 ):
     root = (project_root or Path.cwd()).resolve()
     db_path = database_path or root / ".loro" / "webui.sqlite3"
@@ -165,7 +177,7 @@ def create_app(
     from loro.webmcp_bridge import AlexMercedWebMCPBridge
 
     webmcp = AlexMercedWebMCPBridge()
-    sessions: dict[str, str] = {}
+    auth = WebAuth(auth_mode, oidc_config)
     app = FastAPI(title="Loro Web UI", version="1.0", docs_url=None, redoc_url=None)
     app.state.project_root = root
     app.state.store = store
@@ -175,19 +187,47 @@ def create_app(
 
     @app.middleware("http")
     async def security(request: Request, call_next):
+        request.state.identity = None
+        csrf_exempt = False
         if request.url.path.startswith("/api/"):
-            if auth_token is not None:
-                supplied = request.headers.get("authorization", "")
-                if not secrets.compare_digest(supplied, f"Bearer {auth_token}"):
-                    return Response(status_code=401, content="Authentication required.")
-            if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            if auth.mode == "token":
+                if auth_token is not None:
+                    supplied = request.headers.get("authorization", "")
+                    if not secrets.compare_digest(supplied, f"Bearer {auth_token}"):
+                        return Response(status_code=401, content="Authentication required.")
+            else:
+                authorization = request.headers.get("authorization", "")
+                if authorization:
+                    # API clients: a verified bearer token, not an ambient cookie, so no CSRF.
+                    try:
+                        request.state.identity = auth.identity_from_bearer(authorization)
+                    except OIDCError as error:
+                        return JSONResponse(
+                            {"error": "invalid_token", "detail": str(error)},
+                            status_code=401,
+                            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                        )
+                    csrf_exempt = True
+                else:
+                    session = auth.session(request.cookies.get(SESSION_COOKIE))
+                    if session is None or session.identity is None:
+                        return JSONResponse(
+                            {
+                                "error": "authentication_required",
+                                "detail": "Sign in to use this workspace.",
+                                "login_url": "/auth/login",
+                            },
+                            status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                    request.state.identity = session.identity
+            if request.method not in {"GET", "HEAD", "OPTIONS"} and not csrf_exempt:
                 origin = request.headers.get("origin")
                 if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
                     return Response(status_code=403, content="Origin rejected.")
-                session_id = request.cookies.get("loro_web_session", "")
-                expected = sessions.get(session_id)
+                session = auth.session(request.cookies.get(SESSION_COOKIE, ""))
                 supplied = request.headers.get("x-loro-csrf", "")
-                if expected is None or not secrets.compare_digest(expected, supplied):
+                if session is None or not secrets.compare_digest(session.csrf, supplied):
                     return Response(status_code=403, content="CSRF validation failed.")
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -459,20 +499,108 @@ def create_app(
         return {"ok": handle.decide_gate(request_id, payload.approved)}
 
     @app.get("/api/session")
-    async def web_session(request: Request, response: Response) -> dict[str, str]:
-        session_id = secrets.token_urlsafe(24)
-        csrf = secrets.token_urlsafe(32)
-        if len(sessions) >= 1024:
-            sessions.pop(next(iter(sessions)))
-        sessions[session_id] = csrf
+    async def web_session(request: Request, response: Response) -> dict[str, Any]:
+        if auth.mode == "oidc":
+            identity = request.state.identity
+            existing = auth.session(request.cookies.get(SESSION_COOKIE))
+            if existing is None:  # a bearer-token client: give it a short-lived CSRF pair
+                session_id, existing = auth.new_session(identity)
+                response.set_cookie(
+                    SESSION_COOKIE,
+                    session_id,
+                    httponly=True,
+                    samesite="lax",
+                    secure=request.url.scheme == "https",
+                )
+            return {
+                "csrf_token": existing.csrf,
+                "workspace": str(root),
+                "identity": identity.to_payload() if identity else None,
+            }
+        session_id, session = auth.new_session()
         response.set_cookie(
-            "loro_web_session",
+            SESSION_COOKIE,
             session_id,
             httponly=True,
             samesite="strict",
             secure=request.url.scheme == "https",
         )
-        return {"csrf_token": csrf, "workspace": str(root)}
+        return {"csrf_token": session.csrf, "workspace": str(root)}
+
+    @app.get("/auth/me")
+    async def auth_me(request: Request) -> dict[str, Any]:
+        described = auth.describe()
+        if auth.mode != "oidc":
+            return described
+        session = auth.session(request.cookies.get(SESSION_COOKIE))
+        identity = session.identity if session else None
+        return {
+            **described,
+            "authenticated": identity is not None,
+            "identity": identity.to_payload() if identity else None,
+            "expires_at": session.expires_at if session and identity else None,
+            "login_url": "/auth/login",
+        }
+
+    @app.get("/auth/login")
+    async def auth_login(request: Request, next: str = "/") -> Response:  # noqa: A002
+        if auth.mode != "oidc":
+            raise HTTPException(status_code=404, detail="OIDC sign-in is not enabled.")
+        try:
+            target = auth.begin_login(str(request.base_url) + "auth/callback", next)
+        except OIDCError as error:
+            return RedirectResponse(login_error_redirect(str(error)), status_code=303)
+        return RedirectResponse(target, status_code=303)
+
+    @app.get("/auth/callback")
+    async def auth_callback(
+        request: Request,
+        state: str = "",
+        code: str = "",
+        error: str = "",
+        error_description: str = "",
+    ) -> Response:
+        if auth.mode != "oidc":
+            raise HTTPException(status_code=404, detail="OIDC sign-in is not enabled.")
+        if error:
+            reason = error_description or error
+            return RedirectResponse(
+                login_error_redirect(f"The identity provider refused the sign-in: {reason}"),
+                status_code=303,
+            )
+        try:
+            identity, expires, next_path = await asyncio.to_thread(
+                auth.complete_login,
+                state=state,
+                code=code,
+                redirect_uri=str(request.base_url) + "auth/callback",
+            )
+        except OIDCError as failure:
+            return RedirectResponse(login_error_redirect(str(failure)), status_code=303)
+        session_id, _session = auth.new_session(identity, expires)
+        response = RedirectResponse(next_path, status_code=303)
+        # Lax, not strict: the browser arrives here from the identity provider's site.
+        response.set_cookie(
+            SESSION_COOKIE,
+            session_id,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+            max_age=max(60, int(expires - time.time())),
+        )
+        return response
+
+    @app.post("/auth/logout")
+    async def auth_logout(request: Request) -> Response:
+        session_id = request.cookies.get(SESSION_COOKIE)
+        session = auth.session(session_id)
+        supplied = request.headers.get("x-loro-csrf", "")
+        if session is None or not secrets.compare_digest(session.csrf, supplied):
+            return Response(status_code=403, content="CSRF validation failed.")
+        auth.end_session(session_id)
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(SESSION_COOKIE)
+        return response
 
     @app.get("/api/status")
     async def status() -> dict[str, Any]:
@@ -682,10 +810,16 @@ def create_app(
             raise translate(error) from error
 
     @app.post("/api/conversations/{conversation_id}/messages", status_code=202)
-    async def create_message(conversation_id: str, payload: MessageCreate) -> dict[str, Any]:
+    async def create_message(
+        request: Request, conversation_id: str, payload: MessageCreate
+    ) -> dict[str, Any]:
         try:
             context_suffix, manifest = workspace.context(payload.context)
-            handle = runs.start(conversation_id, payload.content + context_suffix)
+            handle = runs.start(
+                conversation_id,
+                payload.content + context_suffix,
+                identity=request.state.identity,
+            )
             return {"run_id": handle.run_id, "context": manifest}
         except Exception as error:
             raise translate(error) from error
@@ -759,13 +893,14 @@ def create_app(
 
     @app.post("/api/runs/{run_id}/approvals/{request_id}")
     async def resolve_approval(
-        run_id: str, request_id: str, payload: ApprovalResolve
+        request: Request, run_id: str, request_id: str, payload: ApprovalResolve
     ) -> dict[str, Any]:
         try:
             scope = payload.scope if payload.decision == "approve" else None
             runs.get(run_id).resolve_approval(
                 request_id,
                 scope,
+                actor_id=_actor(request),
                 decision_id=payload.decision_id,
             )
             return {"resolved": True, "decision": payload.decision, "scope": scope}
@@ -786,13 +921,13 @@ def create_app(
         return runs.aais.events_after(after)
 
     @app.post("/api/approvals/decisions")
-    async def decide_aais(payload: AAISDecision) -> dict[str, Any]:
+    async def decide_aais(request: Request, payload: AAISDecision) -> dict[str, Any]:
         try:
             resolution = runs.aais.decide(
                 payload.request_id,
                 decision=payload.decision,
                 scope=payload.scope,
-                actor_id="local-user",
+                actor_id=_actor(request),
                 decision_id=payload.decision_id,
             )
             return {"ok": True, "resolution": resolution}

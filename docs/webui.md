@@ -51,6 +51,37 @@ explanation rather than an empty workspace. The token is not persisted by the se
 `loro web` invalidates the previous one, and any tab still holding it will ask you to reopen the
 printed URL.
 
+## Sign In With OIDC
+
+For shared or team use, sign users in with your identity provider instead of the launch token:
+
+```bash
+loro web --auth=oidc
+loro web --auth=oidc --host=10.0.0.5 --no-open
+```
+
+The second form binds a LAN address; run it behind a TLS reverse proxy. This needs `[identity.oidc]` with `enabled`, `issuer` and `client_id` (see
+[Verified Identity With OIDC](identity.md#verified-identity-with-oidc)). Register
+`http://HOST:PORT/auth/callback` (or the proxy's https URL) as a redirect URI with the provider.
+
+- Opening the workspace shows a **Sign in to Loro** page. **Continue with <provider>** starts the
+  authorization-code flow with PKCE (S256), `state` and `nonce`; the provider returns to
+  `/auth/callback`, Loro exchanges the code, verifies the ID token and starts an HTTP-only,
+  SameSite=Lax session cookie for `web_session_seconds` (8 hours by default). You return to the
+  page you started from; only same-origin paths are accepted as the return target.
+- A refused, expired or replayed sign-in comes back to the sign-in page with the reason shown.
+- The rail shows who is signed in with a **Sign out** button; on narrow screens the same account
+  card is at the top of Settings.
+- API clients send `Authorization: Bearer <token>` with a token for `identity.oidc.audience`.
+  Invalid tokens get `401` with `WWW-Authenticate: Bearer error="invalid_token"`. Bearer requests
+  do not need the CSRF header because no ambient cookie is involved.
+- Conversations run as the signed-in identity (`verified: true` in session records and audit),
+  and approval decisions record that subject as the actor.
+
+Sessions live in the server's memory and end when `loro web` restarts. Cookies are marked
+`Secure` only when the request arrived over https, so put non-loopback deployments behind a TLS
+proxy.
+
 ## Appearance And Keyboard
 
 The UI follows the operating system's light or dark setting. The control at the foot of the rail

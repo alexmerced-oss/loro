@@ -73,13 +73,16 @@ class AgentRuntime:
         profile: EffectiveProfile | None = None,
         _subagent_depth: int = 0,
         _profile_cwd: Path | None = None,
+        identity: IdentityContext | None = None,
     ) -> None:
         self.profile = profile
         self.base_config = config
         self.subagent_depth = _subagent_depth
         self.profile_cwd = (_profile_cwd or Path.cwd()).resolve()
         self.config = effective_config(config, profile) if profile is not None else config
-        self.identity = resolve_identity(config.identity)
+        # A caller that already verified the user (the Web UI's OIDC session) passes it in;
+        # otherwise the identity comes from configuration, environment, or LORO_ID_TOKEN.
+        self.identity = identity or resolve_identity(config.identity)
         self.protection = DataProtectionEngine(config.safety)
         self.audit = AuditLogger(config.audit, self.identity, safety_config=config.safety)
         self.approvals = ApprovalManager(

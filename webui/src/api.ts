@@ -1,4 +1,52 @@
 let csrfToken = "";
+let authMode: "token" | "oidc" = "token";
+
+export type Identity = {
+  subject: string;
+  display_name: string;
+  tenant: string;
+  roles: string[];
+  groups: string[];
+  auth_method: string;
+  verified?: boolean;
+};
+
+export type AuthInfo = {
+  mode: "token" | "oidc";
+  authenticated?: boolean;
+  identity?: Identity | null;
+  issuer?: string;
+  issuer_name?: string;
+  login_url?: string;
+};
+
+/** Thrown when the workspace uses OIDC sign-in and this browser is not signed in. */
+export class LoginRequiredError extends Error {
+  info: AuthInfo;
+  constructor(info: AuthInfo, message = "Sign in to use this workspace.") {
+    super(message);
+    this.name = "LoginRequiredError";
+    this.info = info;
+  }
+}
+
+/** Where to send the browser to sign in, returning to the current page afterwards. */
+export function loginHref(info: AuthInfo): string {
+  const next = window.location.pathname + window.location.search;
+  return `${info.login_url || "/auth/login"}?next=${encodeURIComponent(next)}`;
+}
+
+/** Read and remove `?auth_error=` left by a failed sign-in round trip. */
+export function takeAuthError(): string {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.href);
+  const message = url.searchParams.get("auth_error") || "";
+  if (message) {
+    url.searchParams.delete("auth_error");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
+  return message;
+}
 
 const AUTH_STORAGE_KEY = "loro-auth-token";
 
@@ -51,6 +99,9 @@ async function responseError(response: Response): Promise<Error> {
   }
 
   // Named states for the cases a user can actually act on.
+  if (response.status === 401 && authMode === "oidc") {
+    return new LoginRequiredError({ mode: "oidc", login_url: "/auth/login" }, "Your sign-in has ended. Sign in again to continue.");
+  }
   if (response.status === 401) {
     return new Error(
       "This workspace needs the launch token. Reopen the URL that `loro web` printed, " +
@@ -72,12 +123,23 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(detail || `${response.status} ${response.statusText}`);
 }
 
-export async function initialize(): Promise<{ workspace: string }> {
+export async function initialize(): Promise<{ workspace: string; identity?: Identity | null }> {
+  const me = await fetch("/auth/me", { headers: headers() });
+  if (me.ok) {
+    const info = (await me.json()) as AuthInfo;
+    authMode = info.mode === "oidc" ? "oidc" : "token";
+    if (info.mode === "oidc" && !info.authenticated) throw new LoginRequiredError(info);
+  }
   const response = await fetch("/api/session", { headers: headers() });
   if (!response.ok) throw await responseError(response);
   const value = await response.json();
   csrfToken = value.csrf_token;
   return value;
+}
+
+export async function signOut(): Promise<void> {
+  await fetch("/auth/logout", { method: "POST", headers: headers() });
+  window.location.assign("/");
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
