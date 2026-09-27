@@ -458,7 +458,7 @@ class AgentRuntime:
 
         tool_section = _format_tool_section(tool_executions)
         summary = (
-            f"Loro {mode} mode completed.\n\n"
+            f"{_summary_heading(mode, stop_reason)}\n\n"
             f"Provider: {self.config.model.provider} / {self.config.model.model}\n\n"
             f"Stop reason: {stop_reason}\n"
             f"Steps: {steps}\n\n"
@@ -819,6 +819,20 @@ def _initial_model_prompt(
         "User task: "
         f"{_strip_control_directives(prompt)}{extra_context}{memory_section}{tool_section}"
     )
+
+
+def _summary_heading(mode: str, stop_reason: str) -> str:
+    """First line of the run summary; it must not claim success when the run did not finish."""
+
+    if stop_reason == "completed":
+        return f"Loro {mode} mode completed."
+    if stop_reason == "provider_error":
+        return f"Loro {mode} mode failed: the provider request did not succeed."
+    if stop_reason == "max_steps":
+        return f"Loro {mode} mode stopped at the step limit."
+    if stop_reason.startswith("budget_"):
+        return f"Loro {mode} mode stopped at the {stop_reason.removeprefix('budget_')} budget."
+    return f"Loro {mode} mode stopped ({stop_reason})."
 
 
 def _history_reply(response: str, executions: list[ToolExecution]) -> str:

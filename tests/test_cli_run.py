@@ -108,3 +108,33 @@ def test_oversized_prompt_file_is_rejected(tmp_path: Path, monkeypatch: pytest.M
 
     assert result.exit_code == 2
     assert "max_model_input_bytes" in result.output
+
+
+def test_failed_provider_summary_does_not_claim_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(
+        tmp_path,
+        monkeypatch,
+        '[model]\nprovider = "nous"\nmodel = "m"\n'
+        'base_url = "http://127.0.0.1:9/v1"\nmax_retries = 0\ntimeout_seconds = 5',
+    )
+    result = CliRunner().invoke(app, ["run", "Hello."])
+    assert result.exit_code == 1
+    assert "mode completed" not in result.output
+    assert "Loro run mode failed: the provider request did not succeed." in result.output
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected"),
+    [
+        ("completed", "Loro run mode completed."),
+        ("max_steps", "Loro run mode stopped at the step limit."),
+        ("budget_tool_calls", "Loro run mode stopped at the tool_calls budget."),
+        ("other", "Loro run mode stopped (other)."),
+    ],
+)
+def test_summary_heading_matches_stop_reason(stop_reason: str, expected: str) -> None:
+    from loro.runtime import _summary_heading
+
+    assert _summary_heading("run", stop_reason) == expected
