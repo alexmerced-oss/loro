@@ -1,15 +1,28 @@
 # Loro
 
-Release: [0.21.0 release notes](docs/releases/0.21.0.md).
+The governed agent harness for data and platform teams: verified identity, tamper-evident audit, lakehouse-native tools.
+
+Current release: Loro `0.21.0` ([release notes](docs/releases/0.21.0.md)). Work in progress for
+the next release is tracked in [0.22.0 (unreleased)](docs/releases/0.22.0.md).
 
 Loro is a Python CLI agent harness for enterprise coding, governed data work, and productivity tasks.
 
 "Loro" is Spanish for parrot: an intelligent, social bird that listens, learns, repeats useful knowledge, and helps information move across groups.
 
-Loro `0.20.0` is the pending release candidate. The deliberately limited `0.10` stable core remains
-the stabilization baseline. The OAP and AGS integrations remain pre-1.0 product surfaces, but are
-implemented against the published 1.0 specifications and compatible 1.x support libraries.
+The deliberately limited `0.10` stable core remains the stabilization baseline. The OAP and AGS
+integrations remain pre-1.0 product surfaces, but are implemented against the published 1.0 specifications and compatible 1.x support libraries.
 See [Project Status](docs/project-status.md) for the precise boundary and remaining 1.0 gates.
+
+## Which tool do I want?
+
+Loro is one of four related open-source agent projects. Pick by what you are trying to do:
+
+| Goal | Tool |
+| --- | --- |
+| I want a governed agent for a team or data platform | [Loro](https://github.com/alexmerced-oss/loro) |
+| I want a personal agent that remembers me | [MagAgent](https://github.com/AlexMercedCoder/MagAgent) |
+| I want a desktop app for my agent | [Mag Command Center](https://github.com/AlexMercedCoder/MagCommandCenter) |
+| I already use Claude Code/Codex/Gemini/etc. and want one identity across them | [Merced AI](https://github.com/AlexMercedCoder/merced-ai) |
 
 ## Install
 
