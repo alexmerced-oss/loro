@@ -22,9 +22,7 @@ def test_postgres_shared_memory_lifecycle_and_recovery_with_container(monkeypatc
     except ModuleNotFoundError as error:
         pytest.skip(f"Missing integration dependency: {error.name}")
 
-    container = PostgresContainer("postgres:16-alpine").with_tmpfs_mount(
-        "/var/lib/postgresql/data"
-    )
+    container = PostgresContainer("postgres:16-alpine").with_tmpfs_mount("/var/lib/postgresql/data")
     container.start()
     try:
         dsn = _psycopg_dsn(container.get_connection_url())
@@ -184,9 +182,7 @@ def test_postgres_shared_memory_lifecycle_and_recovery_with_container(monkeypatc
             with connection.cursor() as cursor:
                 cursor.execute("CREATE ROLE loro_rls_reader NOLOGIN")
                 cursor.execute("GRANT USAGE ON SCHEMA public TO loro_rls_reader")
-                cursor.execute(
-                    "GRANT SELECT ON shared_memories, memory_events TO loro_rls_reader"
-                )
+                cursor.execute("GRANT SELECT ON shared_memories, memory_events TO loro_rls_reader")
                 cursor.execute("SET ROLE loro_rls_reader")
                 cursor.execute("SELECT set_config('loro.tenant_id', %s, true)", ("other",))
                 cursor.execute("SELECT count(*) FROM shared_memories")

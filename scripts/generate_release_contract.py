@@ -40,9 +40,7 @@ def build_contract() -> dict[str, object]:
     support = json.loads(support_path.read_text(encoding="utf-8"))
     interoperability = json.loads(interop_path.read_text(encoding="utf-8"))
     root = get_command(app)
-    mcp_protocol_factory = MCPServerConfig.model_fields[
-        "allowed_protocol_versions"
-    ].default_factory
+    mcp_protocol_factory = MCPServerConfig.model_fields["allowed_protocol_versions"].default_factory
     if mcp_protocol_factory is None:
         raise RuntimeError("MCP protocol defaults are not declared.")
     command_map = {

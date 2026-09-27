@@ -49,9 +49,7 @@ class AuditLogger:
         self.buffer = AuditBuffer(config.buffer_path, config.max_buffer_events)
         self.sink = sink or self._configured_sink()
         self.protection = DataProtectionEngine(safety_config) if safety_config else None
-        self.metrics = (
-            OperationalMetrics(config.metrics_path) if config.metrics_enabled else None
-        )
+        self.metrics = OperationalMetrics(config.metrics_path) if config.metrics_enabled else None
         self.context: dict[str, Any] = {}
 
     def bind_context(self, **context: Any) -> None:

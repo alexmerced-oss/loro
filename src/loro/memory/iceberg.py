@@ -426,8 +426,7 @@ LIMIT 1;
             _validate_lifecycle_event(existing_event, request)
         operation_time = (
             existing_event.get("event_at")
-            if existing_event is not None
-            and isinstance(existing_event.get("event_at"), datetime)
+            if existing_event is not None and isinstance(existing_event.get("event_at"), datetime)
             else request.requested_at
         )
         updated = dict(current)

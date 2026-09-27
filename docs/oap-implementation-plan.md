@@ -120,15 +120,16 @@ class ResolvedProfile:
     profile_digest: str
     warnings: list[str]
 
+
 # effective.py  -- what will actually run, after intersection with policy
 @dataclass(frozen=True)
 class EffectiveProfile:
     resolved: ResolvedProfile
-    permissions: PermissionsConfig      # already narrowed
-    tools: frozenset[str]               # already intersected
+    permissions: PermissionsConfig  # already narrowed
+    tools: frozenset[str]  # already intersected
     model: ModelSelection
     runtime_limits: RuntimeLimits
-    adjustments: list[Adjustment]       # every drop, narrowing, substitution
+    adjustments: list[Adjustment]  # every drop, narrowing, substitution
 ```
 
 `AgentRuntime` accepts an `EffectiveProfile` and never a `ResolvedProfile`. Make that a type signature, not a convention, so the compiler and the reviewer both enforce it.
@@ -155,8 +156,9 @@ Each phase is independently shippable and independently testable. Do not start a
 def canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
-def profile_digest(document: dict) -> str: ...   # whole document
-def spec_digest(document: dict) -> str: ...      # {"metadata": ..., "spec": ...} only
+
+def profile_digest(document: dict) -> str: ...  # whole document
+def spec_digest(document: dict) -> str: ...  # {"metadata": ..., "spec": ...} only
 ```
 
 Pinning uses the **spec digest**, so an agent learning something does not invalidate a pin. This mirrors how skill digests work but with the state carved out.
@@ -185,7 +187,7 @@ class AgentProfilesConfig(BaseModel):
     project_paths: list[str] = Field(default_factory=lambda: [".loro/agents", ".agents"])
     allow_user: bool = True
     allow_project: bool = True
-    writeback: Literal["off", "propose", "auto"] = "propose"   # ceiling, see below
+    writeback: Literal["off", "propose", "auto"] = "propose"  # ceiling, see below
     max_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
     max_state_bytes: int = Field(default=200_000, ge=0, le=5_000_000)
     max_profiles: int = Field(default=200, ge=1, le=10_000)
@@ -244,8 +246,12 @@ Do this phase with more care than the rest combined. A bug here is a privilege e
 ```python
 _ORDER = {"deny": 0, "ask": 1, "allow": 2}
 
-def narrow_decision(policy: PermissionDecision, requested: PermissionDecision) -> PermissionDecision:
+
+def narrow_decision(
+    policy: PermissionDecision, requested: PermissionDecision
+) -> PermissionDecision:
     return min(policy, requested, key=lambda value: _ORDER[value])
+
 
 def intersect_permissions(
     policy: PermissionsConfig,
@@ -263,11 +269,14 @@ Rules:
 2. Tool intersection in `effective.py`:
 
 ```python
-granted = registry.tools_available_to(identity)          # what policy allows
+granted = registry.tools_available_to(identity)  # what policy allows
 match profile.tools.policy:
-    case "allowlist": effective = granted & expand_globs(profile.tools.allow, granted)
-    case "denylist":  effective = granted
-    case "inherit":   effective = granted
+    case "allowlist":
+        effective = granted & expand_globs(profile.tools.allow, granted)
+    case "denylist":
+        effective = granted
+    case "inherit":
+        effective = granted
 effective -= expand_globs(profile.tools.deny, granted)
 ```
 
@@ -286,6 +295,7 @@ def test_profile_cannot_widen_shell_permission():
     policy = PermissionsConfig(shell="deny")
     profile = profile_requesting(shell="allow")
     assert effective(policy, profile).permissions.shell == "deny"
+
 
 def test_profile_cannot_add_a_tool_policy_denies(): ...
 def test_profile_cannot_raise_a_cost_budget(): ...

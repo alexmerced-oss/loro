@@ -28,9 +28,7 @@ def main() -> int:
     parser.add_argument("--workflow-run")
     args = parser.parse_args()
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    support_matrix = json.loads(
-        (ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8")
-    )
+    support_matrix = json.loads((ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8"))
     data_support_matrix = json.loads(
         (ROOT / "docs" / "data-support-matrix.json").read_text(encoding="utf-8")
     )
@@ -40,9 +38,10 @@ def main() -> int:
     release_contract = json.loads(
         (ROOT / "docs" / "release-contract.json").read_text(encoding="utf-8")
     )
-    commit = args.commit or subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-    ).strip()
+    commit = (
+        args.commit
+        or subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    )
     artifacts = []
     for path in sorted(args.dist.iterdir()):
         if not path.is_file() or path.name in {"SHA256SUMS", "release-manifest.json"}:

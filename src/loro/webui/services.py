@@ -481,9 +481,7 @@ class RunManager:
         single = conversation.get("profile_name")
         return [str(single)] if single else []
 
-    def start(
-        self, conversation_id: str, content: str, *, identity: Any = None
-    ) -> RunHandle:
+    def start(self, conversation_id: str, content: str, *, identity: Any = None) -> RunHandle:
         prompt = content.strip()
         if not prompt:
             raise ValueError("Message cannot be empty.")

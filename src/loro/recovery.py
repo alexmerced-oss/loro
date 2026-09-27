@@ -253,9 +253,7 @@ def _postgres_environment(dsn: str) -> dict[str, str]:
                 "Keyword Postgres DSNs require the data extra; URI DSNs work without it."
             ) from error
         values = {
-            key: str(value)
-            for key, value in conninfo_to_dict(dsn).items()
-            if value is not None
+            key: str(value) for key, value in conninfo_to_dict(dsn).items() if value is not None
         }
     environment = {
         target: values[source]

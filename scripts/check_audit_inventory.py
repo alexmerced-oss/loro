@@ -34,17 +34,14 @@ def literal_audit_events(source_root: Path) -> dict[str, list[str]]:
 def main() -> int:
     events = literal_audit_events(ROOT / "src" / "loro")
     unknown = {
-        event: locations
-        for event, locations in events.items()
-        if audit_event_family(event) is None
+        event: locations for event, locations in events.items() if audit_event_family(event) is None
     }
     if unknown:
         for event, locations in unknown.items():
             print(f"Unregistered audit event family for {event}: {', '.join(locations)}")
         return 1
     print(
-        f"Audit inventory OK: {len(events)} literal event types are assigned "
-        "to a governed family."
+        f"Audit inventory OK: {len(events)} literal event types are assigned to a governed family."
     )
     return 0
 

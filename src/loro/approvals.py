@@ -371,9 +371,7 @@ class ApprovalManager:
         self.identity = identity
         self.event_handler = event_handler
         self.store = store or _approval_store(config)
-        self.records = (
-            self.store.records if isinstance(self.store, InMemoryApprovalStore) else {}
-        )
+        self.records = self.store.records if isinstance(self.store, InMemoryApprovalStore) else {}
 
     def request(
         self,

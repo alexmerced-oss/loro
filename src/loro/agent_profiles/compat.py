@@ -49,9 +49,7 @@ def canonical_document(profile: AgentProfileModel) -> dict[str, Any]:
         if isinstance(item, dict)
     }
     tools["skills"] = [
-        item
-        if isinstance(item, dict)
-        else deepcopy(preserved_skills.get(item) or {"name": item})
+        item if isinstance(item, dict) else deepcopy(preserved_skills.get(item) or {"name": item})
         for item in tools.get("skills", [])
     ]
     preserved_servers = {

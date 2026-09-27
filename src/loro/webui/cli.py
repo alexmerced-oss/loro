@@ -25,9 +25,7 @@ def serve(
     ctx: typer.Context,
     host: Annotated[str, typer.Option(help="Address to bind.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(min=1, max=65535, help="Port to bind.")] = 8765,
-    no_open: Annotated[
-        bool, typer.Option("--no-open", help="Do not open a browser.")
-    ] = False,
+    no_open: Annotated[bool, typer.Option("--no-open", help="Do not open a browser.")] = False,
     database: Annotated[
         Path | None, typer.Option(help="Override the Web UI SQLite database path.")
     ] = None,
@@ -89,9 +87,7 @@ def serve(
     # soft_wrap keeps the token on one line; a wrapped URL cannot be copied.
     console.print(f"Loro Web UI: {launch_url}", soft_wrap=True, highlight=False)
     uvicorn.run(
-        create_app(
-            project_root=Path.cwd(), database_path=database, auth_token=auth_token
-        ),
+        create_app(project_root=Path.cwd(), database_path=database, auth_token=auth_token),
         host=host,
         port=port,
         access_log=False,

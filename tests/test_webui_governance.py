@@ -115,9 +115,7 @@ def test_a_malformed_request_is_refused_with_a_reason(
 
 def test_audit_reports_no_events_before_anything_is_written(workspace: Path, monkeypatch) -> None:
     service = GovernanceService(workspace)
-    monkeypatch.setattr(
-        service, "_config", lambda: _config_with_audit(workspace / "missing.jsonl")
-    )
+    monkeypatch.setattr(service, "_config", lambda: _config_with_audit(workspace / "missing.jsonl"))
     payload = service.audit()
 
     assert payload["ok"] is True

@@ -611,9 +611,7 @@ SELECT
             "lifecycle state mismatches",
         )
         issues = tuple(
-            f"{count} {label}"
-            for label, count in zip(labels, values[2:], strict=True)
-            if count
+            f"{count} {label}" for label, count in zip(labels, values[2:], strict=True) if count
         )
         return MemoryReconciliationReport(
             memories=values[0],

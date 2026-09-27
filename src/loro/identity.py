@@ -133,9 +133,7 @@ def diagnose_identity(
         )
     context = build_identity_context(config, environ=values)
     asserted = _asserted_fields(config, values)
-    missing = tuple(
-        field for field in config.required_fields if field not in asserted
-    )
+    missing = tuple(field for field in config.required_fields if field not in asserted)
     return IdentityDiagnostic(
         context=context,
         required_fields=tuple(config.required_fields),
@@ -247,9 +245,7 @@ def _environment_values(
 
 
 def _asserted_fields(config: IdentityConfig, environ: Mapping[str, str]) -> set[str]:
-    asserted = {
-        field for field in _SCALAR_FIELDS if _clean(getattr(config, field)) is not None
-    }
+    asserted = {field for field in _SCALAR_FIELDS if _clean(getattr(config, field)) is not None}
     if config.groups:
         asserted.add("groups")
     if config.roles:

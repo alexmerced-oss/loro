@@ -146,6 +146,7 @@ def test_gateway_overload_and_tenant_channel_mismatch_fail_closed(tmp_path: Path
     release.set()
     dispatcher.close()
 
+
 def test_unsupported_authenticated_gateway_event_never_becomes_a_task() -> None:
     from loro.gateway.adapters import GatewayUnsupportedEventError
 

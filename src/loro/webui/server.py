@@ -625,9 +625,7 @@ def create_app(
                 "roles": request.state.roles,
                 "permissions": request.state.permissions,
             },
-            "roles": [
-                {"name": role, "permissions": sorted(PERMISSIONS[role])} for role in ROLES
-            ],
+            "roles": [{"name": role, "permissions": sorted(PERMISSIONS[role])} for role in ROLES],
             "permission_labels": PERMISSION_LABELS,
             "mappings": rbac.mappings,
             "admins": rbac.admins,

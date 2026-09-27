@@ -40,20 +40,29 @@ acme = "acme_loro:plugin"
 ```python
 from loro.plugins import HookDecision, LoroPlugin, PluginTool
 
+
 def lookup(args):
     return f"ticket {args['id']} is open"
+
 
 def block_prod(event):
     if event.tool == "shell.run" and "prod" in str(event.arguments):
         return HookDecision(False, "production commands need a change ticket")
     return None
 
+
 plugin = LoroPlugin(
     name="acme",
     version="1.0.0",
     description="Acme ticket lookups",
-    tools=[PluginTool("ticket", "Look up a ticket", {"type": "object",
-           "properties": {"id": {"type": "string"}}, "required": ["id"]}, lookup)],
+    tools=[
+        PluginTool(
+            "ticket",
+            "Look up a ticket",
+            {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+            lookup,
+        )
+    ],
     pre_tool=[block_prod],
 )
 ```

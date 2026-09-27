@@ -72,8 +72,7 @@ def graph_generation_prompt(
         f"Use between 1 and {max_steps} concrete steps, decomposing the work whenever that "
         "materially improves execution or review. Describe actual work and useful outputs, not "
         "generic planning placeholders. Do not execute the goal.\n\n"
-        f"GOAL:\n{goal.strip()}"
-        + correction
+        f"GOAL:\n{goal.strip()}" + correction
     )
 
 
@@ -95,9 +94,7 @@ def write_ai_generated_graph(
     )
     feedback: str | None = None
     for _attempt in range(2):
-        response = author(
-            graph_generation_prompt(goal, max_steps=max_steps, feedback=feedback)
-        )
+        response = author(graph_generation_prompt(goal, max_steps=max_steps, feedback=feedback))
         try:
             draft = _parse_workflow_draft(response)
             if len(draft.steps) > max_steps:
@@ -182,9 +179,7 @@ def _compile_workflow_draft(
                 "max_agent_steps": min(config.runtime.max_steps, 10),
                 "max_tool_calls": min(config.runtime.max_tool_calls, 50),
             },
-            "outputs": {
-                "result": {"type": "text", "description": step.output_description}
-            },
+            "outputs": {"result": {"type": "text", "description": step.output_description}},
             "failure": {
                 "retry": {
                     "max_attempts": attempts,

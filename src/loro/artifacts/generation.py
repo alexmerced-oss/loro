@@ -105,8 +105,7 @@ def repair_generation_prompt(
     return (
         generation_prompt(kind, prompt, brief_type=brief_type)
         + "\n\nYour previous draft was rejected by schema validation. Correct the entire draft and "
-        "return one replacement JSON object only. Validation problem: "
-        + error[:1200]
+        "return one replacement JSON object only. Validation problem: " + error[:1200]
     )
 
 
