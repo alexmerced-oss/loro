@@ -132,8 +132,20 @@ class Telemetry:
         if not self.enabled or self._tracer is None:
             yield None
             return
-        with self._tracer.start_as_current_span(name, attributes=_clean(attributes)) as span:
-            yield span
+        # Exception messages can carry provider response bodies or file contents, so spans
+        # record only the exception type (never the message) and an ERROR status.
+        with self._tracer.start_as_current_span(
+            name,
+            attributes=_clean(attributes),
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                yield span
+            except Exception as error:
+                self.error(span, type(error).__name__)
+                span.set_attribute("error.type", type(error).__name__)
+                raise
 
     def set(self, span: Any, attributes: Mapping[str, Any]) -> None:
         if span is not None:

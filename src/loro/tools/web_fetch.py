@@ -47,10 +47,24 @@ def _default_resolver(host: str, port: int) -> list[str]:
     return sorted({str(info[4][0]) for info in infos})
 
 
+_NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")
+
+
 def public_address(address: str) -> bool:
     ip = ipaddress.ip_address(address.split("%", 1)[0])
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip in _IPV4_COMPATIBLE:
+            return False  # deprecated IPv4-compatible form (::127.0.0.1) reports as global
+        elif any(ip in network for network in _NAT64):
+            # NAT64 translates the low 32 bits to IPv4; judge that address instead.
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        elif ip.sixtofour is not None:
+            ip = ip.sixtofour
+        elif ip.teredo is not None:
+            ip = ip.teredo[1]
     return ip.is_global and not ip.is_multicast
 
 

@@ -217,6 +217,9 @@ def apply_patch(text: str, root: Path, *, dry_run: bool = False) -> PatchResult:
         if root not in path.parents and path != root:
             raise PatchError(f"Patch path leaves the workspace: {patch.target}")
         source = (root / patch.old_path).resolve() if patch.old_path else None
+        # The source of a rename is read too; a symlink must not pull an outside file in.
+        if source is not None and root not in source.parents:
+            raise PatchError(f"Patch path leaves the workspace: {patch.old_path}")
         if patch.action == "create":
             if path.exists():
                 conflicts.append(Conflict(patch.target, 1, 1, "file already exists"))

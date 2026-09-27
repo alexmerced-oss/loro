@@ -36,7 +36,11 @@ def _plugin(name: str = "acme", **extra) -> LoroPlugin:
 class FakeEntry:
     def __init__(self, name: str, target, loads: list[str]) -> None:
         self.name = name
-        self.dist = SimpleNamespace(name=f"{name}-dist", version="1.2.0")
+        self.dist = SimpleNamespace(
+            name=f"{name}-dist",
+            version="1.2.0",
+            locate_file=lambda _path: "/usr/lib/python3/site-packages",
+        )
         self._target = target
         self._loads = loads
 
@@ -203,3 +207,14 @@ def test_catalog_and_cli_list_enabled_plugins(tmp_path: Path, monkeypatch) -> No
     assert names["acme"]["loaded"] and names["ghost"]["error"] == "enabled but not installed"
     doctor = runner.invoke(app, ["plugins", "doctor"])
     assert doctor.exit_code == 1 and "ghost" in doctor.output
+
+
+def test_distributions_inside_the_working_directory_are_refused(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    planted = FakeEntry("acme", lambda: _plugin(), [])
+    planted.dist.locate_file = lambda _path: str(tmp_path / "vendor")
+    monkeypatch.setattr("loro.plugins._entry_points", lambda: [planted])
+    [found] = discover(PluginsConfig(enabled=["acme"]))
+    assert found.loaded is None
+    assert "inside the working directory" in (found.error or "")
+    assert planted._loads == []  # never imported

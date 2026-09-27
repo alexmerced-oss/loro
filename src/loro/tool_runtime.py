@@ -531,6 +531,24 @@ class ToolRegistry:
                 operation="patch",
                 workspace_roots=self.config.permissions.workspace_roots,
             )
+        if dry_run:
+            # A dry run reads the files (conflict reports quote their lines), so it needs the
+            # same read permission file.read does.
+            for relative in paths:
+                read_resource = filesystem_resource(
+                    str(root / relative),
+                    operation="read",
+                    workspace_roots=self.config.permissions.workspace_roots,
+                )
+                self.permissions.require_allowed(
+                    PermissionRequest(
+                        tool="edit",
+                        action="read file",
+                        target=str(read_resource.fields["path"]),
+                        resource=read_resource,
+                    ),
+                    approved=True,
+                )
         if not dry_run:
             self._authorize(
                 call,

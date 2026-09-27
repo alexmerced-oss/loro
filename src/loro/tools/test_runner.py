@@ -10,6 +10,39 @@ from pathlib import Path
 RUNNERS = ("pytest", "npm", "cargo")
 MAX_EXTRA_ARGS = 32
 _SAFE_ARG = re.compile(r"^[A-Za-z0-9_./:=@,+\-\[\]]{1,256}$")
+# Options that write, delete, or read configuration outside the normal run. pytest wipes the
+# --basetemp directory; cargo and npm options can point the build or config somewhere else.
+_DENIED_OPTIONS = {
+    "pytest": {
+        "--basetemp",
+        "--junitxml",
+        "--junit-xml",
+        "--resultlog",
+        "--result-log",
+        "--debug",
+        "-o",
+        "--override-ini",
+        "-c",
+        "--config-file",
+        "--rootdir",
+        "--confcutdir",
+        "-p",
+    },
+    "npm": {"--prefix", "--userconfig", "--globalconfig", "--cache", "--outputFile"},
+    "cargo": {"--target-dir", "--manifest-path", "--config", "-Z", "--artifact-dir"},
+}
+
+
+def _unsafe_argument(runner: str, item: str) -> str | None:
+    """Why an extra argument is refused, or None; paths must stay relative and in the project."""
+
+    name, _, value = item.partition("=") if item.startswith("-") else ("", "", item)
+    if name and (name in _DENIED_OPTIONS[runner] or (runner == "pytest" and name.startswith("-p"))):
+        return f"option {name} is not allowed"
+    for part in (value, item):
+        if part.startswith(("/", "~")) or ".." in part.split("/"):
+            return f"{item!r} points outside the project"
+    return None
 
 
 @dataclass(frozen=True)
@@ -59,6 +92,10 @@ def build_command(project: Path, runner: str, extra: list[str]) -> TestCommand:
             "Extra test arguments must be at most 32 simple tokens "
             "(letters, digits, and ./:=@,+-[])."
         )
+    for item in extra:
+        problem = _unsafe_argument(runner, item)
+        if problem:
+            raise ValueError(f"Extra test argument refused: {problem}.")
     if runner == "pytest":
         # The interpreter on PATH, not one inside the workspace: the sandbox refuses binaries
         # the agent could have planted there (see sandbox.trusted_executable_prefixes).

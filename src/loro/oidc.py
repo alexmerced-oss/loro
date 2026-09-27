@@ -32,6 +32,7 @@ SUPPORTED_ALGORITHMS = frozenset(
     {"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA"}
 )
 MAX_DOCUMENT_BYTES = 1_000_000
+MAX_TOKEN_CHARS = 16_384
 JWKS_REFRESH_COOLDOWN_SECONDS = 30.0
 
 
@@ -188,6 +189,8 @@ class OIDCProvider:
     ) -> dict[str, Any]:
         """Verify a compact JWS and return its claims, or raise :class:`OIDCError`."""
 
+        if len(token) > MAX_TOKEN_CHARS:
+            raise OIDCError("Token is too large.")
         parts = token.strip().split(".")
         if len(parts) != 3 or not all(parts):
             raise OIDCError("Token is not a signed JWT.")
@@ -224,7 +227,12 @@ class OIDCProvider:
         if not expected:
             raise OIDCError("identity.oidc.audience (or client_id) is not configured.")
         audiences = claims.get("aud")
-        values = [audiences] if isinstance(audiences, str) else list(audiences or [])
+        if isinstance(audiences, str):
+            values = [audiences]
+        elif isinstance(audiences, list) and all(isinstance(item, str) for item in audiences):
+            values = audiences
+        else:
+            raise OIDCError("Token audience is missing or malformed.")
         if expected not in values:
             raise OIDCError("Token is not intended for this audience.")
         if nonce is not None and len(values) > 1 and claims.get("azp") != expected:

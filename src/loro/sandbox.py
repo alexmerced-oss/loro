@@ -300,18 +300,30 @@ class SandboxRunner:
             if not root.exists():
                 raise SandboxError(f"Writable sandbox root does not exist: {root}")
             mounts.append((root, True))
+        home = Path.home().resolve()
         for path, writable in mounts:
+            if path == Path(path.anchor) or path == home:
+                raise SandboxError(
+                    f"Refusing to mount {path} into a container sandbox; run from a project "
+                    "directory or configure permissions.workspace_roots."
+                )
+            if any(char in str(path) for char in (":", ",", "\n")):
+                raise SandboxError(f"Container mount paths cannot contain ':' or ',': {path}")
             # Same path inside and out, so arguments that name workspace files stay valid.
             command.extend(["--volume", f"{path}:{path}:{'rw' if writable else 'ro'}"])
+        passed = {"PATH": environment.get("PATH", os.defpath)}
         for variable, value in sorted(environment.items()):
             if variable == "PATH":
                 continue  # the image's PATH, not the host's
-            command.extend(["--env", f"{variable}={value}"])
+            # Name only: the engine CLI reads the value from its own environment, so values
+            # never appear on a command line other local users can read in the process list.
+            command.extend(["--env", variable])
+            passed[variable] = value
         command.extend(["--workdir", str(cwd), settings.image or "", *args])
         return SandboxLaunch(
             args=command,
             cwd=cwd,
-            environment={"PATH": environment.get("PATH", os.defpath)},
+            environment=passed,
             profile=profile_name,
             os_enforced=True,
             cleanup=[engine, "rm", "--force", container_name],

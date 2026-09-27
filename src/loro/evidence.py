@@ -46,6 +46,7 @@ MEMBERS = (
     "sandbox.json",
 )
 MAX_MEMBER_BYTES = 64 * 1024 * 1024
+MAX_BUNDLE_BYTES = 256 * 1024 * 1024
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
@@ -535,9 +536,21 @@ def _verify_log(path: Path) -> dict[str, Any]:
 
 def _read_members(path: Path, result: VerifyResult) -> dict[str, bytes] | None:
     try:
+        if path.stat().st_size > MAX_BUNDLE_BYTES:
+            result.issues.append(f"The bundle exceeds {MAX_BUNDLE_BYTES} bytes.")
+            return None
         with zipfile.ZipFile(path) as archive:
             members: dict[str, bytes] = {}
-            for info in archive.infolist():
+            infos = archive.infolist()
+            # Check the directory before reading anything: a hostile archive with many or huge
+            # members must not be decompressed into memory.
+            if len(infos) > len(MEMBERS) + 2:
+                result.issues.append(f"The archive has {len(infos)} members; v1 has 9.")
+                return None
+            if sum(info.file_size for info in infos) > MAX_BUNDLE_BYTES:
+                result.issues.append("The archive's members are larger than any v1 bundle.")
+                return None
+            for info in infos:
                 if info.file_size > MAX_MEMBER_BYTES:
                     result.issues.append(f"{info.filename} exceeds {MAX_MEMBER_BYTES} bytes.")
                     return None

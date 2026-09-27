@@ -160,7 +160,14 @@ class WebAuth:
 def safe_next(path: str) -> str:
     """Only same-origin relative paths survive the login round trip (no open redirects)."""
 
-    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+    if (
+        not path.startswith("/")
+        or path.startswith("//")
+        or "\\" in path
+        # Browsers drop tabs and newlines from URLs, so "/\t/evil.example" becomes
+        # "//evil.example"; control characters could also split the Location header.
+        or any(ord(char) < 0x21 or ord(char) == 0x7F for char in path)
+    ):
         return "/"
     return path
 

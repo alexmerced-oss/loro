@@ -37,7 +37,10 @@ Runs a project's test suite and returns the runner's result line plus the tail o
   `Cargo.toml`, `npm` for a `package.json` with a `test` script, and `pytest` for a Python project
   (`pyproject.toml`, `pytest.ini`, `setup.cfg`, `tox.ini`, `conftest.py` or `tests/`).
 - Commands are `python3 -m pytest -q`, `npm test --silent`, and `cargo test`. Extra `args` must
-  be at most 32 plain tokens; no shell is involved.
+  be at most 32 plain tokens; no shell is involved. Absolute paths, `~`, and `..` segments are
+  refused, as are options that write, delete, or re-point configuration outside the run
+  (pytest `--basetemp`, `--junitxml`, `-o`, `-c`, `--rootdir`, `-p`; cargo `--target-dir`,
+  `--manifest-path`, `--config`, `-Z`; npm `--prefix` and config-file options).
 - It runs in the `test-runner` sandbox profile (`sandbox.test_profile`): allowlisted executables
   `python*`, `pytest`, `npm`, `node`, `cargo`, `rustc`, up to 900 seconds and 2 MB of output.
   Binaries inside the workspace are never trusted by name, so a project virtualenv's Python is

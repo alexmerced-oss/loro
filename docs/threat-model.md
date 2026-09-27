@@ -4,8 +4,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Draft for engineering and security review |
-| Scope | Loro CLI 0.17.0 and the stabilization reference deployment |
+| Status | Draft; 0.22 sections are an engineering self-review, not an independent security review |
+| Scope | Loro 0.22.0 (unreleased): the 0.17 baseline plus the 0.22 surfaces in [Release 0.22 Surfaces](#release-022-surfaces) |
 | Review cadence | Before each enterprise pilot release and after material data-flow changes |
 | Accountable owner | Security owner (TBD) |
 | Technical owners | Runtime, identity/policy, memory/data, and release owners (TBD) |
@@ -100,6 +100,225 @@ Polaris access control.
 | TM-17 | A session sends a message containing a permission request, forged user instruction, or `approved=true` and the receiver treats it as authoritative. | Cross-session confused deputy and unauthorized tool execution. | Every message is labeled untrusted with `carries_user_authority=false`; sends require independent policy/approval; resume does not parse relayed text as user tool directives. | Distributed mailbox authentication, concurrency/retention controls, and enterprise adversarial review. | `tests/test_session_messages.py` and [Cross-Session Messaging](session-messaging.md). |
 | TM-18 | A forged, replayed, cross-workspace, or compromised chat message launches remote work or captures a reply. | Unauthorized execution, disclosure, replay, or tenant confusion. | Platform signatures/secrets, pre-parse verification, signed freshness checks, durable hashed deduplication with rollback on persistence/submission failure, workspace/channel/user allowlists, explicit identity mapping, bounded queues, untrusted-content labels, OS-vaulted credentials, and existing policy/approval controls. | TLS reverse proxy, platform app governance, credential rotation, retention policy, production hostile-event tests, and a trusted out-of-band approval service. | `tests/test_gateway.py`, [Channel Gateways](channel-gateways.md), and deployment evidence. |
 | TM-19 | A malicious site, remote client, or local process drives the Web UI API, steals a transcript, or forges an approval. | Unauthorized execution, data disclosure, or confused-deputy approval. | Loopback default, explicit-IP binding, bearer requirement off loopback, same-site HTTP-only session cookie, CSRF token, origin checks, no CORS, CSP/frame denial, bounded messages/concurrency, redacted settings, and the existing identity/policy/approval/audit path. | Approved TLS reverse proxy, corporate identity, distributed rate limits, retention controls, browser-hardening review, and multi-user authorization before shared deployment. | `tests/test_webui.py`, frontend tests, and [Local Web UI](webui.md). |
+| TM-20 | A forged, expired, wrong-audience, algorithm-confused, or oversized bearer token is accepted, or a hostile JWKS endpoint swaps signing keys. | Impersonation and privilege escalation across the Web UI and gateway. | See [OIDC and JWT verification](#oidc-and-jwt-verification). | Key revocation latency, IdP compromise, and clock skew policy. | `tests/test_oidc.py`, `tests/test_webui_oidc.py`, `tests/test_gateway_oidc.py`, `tests/test_security_review.py`. |
+| TM-21 | A signed-in user reaches an API route above their role, approves their own action, or rides another user's session. | Unauthorized execution or approval. | See [RBAC and multi-user server](#rbac-and-multi-user-server). | Single-process session store, no per-user rate limits. | `tests/test_webui_rbac.py`, `tests/test_webui_oidc.py`. |
+| TM-22 | Concurrent deciders, a database outage, or a tampered row corrupts the shared approval authority. | Lost, duplicated, or forged approval decisions. | See [Postgres approval authority](#postgres-approval-authority). | Database administrators can edit rows; no row signatures. | `tests/integration/test_aais_postgres_integration.py`, `tests/test_aais_recovery.py`, `tests/integration/test_postgres_recovery_integration.py`. |
+| TM-23 | A plugin or command hook runs attacker code, hides a tool from policy, or blocks audit. | Code execution with Loro's privileges. | See [Plugins and hooks](#plugins-and-hooks). | Installed plugins run in-process with full privileges. | `tests/test_plugins.py`, `tests/test_security_review.py`. |
+| TM-24 | `web.fetch` reaches internal services (SSRF) through redirects, DNS rebinding, IPv6 tunnels, or literal IPs, or floods the context. | Metadata-service credential theft or internal data disclosure. | See [web.fetch](#webfetch-ssrf). | Allowlisted domains are trusted to serve honest content; prompt injection in fetched text. | `tests/test_coding_tools.py`, `tests/test_security_review.py`. |
+| TM-25 | `patch.apply` writes or reads outside the workspace through traversal, symlinks, renames, or dry runs. | File disclosure or tampering outside the project. | See [patch.apply](#patchapply). | Time-of-check to time-of-use races with a concurrent local attacker. | `tests/test_coding_tools.py`, `tests/test_security_review.py`. |
+| TM-26 | `tests.run` executes hostile project code or uses runner options to delete or write outside the project. | Code execution and data loss. | See [tests.run](#testsrun). | Running tests is running project code by design. | `tests/test_coding_tools.py`, `tests/test_security_review.py`. |
+| TM-27 | A container-sandboxed command escapes, sees host secrets, or mounts sensitive host paths. | Host compromise or credential exposure. | See [Container sandbox](#container-sandbox). | Shared-kernel escapes without gVisor; engine daemon trust. | `tests/test_container_sandbox.py`, `tests/test_security_review.py`. |
+| TM-28 | Telemetry or SIEM forwarding leaks prompts or secrets, or a crafted field forges log records. | Disclosure to observability vendors or misleading audit. | See [OTel and SIEM forwarding](#otel-and-siem-forwarding). | Syslog transport is plaintext; collectors are trusted. | `tests/test_telemetry_forwarding.py`, `tests/test_security_review.py`. |
+| TM-29 | An evidence bundle leaks secrets, is forged, or a hostile bundle exhausts the verifier. | Disclosure, false assurance, or denial of service. | See [Evidence bundles](#evidence-bundles). | Bundles are not signed; digests prove consistency, not origin. | `tests/test_evidence.py`, `tests/test_security_review.py`. |
+| TM-30 | `--prompt-file` reads an unexpected file or confuses stdin approval decisions. | Disclosure to a provider or forged approvals. | See [Prompt files](#prompt-files). | The operator chooses the file; its content goes to the provider. | `tests/test_cli_run.py`. |
+
+## Release 0.22 Surfaces
+
+Release 0.22 adds verified identity, a multi-user server, a shared approval authority, plugins,
+three coding tools, a container backend, telemetry export, and evidence bundles. Each surface
+below lists what it protects, STRIDE threats, the mitigations in code, what is left, and the
+tests that cover it. All of these surfaces are labeled experimental in 0.22.
+
+**This section is a self-review, not a penetration test.** The engineer who built the features
+reviewed them, probed a handful of bypasses by hand, fixed what was found, and added regression
+tests. No independent tester, fuzzing campaign, or external audit has looked at this code. Treat
+"no finding" below as "not found in a self-review", which is weaker evidence than it sounds.
+
+### OIDC And JWT Verification
+
+- **Assets:** bearer tokens, the IdP signing keys Loro trusts, identity claims that drive RBAC,
+  PKCE verifiers, and the web session cookie.
+- **Threats:** spoofing with forged tokens or `alg=none` and HS256-with-public-key confusion;
+  tampering with the JWKS response or discovery document; spoofing through `jku`/`x5u` header
+  URLs; denial of service with huge tokens or forced JWKS refetch storms; elevation through a
+  malformed `aud` or role claim.
+- **Mitigations:** `src/loro/oidc.py` accepts only an asymmetric algorithm allowlist, requires the
+  JWK `kty` to match the algorithm, takes keys only from the issuer's discovered JWKS (header `jku`, `x5u`, and `jwk` are never
+  followed), fetches discovery and JWKS
+  over HTTPS (loopback excepted for tests) without redirects and with a 1 MB cap, refetches keys on
+  unknown `kid` at most once per 30 seconds, rejects tokens over 16 KB before parsing, and checks
+  `iss`, `aud` (string or list of strings only), `exp`, `nbf`, and `iat` with bounded leeway. Web
+  login in `src/loro/webui/auth.py` uses PKCE S256, `state` and `nonce`, and `safe_next` keeps the
+  post-login redirect same-origin. Off loopback the Web UI requires a verified bearer or a
+  signed-in session; there is no unauthenticated fallback.
+- **Residual risk:** a revoked key stays valid until the JWKS changes and the cooldown passes;
+  compromise of the IdP or its TLS is out of scope; the cache is per process.
+- **Tests:** `tests/test_oidc.py`, `tests/test_webui_oidc.py`, `tests/test_gateway_oidc.py`,
+  `tests/test_security_review.py`.
+
+### RBAC And Multi-User Server
+
+- **Assets:** runs, transcripts, approvals, settings, and the server's own tool authority.
+- **Threats:** elevation by calling a route that lacks a role check or by path tricks
+  (`//api/...`, encoded slashes, method overrides); spoofing through a stolen session cookie;
+  CSRF against mutating routes; repudiation of approvals; information disclosure of other users'
+  transcripts.
+- **Mitigations:** `src/loro/webui/server.py` authorizes in one middleware before routing, and
+  `src/loro/webui/rbac.py` `required_permission` derives the needed permission from method and
+  path; reads need `read`, and any mutating route not in the rule table needs `admin`. Roles are `viewer` (read), `operator` (read and
+  operate), `approver` (read and approve), and `admin`; an operator cannot approve without also
+  holding `approver`. Mutating routes need the per-session CSRF token, and a
+  cross-origin `Origin` header is rejected. The session cookie is HTTP-only and `SameSite=Strict`
+  (`Secure` when served over HTTPS); the short-lived login-state cookie is `Lax` so the IdP
+  redirect can return. Approval decisions carry the deciding identity into the audit trail.
+- **Residual risk:** sessions live in process memory, so there is no cross-replica logout; no
+  per-user rate limiting; all operators share the server's tool authority and workspace, so this
+  is team mode, not tenant isolation.
+- **Self-review probe:** path-normalization variants (`//api/status`, `/api//status`,
+  `/%61pi/status`, trailing slashes, `HEAD`/`OPTIONS`) either hit the static SPA fallback, 401, 403,
+  or 405. No bypass found.
+- **Tests:** `tests/test_webui_rbac.py`, `tests/test_webui_oidc.py`.
+
+### Postgres Approval Authority
+
+- **Assets:** pending and decided approval records shared by several Loro processes.
+- **Threats:** tampering through lost updates when two deciders race; repudiation if decisions are
+  overwritten; denial of service through lock waits or an unreachable database; information
+  disclosure through connection errors.
+- **Mitigations:** `src/loro/aais_postgres.py` stores each stream in one JSONB row, reads it with
+  `SELECT ... FOR UPDATE` inside a transaction, applies the AAIS state machine from
+  `aais.store.FileApprovalStore` (decided requests cannot be re-decided), bounds lock waits with
+  `lock_timeout`, uses parameterized SQL only, and fails closed with a `StoreError` when the
+  database is unavailable. `src/loro/aais_bridge.py` binds decisions to the canonical arguments.
+- **Residual risk:** a database administrator can rewrite rows; rows are not signed; the
+  connection string is operator-configured and must not be world readable.
+- **Tests:** `tests/integration/test_aais_postgres_integration.py`, `tests/test_aais_recovery.py`,
+  `tests/integration/test_postgres_recovery_integration.py`.
+
+### Plugins And Hooks
+
+- **Assets:** the Loro process, its credentials, and the policy path every tool call takes.
+- **Threats:** elevation by a planted package that registers a `loro.plugins` entry point from the
+  working directory; tampering with policy by a plugin tool that skips permission checks; denial of
+  service by a slow or crashing hook; spoofing of a hook decision.
+- **Mitigations:** `src/loro/plugins.py` loads plugins only when `plugins.enabled` is set and the
+  entry point is named in `plugins.enabled`, refuses distributions installed inside the current
+  working directory (a repository cannot plant one), routes plugin tools through the same
+  permission, approval, and audit path as built-in tools, and runs command hooks in a named
+  sandbox profile with a timeout. Exit status 2 blocks the call; other failures follow
+  `plugins.hook_failure`, which defaults to `deny` (fail closed).
+- **Residual risk:** an allowed plugin runs in-process with full privileges; a hook command
+  receives tool arguments in `LORO_HOOK_EVENT`; project configuration is trusted input, so a
+  repository `.loro` config that defines hooks carries the same trust as its permission settings.
+- **Tests:** `tests/test_plugins.py`, `tests/test_security_review.py`.
+
+### web.fetch (SSRF)
+
+- **Assets:** internal services, cloud metadata endpoints, and the model context budget.
+- **Threats:** information disclosure through requests to private, loopback, link-local, or
+  metadata addresses; bypass through redirects, DNS rebinding, literal and decimal IPs, IPv6
+  forms (mapped, NAT64, 6to4, Teredo, IPv4-compatible), embedded credentials, or ambient proxies;
+  denial of service through large or slow bodies.
+- **Mitigations:** `src/loro/tools/web_fetch.py` requires HTTPS (unless `allow_http`) and a
+  domain on `web_fetch.allowed_domains`, rejects literal IPs and userinfo, resolves the name and
+  refuses any non-public answer, repeats every check on each redirect hop (bounded count), ignores
+  proxy environment variables, confirms the connected peer address after connecting (DNS rebinding),
+  accepts only text content types, and caps bytes and wall time. Uses the `network` permission.
+- **Residual risk:** an allowlisted domain can return prompt injection; a CDN on the allowlist can
+  host attacker content; peer confirmation depends on the transport exposing `server_addr`, and
+  fails closed when it does not.
+- **Tests:** `tests/test_coding_tools.py`, `tests/test_security_review.py`.
+
+### patch.apply
+
+- **Assets:** files inside and outside the workspace.
+- **Threats:** tampering or disclosure through `../` paths, absolute paths, symlinked files or
+  directories, rename sources outside the root, and dry runs used as a read oracle.
+- **Mitigations:** `src/loro/tools/patching.py` resolves every target and rename source and
+  requires it under the resolved root (so a symlink pointing outside is refused), locates every
+  hunk before writing, and writes each file atomically. `src/loro/tool_runtime.py` checks the `edit` permission per
+  touched path, and dry runs now require read authorization for each path.
+- **Residual risk:** a concurrent local process could swap a path between check and write.
+- **Tests:** `tests/test_coding_tools.py`, `tests/test_security_review.py`.
+
+### tests.run
+
+- **Assets:** the host, files outside the project, and credentials in the environment.
+- **Threats:** elevation because tests execute project code; tampering through runner options
+  that write or delete elsewhere (pytest wipes `--basetemp`); information disclosure through the
+  inherited environment; denial of service through long runs.
+- **Mitigations:** `src/loro/tools/test_runner.py` builds a fixed argv with no shell, allows at
+  most 32 simple tokens, refuses absolute, `~`, and `..` paths, and refuses options that write,
+  delete, or re-point configuration. `src/loro/tool_runtime.py` runs it through the
+  `test-runner` sandbox profile with an environment allowlist, a timeout, an output cap, and the
+  `shell` permission (`ask` by default). Interpreters inside the workspace are not trusted.
+- **Residual risk:** without an OS-enforced sandbox (Bubblewrap or the container backend) the
+  project's tests run with the user's privileges. Approve `tests.run` only for code you would run
+  yourself.
+- **Tests:** `tests/test_coding_tools.py`, `tests/test_security_review.py`.
+
+### Container Sandbox
+
+- **Assets:** the host filesystem, host credentials, and the network.
+- **Threats:** elevation through container escape or privileged options; information disclosure of
+  secrets through `docker run` arguments visible in `ps`, or through a mount of `$HOME` or `/`;
+  tampering through mount-option injection in a path; denial of service through fork bombs or
+  memory.
+- **Mitigations:** `src/loro/sandbox.py` runs `--read-only`, `--cap-drop ALL`,
+  `no-new-privileges`, a pids and memory limit, a non-root `--user`, `--network none` unless the
+  profile allows it, and gVisor (`runsc`) when available or required. Environment values are
+  passed by name (`--env NAME`) and supplied through the engine's own environment, so they never
+  appear on a command line. It refuses to mount a filesystem root, the home directory, or paths
+  containing `:`, `,`, or newlines, and only mounts roots inside workspace policy.
+- **Residual risk:** without gVisor the container shares the host kernel; whoever can talk to the
+  Docker daemon is effectively root; image provenance is the operator's choice.
+- **Tests:** `tests/test_container_sandbox.py`, `tests/test_security_review.py`.
+
+### OTel And SIEM Forwarding
+
+- **Assets:** prompts, tool arguments, secrets, and audit integrity at the collector.
+- **Threats:** information disclosure through span attributes or recorded exception messages;
+  tampering or spoofing of SIEM records through newline or delimiter injection; repudiation if
+  forwarding silently drops events.
+- **Mitigations:** `src/loro/telemetry.py` records only fixed attributes (mode, provider, model,
+  agent profile name, step, tool name, outcome), never prompts or arguments, and records the exception
+  type but not its message. `src/loro/audit/forwarding.py` escapes CEF header and extension fields,
+  replaces control characters, and frames TCP syslog with octet counting. The hash-chained local
+  audit log remains the record of truth.
+- **Residual risk:** syslog over UDP or TCP is plaintext and unauthenticated, so run it to a local
+  relay or over a trusted network; OTLP endpoint TLS depends on configuration; model and provider
+  names are disclosed to the collector.
+- **Tests:** `tests/test_telemetry_forwarding.py`, `tests/test_security_review.py`.
+
+### Evidence Bundles
+
+- **Assets:** run transcripts, tool results, audit slices, and the claim that a bundle is intact.
+- **Threats:** information disclosure of secrets in tool output; tampering with a bundle after
+  export; denial of service through zip bombs or oversized archives given to `verify`.
+- **Mitigations:** `src/loro/evidence.py` redacts tool results with the data-protection engine,
+  writes a canonical stored zip with per-member digests and a manifest digest, includes the audit
+  hash-chain slice, and on verify checks file size, member count, and total uncompressed size
+  before reading any member.
+- **Residual risk:** bundles are not signed, so digests prove internal consistency, not who made
+  them; redaction is pattern based.
+- **Tests:** `tests/test_evidence.py`, `tests/test_security_review.py`.
+
+### Prompt Files
+
+- **Assets:** local files and the stdin approval channel.
+- **Threats:** information disclosure by reading a large or unintended file; spoofing of approval
+  decisions if the prompt and `--approval-stdio` shared stdin.
+- **Mitigations:** `_task_prompt` in `src/loro/cli/core.py` requires a regular file, enforces
+  `runtime.max_model_input_bytes`, refuses `-` so stdin stays reserved for approval decisions, and
+  rejects passing both a prompt and a file.
+- **Residual risk:** the operator picks the file, and its content is sent to the provider.
+- **Tests:** `tests/test_cli_run.py`.
+
+### Findings Fixed During The 0.22 Self-Review
+
+| Surface | Finding | Fix |
+| --- | --- | --- |
+| web.fetch | NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48`) and IPv4-compatible (`::a.b.c.d`) addresses wrapping private IPv4 were treated as public. | `public_address` unwraps them, plus 6to4 and Teredo. |
+| OIDC | A non-string `aud` raised an unhandled error (HTTP 500); token size was unbounded. | Clean rejection for malformed audience; 16 KB token cap. |
+| Web login | `safe_next` allowed tab and other control characters, which browsers strip, so `/\t/evil.example` became an open redirect. | Control characters are refused. |
+| Telemetry | Spans recorded exception messages, which can carry provider response text or paths. | Only the exception type is recorded. |
+| patch.apply | A rename source reached through a symlinked directory could copy a file from outside the workspace. | Rename sources must resolve under the root. |
+| patch.apply | Dry runs read files without read authorization, a content oracle under `edit="deny"`. | Dry runs check read permission per path. |
+| Container | Environment values appeared in the `docker run` argv; `$HOME` or `/` could be mounted; `:` in a path could inject mount options. | Values passed by name; unsafe mounts refused. |
+| Evidence | `verify` read members before checking archive size and member count. | Size, count, and total-size checks come first. |
+| Plugins | A distribution installed inside the working directory could register an allowed entry point name. | Such distributions are refused. |
+| SIEM | CEF header fields escaped `\n` but not `\r` or other control characters. | All control characters are replaced. |
+| tests.run | Runner options such as `--basetemp=/path` (which pytest wipes), `--junitxml`, or cargo `--target-dir` could write or delete outside the project. | Such options and absolute or `..` paths are refused. |
 
 ## Abuse Cases That Must Fail Closed
 
@@ -118,6 +337,13 @@ Polaris access control.
   has an invalid signature, or repeats a previously processed message id.
 - A cross-origin browser request lacks the Web UI session/CSRF binding, a non-loopback server lacks
   a bearer token, or a profile revision changes during an existing bot conversation.
+- A bearer token uses `alg=none`, an HMAC algorithm, an unknown `kid`, a foreign audience, or a
+  non-string audience.
+- A viewer or operator calls an approval route, or any caller reaches an unknown API route.
+- `web.fetch` is redirected to, or resolves to, a private, loopback, metadata, or tunnelled address.
+- A patch path, rename source, or symlink resolves outside the workspace.
+- A plugin is not named in `plugins.enabled` or is installed inside the working directory.
+- A container sandbox would mount `/`, `$HOME`, or a path outside workspace policy.
 
 ## Existing Security Positives And Known Gaps
 

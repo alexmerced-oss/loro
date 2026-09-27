@@ -29,7 +29,7 @@ organization, an independent party, or the project owner can produce the evidenc
 
 | Gate | Status | Evidence or gap |
 | --- | --- | --- |
-| Threat model reviewed for the current release | Partial | [Threat Model](threat-model.md) was last scoped to 0.17; OIDC, RBAC, plugins, web fetch and the container backend need new entries and a review |
+| Threat model reviewed for the current release | Partial | [Threat Model](threat-model.md) covers every 0.22 surface (TM-20 to TM-30) from an engineering self-review that fixed eleven findings; an independent review or penetration test has not happened |
 | Independent penetration test | External | Follow [Independent Assurance Playbook](assurance-playbook.md); record findings, fixes and retests |
 | Sandbox escape testing by an independent party | External | Required for Bubblewrap and the container backend ([External Requirements](external-enterprise-requirements.md)) |
 | Dependency, static and secret scanning | Met | Security Evidence workflow (pip-audit, Bandit, secret baseline, license check, SBOM) |
@@ -53,7 +53,7 @@ organization, an independent party, or the project owner can produce the evidenc
 
 ## What the repository can still do before 1.0
 
-1. Update the threat model for the 0.22 surfaces and review it.
+1. Get an independent review or penetration test of the 0.22 surfaces in the threat model.
 2. Write the 1.0 compatibility promise and deprecation windows.
 3. Persist Web UI sessions in the shared database and partition conversations per user.
 4. Make an OS-enforced sandbox the default where one is available, with a clear refusal otherwise.

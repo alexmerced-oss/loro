@@ -47,7 +47,8 @@ def test_launch_isolates_the_container(tmp_path: Path, monkeypatch) -> None:
     assert args[args.index("--network") + 1] == "none"
     assert f"{tmp_path}:{tmp_path}:ro" in args  # workspace read-only by default
     assert f"{tmp_path / 'out'}:{tmp_path / 'out'}:rw" in args
-    assert "LANG=C" in args and not any(item.startswith("PATH=") for item in args)
+    assert "LANG" in args and not any("=C" in item or item.startswith("PATH") for item in args)
+    assert launch.environment["LANG"] == "C"
     assert args[-3:] == ["alpine:latest", "cat", "notes.txt"]
     assert "--runtime" not in args
     assert launch.os_enforced is True

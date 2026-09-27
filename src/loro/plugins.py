@@ -158,7 +158,31 @@ def discover(config: PluginsConfig) -> list[InstalledPlugin]:
     return found
 
 
+def _untrusted_location(entry: metadata.EntryPoint) -> str | None:
+    """Refuse distributions that live in the working directory (a cloned repo could plant one).
+
+    ``python -m loro`` puts the current directory first on ``sys.path``, so a
+    ``*.dist-info`` directory committed to a project could otherwise masquerade as an
+    installed plugin.
+    """
+
+    dist = entry.dist
+    if dist is None:
+        return "entry point has no installed distribution"
+    try:
+        location = Path(str(dist.locate_file(""))).resolve()
+    except (OSError, TypeError, ValueError):
+        return "distribution location is unknown"
+    cwd = Path.cwd().resolve()
+    if location == cwd or cwd in location.parents:
+        return f"distribution is inside the working directory ({location})"
+    return None
+
+
 def _load(entry: metadata.EntryPoint) -> LoroPlugin:
+    problem = _untrusted_location(entry)
+    if problem:
+        raise PluginError(f"Refusing plugin {entry.name}: {problem}.")
     target = entry.load()
     plugin = target() if callable(target) and not isinstance(target, LoroPlugin) else target
     if not isinstance(plugin, LoroPlugin):

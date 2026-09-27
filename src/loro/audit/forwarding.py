@@ -101,7 +101,8 @@ def to_ocsf(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _cef_header(value: object) -> str:
-    return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+    text = str(value).replace("\\", "\\\\").replace("|", "\\|")
+    return "".join(" " if ord(char) < 0x20 or ord(char) == 0x7F else char for char in text)
 
 
 def _cef_extension(value: object) -> str:
