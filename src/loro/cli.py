@@ -67,6 +67,7 @@ from loro.cli_ops import (
 from loro.cli_ops import (
     memory_sweep as ops_memory_sweep,
 )
+from loro.cli_runs import RunCommand
 from loro.config import (
     LoroConfig,
     MCPCredentialProfileConfig,
@@ -1141,7 +1142,7 @@ def repl(
     _launch_repl(session_id=resume_session, agent_name=agent)
 
 
-@app.command()
+@app.command(cls=RunCommand)
 def run(
     prompt: Annotated[str, typer.Argument(help="Task prompt for Loro.")],
     resume_session: Annotated[
@@ -1162,7 +1163,13 @@ def run(
         ),
     ] = False,
 ) -> None:
-    """Run an agent task, optionally resuming a durable session."""
+    """Run an agent task, optionally resuming a durable session.
+
+    Examples: loro run "Summarize the README" ; loro run --resume-session ID "Continue."
+
+    Evidence: loro run list ; loro run export RUN_ID --out run.zip ; loro run verify run.zip.
+    Use `loro run -- export` for a task whose whole prompt is one of those words.
+    """
     try:
         provider = None
         if approval_stdio:
@@ -1181,6 +1188,13 @@ def run(
     except FileNotFoundError as error:
         raise typer.BadParameter(str(error)) from error
     console.print(result.summary)
+    if result.run_id:
+        console.print(
+            f"\nRun {result.run_id} (export: loro run export {result.run_id} --out run.zip)",
+            style="dim",
+            highlight=False,
+            soft_wrap=True,
+        )
 
 
 def _run_task(

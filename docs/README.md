@@ -17,6 +17,7 @@ path to 1.0. Historical release documents are labeled as such.
 - [Subprocess Sandbox Profiles](sandbox.md)
 - [Managed Data Protection](data-protection.md)
 - [Audit Events And Delivery](audit.md)
+- [Run Evidence Bundles](run-evidence.md)
 - [Reference Audit Collector](audit-collector.md)
 - [Audit Event Inventory](audit-event-inventory.md)
 - [Memory](memory.md)

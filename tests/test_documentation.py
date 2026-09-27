@@ -44,7 +44,13 @@ def test_documented_loro_command_paths_exist() -> None:
                 continue
             subcommands = getattr(top_level, "commands", None)
             candidates = [part for part in parts[2:] if not part.startswith("-")]
-            if subcommands and candidates and candidates[0] not in subcommands:
+            accepts_prompt = getattr(top_level, "accepts_prompt", False)
+            if (
+                subcommands
+                and candidates
+                and candidates[0] not in subcommands
+                and not accepts_prompt
+            ):
                 broken.append(f"{location}: unknown subcommand {candidates[0]!r}")
     assert not broken, "Invalid documented Loro commands:\n" + "\n".join(broken)
 

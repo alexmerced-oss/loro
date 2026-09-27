@@ -9,7 +9,7 @@ import re
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -311,6 +311,37 @@ class AAISBridge:
                     "Inspect completed effects before creating a new run."
                 ),
             }
+
+    def receipts(self, request_ids: Iterable[str]) -> dict[str, Envelope]:
+        """Read-only AAIS envelopes for the given request ids, for evidence export.
+
+        Each entry holds whichever of the request, decision and resolution envelopes the
+        store still has. Requests are found in the pending map or the bounded event log.
+        """
+
+        wanted = {str(item) for item in request_ids}
+        if not wanted or not self.path.exists():
+            return {}
+        with self._lock, self._disk._locked():
+            state = self._read()
+        found: dict[str, Envelope] = {}
+        requests = {
+            str(item["request"].get("id")): item
+            for item in state["events"]
+            if isinstance(item.get("request"), dict)
+        }
+        requests.update(state["pending"])
+        for request_id in sorted(wanted):
+            entry: Envelope = {}
+            if request_id in requests:
+                entry["request"] = copy.deepcopy(requests[request_id])
+            if request_id in state["decisions"]:
+                entry["decision"] = copy.deepcopy(state["decisions"][request_id])
+            if request_id in state["resolutions"]:
+                entry["resolution"] = copy.deepcopy(state["resolutions"][request_id])
+            if entry:
+                found[request_id] = entry
+        return found
 
     def snapshot(self) -> Envelope:
         with self._lock, self._disk._locked():

@@ -237,7 +237,14 @@ loro policy explain '{"tool":"shell","action":"run command","resource":{"kind":"
 loro audit doctor
 loro audit flush
 loro audit verify
+loro run list
+loro run export RUN_ID --out run.zip
+loro run verify run.zip --expect-digest sha256:...
 ```
+
+`loro run export` packages one run's audit slice, AAIS receipts, configuration and profile
+digests, redacted tool calls, sandbox status, provider, model and usage into a zip that
+`loro run verify` checks offline (experimental; see [Run Evidence Bundles](docs/run-evidence.md)).
 
 `loro setup shared-memory` supports Postgres and Iceberg. Shared memory writes remain
 explicit-only and draft-gated.

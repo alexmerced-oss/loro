@@ -154,3 +154,9 @@ events remain.
   immutable retention, replication, and independent anchoring remain deployment controls.
 - Schema completeness depends on call sites supplying action, normalized target, policy, approval,
   and result metadata. The governed event-family inventory checks literal event families in CI.
+
+## Per-Run Evidence
+
+`loro run export RUN_ID --out run.zip` packages the hash-chained audit events of one run, with
+the chain links of the log segment it spans, into a bundle that `loro run verify` checks offline.
+See [Run Evidence Bundles](run-evidence.md).

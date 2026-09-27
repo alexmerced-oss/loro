@@ -62,7 +62,7 @@ sequence and preserves existing sections in `.loro/config.local.toml`.
 
 ## Complete Command Map
 
-This map reflects Loro 0.17.0. Run `loro COMMAND --help` or
+The test suite checks this map against the registered commands. Run `loro COMMAND --help` or
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
@@ -85,6 +85,7 @@ loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts,
 loro operations: backup, benchmark, recovery-targets, release-readiness, restore, verify-backup
 loro policy: explain
 loro providers: check, conformance, list, request, show, smoke
+loro run: export, list, verify
 loro safety: doctor, scan
 loro sandbox: doctor
 loro sessions: ack, inbox, list, send, show, wake
@@ -323,6 +324,21 @@ loro audit collector-verify --path .loro/audit-collector.sqlite3
 `audit flush` retries buffered HTTP events in order and exits nonzero if delivery remains
 incomplete. `audit verify` validates the local SHA-256 chain and can compare its final hash to an
 external anchor. See [Audit Events And Delivery](audit.md).
+
+## Run Evidence
+
+```bash
+loro run list --limit 5
+loro run export RUN_ID --out run.zip
+loro run verify run.zip --expect-digest sha256:BUNDLE_DIGEST
+loro run verify run.zip --audit-log ~/.local/state/loro/audit.jsonl --json
+```
+
+`loro run` prints each task's run id. `run export` writes a zip holding the run's hash-chained
+audit slice, AAIS receipts, configuration and profile digests, redacted tool calls, sandbox status,
+provider, model and usage, and prints the bundle digest. `run verify` exits 1 if any byte was
+altered. A task whose whole prompt is `list`, `export` or `verify` needs `loro run -- export`.
+See [Run Evidence Bundles](run-evidence.md).
 
 ## Memory
 

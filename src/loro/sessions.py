@@ -27,6 +27,7 @@ class SessionRecord:
     stop_reason: str = "completed"
     messages: list[dict[str, str]] = field(default_factory=list)
     context_summary: str = ""
+    run_id: str = ""
     agent_name: str | None = None
     agent_revision: int | None = None
     agent_spec_digest: str | None = None
@@ -51,6 +52,7 @@ class SessionRecord:
             "stop_reason": self.stop_reason,
             "messages": self.messages,
             "context_summary": self.context_summary,
+            "run_id": self.run_id,
             "agent_name": self.agent_name,
             "agent_revision": self.agent_revision,
             "agent_spec_digest": self.agent_spec_digest,

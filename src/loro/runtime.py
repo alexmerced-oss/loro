@@ -18,7 +18,7 @@ from loro.agent_profiles.render import context_files, render_role, render_state
 from loro.approvals import ApprovalManager, ApprovalRequest, ApprovalScope
 from loro.audit import AuditLogger, prompt_preview
 from loro.budgets import BudgetExceeded, UsageBudget
-from loro.config import LoroConfig
+from loro.config import LoroConfig, config_digest
 from loro.context import (
     compact_history,
     history_from_payload,
@@ -55,6 +55,7 @@ class AgentResult:
     usage: dict[str, int | float]
     emitted_outputs: dict[str, object]
     context: dict[str, Any] = field(default_factory=dict)
+    run_id: str = ""
 
 
 RuntimeEventHandler = Callable[[str, Mapping[str, Any]], None]
@@ -162,6 +163,9 @@ class AgentRuntime:
             "runtime.task_started",
             mode=mode,
             model_provider=self.config.model.provider,
+            model=self.config.model.model,
+            config_digest=config_digest(self.config),
+            context_mode=self.config.context.mode,
             prompt_preview=prompt_preview(prompt)
             if self.config.audit.include_prompt_preview
             else None,
@@ -487,6 +491,7 @@ class AgentRuntime:
                     ]
                 ),
                 context_summary=compaction.summary,
+                run_id=trace_id,
                 session_id=active_session_id,
                 agent_name=(self.profile.resolved.document.metadata.name if self.profile else None),
                 agent_revision=(
@@ -531,6 +536,7 @@ class AgentRuntime:
             usage=self.usage.payload(),
             emitted_outputs=dict(self.tools.graph_outputs),
             context=context_info,
+            run_id=trace_id,
         )
 
     def _prior_context(

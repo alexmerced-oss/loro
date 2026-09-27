@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -1105,6 +1106,19 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
         managed_data = _merge(managed_data, parsed)
     data = _merge(data, managed_data)
     return LoroConfig.model_validate(migrate_config_data(data))
+
+
+def config_digest(config: LoroConfig) -> str:
+    """SHA-256 over the canonical JSON of the resolved configuration.
+
+    The configuration names credential environment variables and vault references but never
+    holds their values, so the digest identifies settings without covering secrets.
+    """
+
+    canonical = json.dumps(
+        config.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), default=str
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def managed_config_digest(sources: list[tuple[str, bytes]]) -> str:

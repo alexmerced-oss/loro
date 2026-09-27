@@ -172,7 +172,11 @@
     ],
     "remember": [],
     "repl": [],
-    "run": [],
+    "run": [
+      "export",
+      "list",
+      "verify"
+    ],
     "safety": [
       "doctor",
       "scan"
