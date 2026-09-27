@@ -259,13 +259,15 @@ class AAISBridge:
         actor_id: str,
         decision_id: str | None = None,
         reviewed_digest: str | None = None,
+        authenticated_by: str | None = None,
     ) -> Envelope:
+        # `authenticated_by` names the channel the decision arrived on. The Web UI is the
+        # default; the stdio transport passes its own so receipts do not claim a web session.
         actor = {
             "id": _identifier(actor_id, "local-user"),
             "type": "human" if not actor_id.startswith("loro.") else "policy",
-            "authenticated_by": (
-                "loro-web-session" if not actor_id.startswith("loro.") else "authority"
-            ),
+            "authenticated_by": authenticated_by
+            or ("loro-web-session" if not actor_id.startswith("loro.") else "authority"),
         }
         with _store_errors():
             try:

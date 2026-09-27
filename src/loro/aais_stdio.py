@@ -12,6 +12,10 @@ from loro.aais_bridge import AAISBridge
 from loro.approvals import ApprovalRequest, ApprovalScope
 from loro.config import load_config
 
+# The presenter on the other end of stdin (for example Merced AI) is not authenticated by Loro,
+# so its decisions are attributed to the stdio channel rather than to a Web UI session.
+STDIO_AUTHENTICATED_BY = "loro-aais-stdio"
+
 
 def create_stdio_provider(project_root: Path) -> Callable[[ApprovalRequest], ApprovalScope | None]:
     import signal
@@ -34,6 +38,7 @@ def create_stdio_provider(project_root: Path) -> Callable[[ApprovalRequest], App
                         decision=str(decision["decision"]),
                         scope=str(decision["scope"]),
                         actor_id="stdio-user",
+                        authenticated_by=STDIO_AUTHENTICATED_BY,
                         reviewed_digest=str(decision["action_digest"]),
                         decision_id=str(decision.get("id") or "") or None,
                     )
