@@ -1,0 +1,140 @@
+{
+  "loro approvals list --json": {
+    "approvals": [],
+    "count": "int"
+  },
+  "loro approvals recovery --json": {
+    "hold": "null",
+    "report": {
+      "guidance": "str",
+      "orphaned": [],
+      "receipts": [],
+      "unknown_owner": [],
+      "unverified_owner": []
+    },
+    "store": "str"
+  },
+  "loro capabilities --json": {
+    "harness": "str",
+    "limits": [
+      "str"
+    ],
+    "ready": {
+      "webmcp": "bool"
+    },
+    "schema": "str",
+    "supported": {
+      "aais": "bool",
+      "ags": "str",
+      "oap": "str",
+      "webmcp": "bool"
+    },
+    "version": "str",
+    "webmcp": {
+      "browser_installed": "bool",
+      "origins": [
+        "str"
+      ],
+      "package_installed": "bool",
+      "reasons": [
+        "str"
+      ],
+      "registry_status": "str"
+    }
+  },
+  "loro config check --json": {
+    "findings": [
+      {
+        "code": "str",
+        "message": "str",
+        "pointer": "str",
+        "severity": "str"
+      }
+    ]
+  },
+  "loro doctor --json": {
+    "checks": [
+      {
+        "check": "str",
+        "detail": "str",
+        "ok": "bool"
+      }
+    ],
+    "ok": "bool"
+  },
+  "loro graph plan --json": {
+    "findings": [
+      {
+        "code": "str",
+        "message": "str",
+        "pointer": "str",
+        "severity": "str"
+      }
+    ],
+    "ok": "bool",
+    "path": "str",
+    "policy_findings": [
+      {
+        "code": "str",
+        "message": "str",
+        "pointer": "str",
+        "severity": "str"
+      }
+    ]
+  },
+  "loro run --json": {
+    "context": {
+      "compacted_messages": "int",
+      "history_messages": "int",
+      "mode": "str"
+    },
+    "mode": "str",
+    "model": "str",
+    "ok": "bool",
+    "provider": "str",
+    "response": "str",
+    "run_id": "str",
+    "session_id": "str",
+    "steps": "int",
+    "stop_reason": "str",
+    "tool_calls": [],
+    "usage": {
+      "cost_usd": "float",
+      "input_tokens": "int",
+      "output_tokens": "int",
+      "tool_calls": "int"
+    }
+  },
+  "loro run export --json": {
+    "approvals": "int",
+    "audit_events": "int",
+    "bundle_digest": "str",
+    "path": "str",
+    "run_id": "str",
+    "tool_calls": "int",
+    "warnings": []
+  },
+  "loro run list --json": [
+    {
+      "completed_at": "str",
+      "events": "int",
+      "mode": "str",
+      "model": "str",
+      "provider": "str",
+      "run_id": "str",
+      "session_id": "str",
+      "started_at": "str",
+      "stop_reason": "str"
+    }
+  ],
+  "loro run verify --json": {
+    "bundle_digest": "str",
+    "checks": [
+      "str"
+    ],
+    "issues": [],
+    "ok": "bool",
+    "path": "str",
+    "run_id": "str"
+  }
+}
