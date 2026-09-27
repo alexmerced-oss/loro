@@ -389,6 +389,10 @@ class ApprovalsConfig(BaseModel):
     store: Literal["memory", "json"] = "memory"
     store_path: str = "~/.local/state/loro/approvals.json"
     max_store_bytes: int = Field(default=10_000_000, ge=1024, le=100_000_000)
+    # Where the AAIS authority (Web UI and stdio approvals) keeps its queue: a file in the
+    # project, or a Postgres table shared by several server processes and hosts.
+    authority: Literal["file", "postgres"] = "file"
+    authority_dsn_env: str = "LORO_APPROVALS_DSN"
 
 
 class PermissionRuleConfig(BaseModel):
@@ -759,6 +763,27 @@ class AuditConfig(BaseModel):
     forward: AuditForwardConfig = Field(default_factory=AuditForwardConfig)
 
 
+LoroRole = Literal["viewer", "operator", "approver", "admin"]
+
+
+class RBACConfig(BaseModel):
+    """Web UI roles for OIDC (multi-user) mode; launch-token mode is a single admin user."""
+
+    enabled: bool = True
+    # Identity role or group claim value -> Loro role, e.g. {"data-platform-admins" = "admin"}.
+    mappings: dict[str, LoroRole] = Field(default_factory=dict)
+    # Treat role/group claims literally named viewer/operator/approver/admin as Loro roles.
+    accept_role_names: bool = True
+    # Subjects that are always admins (bootstrap the first administrator).
+    admins: list[str] = Field(default_factory=list)
+    # Role for signed-in users with no mapped role; unset means no access.
+    default_role: LoroRole | None = None
+
+
+class WebUIConfig(BaseModel):
+    rbac: RBACConfig = Field(default_factory=RBACConfig)
+
+
 class WebFetchConfig(BaseModel):
     """The web.fetch tool. It is refused until domains are allowlisted and web policy allows."""
 
@@ -1060,6 +1085,7 @@ class LoroConfig(BaseModel):
     context: ContextConfig = Field(default_factory=ContextConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     web_fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
+    webui: WebUIConfig = Field(default_factory=WebUIConfig)
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
@@ -1165,6 +1191,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"safety": config.safety.model_dump(exclude_none=True)}
     if section == "context":
         return {"context": config.context.model_dump()}
+    if section == "webui":
+        return {"webui": config.webui.model_dump(exclude_none=True)}
     if section == "telemetry":
         return {"telemetry": config.telemetry.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")

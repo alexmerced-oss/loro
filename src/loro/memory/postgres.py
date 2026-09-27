@@ -379,7 +379,7 @@ SELECT
                     self._set_tenant_context(cursor)
                     self._lock_operation(cursor, request.tenant_id, request.event_id)
                     cursor.execute(statement.sql, statement.params)
-                    operation_exists, operation_matches, updated, event_inserted = cursor.fetchone()
+                    operation_exists, operation_matches, updated, event_inserted = _one(cursor)
                     if operation_exists and not operation_matches:
                         raise RuntimeError("Memory lifecycle operation ID is already bound.")
                     if operation_matches:
@@ -410,7 +410,7 @@ SELECT
                         operation_matches,
                         inserted,
                         event_inserted,
-                    ) = cursor.fetchone()
+                    ) = _one(cursor)
                     if operation_exists and not operation_matches:
                         raise RuntimeError("Shared-memory draft ID is already bound.")
                     if not operation_matches and (not inserted or not event_inserted):
@@ -477,13 +477,13 @@ SELECT
                         "SELECT to_regclass(%s)",
                         (migration_table(self.config.postgres_schema),),
                     )
-                    if cursor.fetchone()[0] is None:
+                    if _one(cursor)[0] is None:
                         return 0
                     cursor.execute(
                         "SELECT COALESCE(MAX(version), 0) FROM "
                         f"{migration_table(self.config.postgres_schema)}"  # nosec B608
                     )
-                    return int(cursor.fetchone()[0])
+                    return int(_one(cursor)[0])
 
     def migrate(
         self,
@@ -516,12 +516,12 @@ SELECT
                         (migration_table(self.config.postgres_schema),),
                     )
                     current = 0
-                    if cursor.fetchone()[0] is not None:
+                    if _one(cursor)[0] is not None:
                         cursor.execute(
                             "SELECT version, checksum FROM "
                             f"{migration_table(self.config.postgres_schema)} ORDER BY version"  # nosec B608
                         )
-                        applied_rows = dict(cursor.fetchall())
+                        applied_rows: dict[Any, Any] = dict(cursor.fetchall())
                         current = max(applied_rows, default=0)
                         for migration in migrations:
                             if (
@@ -603,7 +603,7 @@ SELECT
                 with connection.cursor() as cursor:
                     self._set_tenant_context(cursor)
                     cursor.execute(sql)
-                    values = tuple(int(value) for value in cursor.fetchone())
+                    values = tuple(int(value) for value in _one(cursor))
         labels = (
             "orphan events",
             "memories without creation events",
@@ -657,3 +657,12 @@ def _content_digest(content: str | None) -> str | None:
     import hashlib
 
     return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _one(cursor: Any) -> tuple[Any, ...]:
+    """The single row a statement must return; a missing row is a database contract error."""
+
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("Postgres returned no row where one was required.")
+    return tuple(row)

@@ -52,6 +52,7 @@ jobs:
           python -m pytest -m integration \
             tests/integration/test_postgres_memory_integration.py \
             tests/integration/test_postgres_recovery_integration.py \
+            tests/integration/test_aais_postgres_integration.py \
             --junitxml=postgres-integration.xml
 
       - name: Upload Postgres integration evidence

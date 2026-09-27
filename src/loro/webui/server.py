@@ -14,10 +14,19 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from loro.agent_profiles import AgentProfileRegistry
-from loro.config import OIDCConfig, load_config
+from loro.audit import AuditLogger
+from loro.config import OIDCConfig, load_config, write_config_sections
 from loro.oidc import OIDCError
 from loro.webui.auth import SESSION_COOKIE, WebAuth, login_error_redirect
 from loro.webui.conversations import ConversationStore
+from loro.webui.rbac import (
+    PERMISSION_LABELS,
+    PERMISSIONS,
+    ROLES,
+    permissions_for,
+    required_permission,
+    roles_for,
+)
 from loro.webui.services import MAX_GROUP_PARTICIPANTS, ProfileService, RunManager, SettingsService
 from loro.webui.workspace import (
     ContextReference,
@@ -146,6 +155,15 @@ class WebMCPInvoke(BaseModel):
     approved: bool = False
 
 
+class AccessUpdate(BaseModel):
+    mappings: dict[str, Literal["viewer", "operator", "approver", "admin"]] = Field(
+        default_factory=dict
+    )
+    admins: list[str] = Field(default_factory=list, max_length=100)
+    default_role: Literal["viewer", "operator", "approver", "admin"] | None = None
+    accept_role_names: bool = True
+
+
 class ScheduleUpdate(BaseModel):
     enabled: bool
 
@@ -185,9 +203,53 @@ def create_app(
     app.state.settings = settings
     app.state.runs = runs
 
+    def _authorize(request: Request) -> Response | None:
+        """RBAC for OIDC mode: map verified claims to roles and check the route."""
+
+        identity = request.state.identity
+        rbac = load_config(root).webui.rbac
+        if not rbac.enabled:
+            request.state.roles = ["admin"]
+            request.state.permissions = permissions_for(["admin"])
+            return None
+        roles = roles_for(identity, rbac)
+        granted = permissions_for(roles)
+        request.state.roles = roles
+        request.state.permissions = granted
+        needed = required_permission(request.method, request.url.path)
+        if needed in granted:
+            return None
+        _audit_event(
+            "policy.access_denied",
+            actor=identity.subject,
+            action=f"{request.method} {request.url.path}",
+            required=needed,
+            roles=roles,
+        )
+        detail = (
+            "Your account has no Loro role. Ask an administrator to map one of your groups "
+            "in Access."
+            if not roles
+            else f"Your role ({', '.join(roles)}) cannot {PERMISSION_LABELS[needed].lower()}. "
+            "Ask an administrator for access."
+        )
+        return JSONResponse(
+            {"error": "forbidden", "detail": detail, "required": needed, "roles": roles},
+            status_code=403,
+        )
+
+    def _audit_event(event_type: str, **details: Any) -> None:
+        try:
+            config = load_config(root)
+            AuditLogger(config.audit, safety_config=config.safety).write(event_type, **details)
+        except Exception:  # noqa: BLE001 - auditing an access decision must not crash the request
+            pass
+
     @app.middleware("http")
     async def security(request: Request, call_next):
         request.state.identity = None
+        request.state.roles = ["admin"] if auth.mode == "token" else []
+        request.state.permissions = permissions_for(request.state.roles)
         csrf_exempt = False
         if request.url.path.startswith("/api/"):
             if auth.mode == "token":
@@ -208,6 +270,9 @@ def create_app(
                             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
                         )
                     csrf_exempt = True
+                    denied = _authorize(request)
+                    if denied is not None:
+                        return denied
                 else:
                     session = auth.session(request.cookies.get(SESSION_COOKIE))
                     if session is None or session.identity is None:
@@ -221,6 +286,9 @@ def create_app(
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     request.state.identity = session.identity
+                denied = _authorize(request)
+                if denied is not None:
+                    return denied
             if request.method not in {"GET", "HEAD", "OPTIONS"} and not csrf_exempt:
                 origin = request.headers.get("origin")
                 if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
@@ -516,6 +584,8 @@ def create_app(
                 "csrf_token": existing.csrf,
                 "workspace": str(root),
                 "identity": identity.to_payload() if identity else None,
+                "roles": request.state.roles,
+                "permissions": request.state.permissions,
             }
         session_id, session = auth.new_session()
         response.set_cookie(
@@ -525,7 +595,67 @@ def create_app(
             samesite="strict",
             secure=request.url.scheme == "https",
         )
-        return {"csrf_token": session.csrf, "workspace": str(root)}
+        return {
+            "csrf_token": session.csrf,
+            "workspace": str(root),
+            "roles": request.state.roles,
+            "permissions": request.state.permissions,
+        }
+
+    @app.get("/api/access")
+    async def access(request: Request) -> dict[str, Any]:
+        rbac = load_config(root).webui.rbac
+        identity = request.state.identity
+        return {
+            "mode": auth.mode,
+            "rbac_enabled": auth.mode == "oidc" and rbac.enabled,
+            "you": {
+                "subject": identity.subject if identity else "local-user",
+                "roles": request.state.roles,
+                "permissions": request.state.permissions,
+            },
+            "roles": [
+                {"name": role, "permissions": sorted(PERMISSIONS[role])} for role in ROLES
+            ],
+            "permission_labels": PERMISSION_LABELS,
+            "mappings": rbac.mappings,
+            "admins": rbac.admins,
+            "default_role": rbac.default_role,
+            "accept_role_names": rbac.accept_role_names,
+        }
+
+    @app.put("/api/access/admin/rbac")
+    async def update_access(request: Request, payload: AccessUpdate) -> dict[str, Any]:
+        if auth.mode != "oidc":
+            raise HTTPException(
+                status_code=409, detail="Access rules apply only with `loro web --auth oidc`."
+            )
+        config = load_config(root)
+        updated = config.webui.rbac.model_copy(
+            update={
+                "mappings": payload.mappings,
+                "admins": [item.strip() for item in payload.admins if item.strip()],
+                "default_role": payload.default_role,
+                "accept_role_names": payload.accept_role_names,
+            }
+        )
+        identity = request.state.identity
+        if identity is not None and "admin" not in roles_for(identity, updated):
+            raise HTTPException(
+                status_code=409,
+                detail="This change would remove your own admin access. Keep one mapping or "
+                "your subject in Admins.",
+            )
+        config.webui.rbac = updated
+        write_config_sections(root / ".loro" / "config.local.toml", config, ["webui"])
+        _audit_event(
+            "config.access_rules_changed",
+            actor=identity.subject if identity else "local-user",
+            mappings=len(updated.mappings),
+            admins=len(updated.admins),
+            default_role=updated.default_role,
+        )
+        return await access(request)
 
     @app.get("/auth/me")
     async def auth_me(request: Request) -> dict[str, Any]:
@@ -534,8 +664,12 @@ def create_app(
             return described
         session = auth.session(request.cookies.get(SESSION_COOKIE))
         identity = session.identity if session else None
+        rbac = load_config(root).webui.rbac
+        roles = (roles_for(identity, rbac) if rbac.enabled else ["admin"]) if identity else []
         return {
             **described,
+            "roles": roles,
+            "permissions": permissions_for(roles),
             "authenticated": identity is not None,
             "identity": identity.to_payload() if identity else None,
             "expires_at": session.expires_at if session and identity else None,

@@ -1,6 +1,7 @@
 import { useModalFocus } from "./use-modal-focus";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { request } from "./api";
+import { useCan } from "./permissions";
 
 type Choice = { decision: "approve" | "deny" | "cancel"; scope: "once" | "session" | "persistent"; label: string };
 type Pending = {
@@ -14,6 +15,7 @@ type Pending = {
 };
 
 export function ApprovalCenter({ setError }: { setError: (message: string) => void }) {
+  const canApprove = useCan("approve");
   const [pending, setPending] = useState<Pending[]>([]);
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(async () => {
@@ -56,7 +58,7 @@ export function ApprovalCenter({ setError }: { setError: (message: string) => vo
     {approval.expires_at && <p>Expires {new Date(approval.expires_at).toLocaleString()}</p>}
     <div className={`approval-risk ${approval.risk.level}`}><b>{approval.risk.level} risk</b>{approval.risk.reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
     <dl className="approval-detail"><div><dt>Action</dt><dd>{approval.action.name}</dd></div>{approval.action.resource && <div><dt>Resource</dt><dd>{approval.action.resource}</dd></div>}<div><dt>Exact arguments</dt><dd><pre>{JSON.stringify(approval.action.arguments, null, 2)}</pre></dd></div><div><dt>Digest</dt><dd><code>{approval.action_digest}</code></dd></div></dl>
-    <div className="approval-actions">{approval.choices.map((choice) => <button key={`${choice.decision}:${choice.scope}`} disabled={busy || Boolean(approval.expires_at && Date.parse(approval.expires_at) <= Date.now())} className={choice.decision === "approve" ? "primary-action" : "secondary-action"} onClick={() => void decide(approval, choice)}>{choice.label}</button>)}</div>
+    {!canApprove ? <p className="approval-actions" role="status">Waiting for someone with the approver role.</p> : <div className="approval-actions">{approval.choices.map((choice) => <button key={`${choice.decision}:${choice.scope}`} disabled={busy || Boolean(approval.expires_at && Date.parse(approval.expires_at) <= Date.now())} className={choice.decision === "approve" ? "primary-action" : "secondary-action"} onClick={() => void decide(approval, choice)}>{choice.label}</button>)}</div>}
     <small>Loro revalidates identity, policy, scope, and the exact action before execution.</small>
   </section></div>;
 }

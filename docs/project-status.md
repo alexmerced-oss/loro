@@ -168,8 +168,8 @@ private interface and may change between minor releases.
 | Gate | Status |
 | --- | --- |
 | Verified identity for every request | Met in 0.22 (`loro web --auth oidc`), new in this release, so not yet proven in use |
-| Role-based access control per user | Not met in 0.22 (planned with multi-user server mode) |
-| Shared, durable session and approval storage for more than one server process | Not met |
+| Role-based access control per user | Met in 0.22 (experimental; [Multi-User Server Mode](multi-user.md)) |
+| Shared, durable approval storage for more than one server process | Met in 0.22 with `approvals.authority = "postgres"`; browser sessions are still per process |
 | Independent security review or penetration test of the remote configuration | Not met (external) |
 | Deployment evidence behind a TLS proxy with a production identity provider | Not met (external) |
 

@@ -9,15 +9,17 @@ import { registerShortcuts, chord, type Shortcut } from "./shortcuts";
 import { applyTheme, initTheme, nextTheme, storeTheme, themeGlyph, themeLabel, type ThemeChoice } from "./theme";
 import { Markdown } from "./Markdown";
 import { messageMeta } from "./messageMeta";
+import { AccessView } from "./AccessView";
+import { ALL_PERMISSIONS, PermissionsContext, useCan } from "./permissions";
 import { ApprovalCenter } from "./ApprovalCenter";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activeRun, initialize, LoginRequiredError, loginHref, request, signOut, streamRun, takeAuthError, type AuthInfo, type Identity } from "./api";
 import type { Conversation, Message, Profile, Settings } from "./types";
 
-type View = "chat" | "runs" | "workspace" | "graphs" | "bots" | "profiles" | "extensions" | "memory" | "governance" | "settings";
+type View = "chat" | "runs" | "workspace" | "graphs" | "bots" | "profiles" | "extensions" | "memory" | "governance" | "settings" | "access";
 type Approval = { runId: string; request_id: string; action: string; target: string; arguments_preview: string; scopes: string[] };
 
-const icons: Record<View, string> = { chat: "⌁", runs: "↻", workspace: "▱", graphs: "⌘", bots: "◉", profiles: "◇", extensions: "⬡", memory: "❖", governance: "⚖", settings: "⚙" };
+const icons: Record<View, string> = { chat: "⌁", runs: "↻", workspace: "▱", graphs: "⌘", bots: "◉", profiles: "◇", extensions: "⬡", memory: "❖", governance: "⚖", settings: "⚙", access: "⚷" };
 
 // Bounded: a server that has actually gone away should say so rather than
 // leave the transcript reconnecting forever.
@@ -38,6 +40,7 @@ export default function App() {
   const [login, setLogin] = useState<AuthInfo | null>(null);
   const [authError] = useState(takeAuthError);
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [permissions, setPermissions] = useState<string[]>(ALL_PERMISSIONS);
 
   const shortcuts = useMemo<Shortcut[]>(() => [
     { key: "k", mod: true, describe: "Focus the message box", run: () => {
@@ -82,6 +85,7 @@ export default function App() {
         const session = await initialize();
         setWorkspace(session.workspace);
         setIdentity(session.identity || null);
+        if (session.permissions) setPermissions(session.permissions);
         // Ask whether this folder can actually run a turn before showing a
         // workspace whose composer would fail on the first message.
         const readiness = await request<{ ready?: boolean }>("/api/onboarding/readiness").catch(
@@ -138,11 +142,12 @@ export default function App() {
   }
 
   return (
+    <PermissionsContext.Provider value={permissions}>
     <div className="app-shell">
       <aside className="rail">
         <div className="brand" aria-label="Loro"><span>🦜</span><b>Loro</b></div>
         <nav aria-label="Primary navigation">
-          {(Object.keys(icons) as View[]).map((item) => (
+          {(Object.keys(icons) as View[]).filter((item) => item !== "access" || identity).map((item) => (
             <button key={item} className={view === item ? "active" : ""} onClick={() => setView(item)}>
               <span>{icons[item]}</span>{item}
             </button>
@@ -201,9 +206,11 @@ export default function App() {
         {view === "memory" && <MemoryView setError={setError} />}
         {view === "governance" && <GovernanceView setError={setError} />}
         {view === "settings" && <SettingsView profiles={profiles} refreshProfiles={refreshProfiles} setError={setError} identity={identity} />}
+        {view === "access" && <AccessView setError={setError} />}
       </main>
       <ApprovalCenter setError={setError} />
     </div>
+    </PermissionsContext.Provider>
   );
 }
 
@@ -237,6 +244,8 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
   conversations: Conversation[]; activeId: string | null; setActiveId: (id: string) => void;
   profiles: Profile[]; onNew: (profile?: string) => void; refresh: () => Promise<void>; setError: (error: string) => void;
 }) {
+  const canApprove = useCan("approve");
+  const canOperate = useCan("operate");
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
@@ -423,7 +432,7 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
       <button className="list-scrim" type="button" aria-label="Hide conversations"
               onClick={() => setListOpen(false)} tabIndex={listOpen ? 0 : -1} />
     <section className="conversation-list">
-      <div className="section-heading"><div><small>Workspace</small><h2>Conversations</h2></div><button className="icon-button" onClick={() => onNew()} aria-label="New conversation">＋</button></div>
+      <div className="section-heading"><div><small>Workspace</small><h2>Conversations</h2></div>{canOperate && <button className="icon-button" onClick={() => onNew()} aria-label="New conversation">＋</button>}</div>
       <div className="conversation-items">
         {conversations.map((item) => <button key={item.id} className={`conversation-row ${item.id === activeId ? "selected" : ""}`} onClick={() => { setActiveId(item.id); setListOpen(false); }}>
           <span className="conversation-icon">{item.profile_name ? "◉" : "⌁"}</span><span><b>{item.title}</b><small>{item.profile_name || "Loro default"} · {relativeTime(item.updated_at)}</small></span>
@@ -445,9 +454,10 @@ function ChatView({ conversations, activeId, setActiveId, profiles, onNew, refre
         {notice && <p className="run-resumed" role="status">{notice}</p>}
         {streaming && <div className="message assistant"><div className="message-label">{speaker || "Loro"} <span className="live-dot" /></div><div className="message-content"><Markdown>{streaming}</Markdown></div></div>}
         <p className="sr-only" role="status">{runId ? "Loro is working." : approvals.length ? `${approvals.length} approvals required.` : ""}</p>
-        {approvals.map((approval) => <div className="approval-card" key={approval.request_id}><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code><div><button className="secondary" onClick={() => decide(approval, "deny")}>Deny</button><button onClick={() => decide(approval, "approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide(approval, "approve", "session")}>For session</button>}</div></div>)}
+        {approvals.map((approval) => <div className="approval-card" key={approval.request_id}><small>APPROVAL REQUIRED</small><h3>{approval.action}</h3><p>{approval.target}</p><code>{approval.arguments_preview}</code>{canApprove ? <div><button className="secondary" onClick={() => decide(approval, "deny")}>Deny</button><button onClick={() => decide(approval, "approve", "once")}>Approve once</button>{approval.scopes.includes("session") && <button onClick={() => decide(approval, "approve", "session")}>For session</button>}</div> : <p role="status">Waiting for someone with the approver role.</p>}</div>)}
       </div>
-      {active && <form className="composer" onSubmit={send}><textarea aria-label="Message" rows={2} placeholder={`Message ${active.profile_name || "Loro"}…`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} disabled={Boolean(runId)} />{context.length > 0 && <div className="context-chips">{context.map((item) => <span key={item.path}>{item.name || item.path}<button type="button" onClick={() => setContext((current) => current.filter((found) => found.path !== item.path))}>×</button></span>)}</div>}<div className="composer-footer"><span><button type="button" className="context-action" onClick={addWorkspacePath}>＋ Workspace file</button><button type="button" className="context-action" onClick={() => uploadInput.current?.click()}>↑ Upload</button><input ref={uploadInput} type="file" multiple hidden onChange={(event) => { void upload([...event.target.files || []]); event.target.value = ""; }} /> Enter to send · Shift+Enter for a new line</span>{runId ? <button type="button" className="stop" onClick={() => request(`/api/runs/${runId}/cancel`, { method: "POST" })}>■ Stop</button> : <button disabled={!draft.trim()} aria-label="Send message">↑</button>}</div></form>}
+      {active && !canOperate && <p className="composer-readonly" role="status">Your role can read this conversation but not send messages. Ask an administrator for the operator role.</p>}
+      {active && canOperate && <form className="composer" onSubmit={send}><textarea aria-label="Message" rows={2} placeholder={`Message ${active.profile_name || "Loro"}…`} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} disabled={Boolean(runId)} />{context.length > 0 && <div className="context-chips">{context.map((item) => <span key={item.path}>{item.name || item.path}<button type="button" onClick={() => setContext((current) => current.filter((found) => found.path !== item.path))}>×</button></span>)}</div>}<div className="composer-footer"><span><button type="button" className="context-action" onClick={addWorkspacePath}>＋ Workspace file</button><button type="button" className="context-action" onClick={() => uploadInput.current?.click()}>↑ Upload</button><input ref={uploadInput} type="file" multiple hidden onChange={(event) => { void upload([...event.target.files || []]); event.target.value = ""; }} /> Enter to send · Shift+Enter for a new line</span>{runId ? <button type="button" className="stop" onClick={() => request(`/api/runs/${runId}/cancel`, { method: "POST" })}>■ Stop</button> : <button disabled={!draft.trim()} aria-label="Send message">↑</button>}</div></form>}
     </section>
   </div>;
 }
@@ -456,7 +466,10 @@ function MessageBubble({ message }: { message: Message }) {
   return <div className={`message ${message.role} ${message.status === "error" ? "error" : ""}`}><div className="message-label">{message.role === "user" ? "You" : message.role === "assistant" ? (String(message.metadata?.profile || "") || "Loro") : "System"}<time>{new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div><div className="message-content">{message.role === "user" ? message.content : <Markdown>{message.content}</Markdown>}</div>{Boolean(message.metadata.stop_reason) && <div className="message-meta">{messageMeta(message.metadata)}</div>}</div>;
 }
 
-function EmptyChat({ onNew }: { onNew: () => void }) { return <div className="welcome-message"><div className="avatar">🦜</div><h2>Your local agent workspace</h2><p>Create a conversation to begin.</p><button className="primary-action" onClick={onNew}>New conversation</button></div>; }
+function EmptyChat({ onNew }: { onNew: () => void }) {
+  const canOperate = useCan("operate");
+  return <div className="welcome-message"><div className="avatar">🦜</div><h2>Your local agent workspace</h2>{canOperate ? <><p>Create a conversation to begin.</p><button className="primary-action" onClick={onNew}>New conversation</button></> : <p>Your role can read conversations here. Starting one needs the operator role.</p>}</div>;
+}
 
 function BotsView({ profiles, onChat }: {
   profiles: Profile[];
@@ -658,6 +671,7 @@ function ProfilesView({ profiles, refresh, setError }: { profiles: Profile[]; re
 }
 
 function SettingsView({ profiles, refreshProfiles, setError, identity }: { profiles: Profile[]; refreshProfiles: () => Promise<void>; setError: (error: string) => void; identity?: Identity | null }) {
+  const canAdmin = useCan("admin");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [providers, setProviders] = useState<Array<{ name: string; display_name: string; default_model: string; small_model: string; needs_key?: boolean; api_key_env?: string; credential_ready?: boolean }>>([]);
   const [credential, setCredential] = useState("");
@@ -675,7 +689,7 @@ function SettingsView({ profiles, refreshProfiles, setError, identity }: { profi
       {selectedProvider?.needs_key && <section className="settings-card"><div><h2>Provider credential</h2><p>Add or rotate the key for {selectedProvider.display_name}. It is stored in Loro's OS-keyring-backed vault and is never returned to the browser.</p></div><div className="settings-fields"><label>API key<input type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={selectedProvider.credential_ready || settings.model.credential_configured ? "Credential configured · leave blank to keep it" : `Enter key or export ${selectedProvider.api_key_env || "the provider variable"}`} /></label></div></section>}
       <section className="settings-card"><div><h2>Default bot</h2><p>New conversations use this profile unless you select a bot explicitly.</p></div><div className="settings-fields"><label>Default profile<select value={settings.agent_profiles.default_profile || ""} onChange={(event) => setSettings({ ...settings, agent_profiles: { ...settings.agent_profiles, default_profile: event.target.value || null } })}><option value="">No profile</option>{profiles.map((profile) => <option value={profile.name} key={profile.name}>{profile.name} · {profile.source_scope || profile.trust}</option>)}</select></label><div className="setting-facts"><span>Writeback <b>{settings.agent_profiles.writeback}</b></span><span>Local memory <b>{settings.memory.local_enabled ? "on" : "off"}</b></span><span>Shared memory <b>{settings.memory.shared_enabled ? "on" : "off"}</b></span></div></div></section>
       {settings.managed_overlay_active && <div className="managed-banner">◇ A managed configuration overlay is active. Locked values may narrow these defaults.</div>}
-      <div className="settings-save"><span>{saved ? "✓ Settings saved" : `Writes to ${settings.write_target}`}</span><button>Save defaults</button></div>
+      <div className="settings-save"><span>{saved ? "✓ Settings saved" : `Writes to ${settings.write_target}`}</span>{canAdmin ? <button>Save defaults</button> : <span>Only admins can change defaults.</span>}</div>
     </form>
   </div>;
 }

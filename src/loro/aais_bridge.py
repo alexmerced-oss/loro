@@ -67,11 +67,51 @@ def _store_errors() -> Iterator[None]:
 class AAISBridge:
     """One authority stream shared by chat, subagents, graphs, and tools."""
 
-    def __init__(self, project_root: Path, *, retention: RetentionPolicy | None = None) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        retention: RetentionPolicy | None = None,
+        store: FileApprovalStore | None = None,
+    ) -> None:
         self.project_root = project_root.resolve()
         self.path = self.project_root / ".loro" / STATE_FILE
         self.legacy_path = self.project_root / ".loro" / LEGACY_STATE_FILE
-        self.store = FileApprovalStore(
+        self.store = store or self._configured_store(retention)
+        self._lock = threading.RLock()
+        self._active: dict[str, threading.Event] = {}
+        if isinstance(self.store, FileApprovalStore) and not self._shared:
+            self._migrate_legacy_state()
+
+    @property
+    def _shared(self) -> bool:
+        return type(self.store).__name__ == "PostgresApprovalStore"
+
+    def _configured_store(self, retention: RetentionPolicy | None) -> FileApprovalStore:
+        from loro.config import load_config
+
+        try:
+            approvals = load_config(self.project_root).approvals
+        except Exception:  # noqa: BLE001 - a broken config must not hide approvals
+            approvals = None
+        if approvals is not None and approvals.authority == "postgres":
+            import os
+
+            from loro.aais_postgres import PostgresApprovalStore
+
+            dsn = os.environ.get(approvals.authority_dsn_env, "")
+            if not dsn:
+                raise ApprovalError(
+                    'approvals.authority = "postgres" needs '
+                    f"{approvals.authority_dsn_env} set to a Postgres connection string."
+                )
+            return PostgresApprovalStore(
+                dsn,
+                stream="loro.approvals",
+                presenter_stream="loro.presenter",
+                retention=retention,
+            )
+        return FileApprovalStore(
             self.path,
             stream="loro.approvals",
             presenter_stream="loro.presenter",
@@ -80,9 +120,11 @@ class AAISBridge:
             # several processes queue for the lock.
             lock_timeout=LOCK_TIMEOUT_SECONDS,
         )
-        self._lock = threading.RLock()
-        self._active: dict[str, threading.Event] = {}
-        self._migrate_legacy_state()
+
+    def _has_state(self) -> bool:
+        if self._shared:
+            return bool(self.store.exists())  # type: ignore[attr-defined]
+        return self.path.exists()
 
     def _migrate_legacy_state(self) -> None:
         """Import a pre-0.22 ``aais-pending.json`` once, then set it aside."""
@@ -293,7 +335,7 @@ class AAISBridge:
         """
 
         wanted = sorted({str(item) for item in request_ids})
-        if not wanted or not self.path.exists():
+        if not wanted or not self._has_state():
             return {}
         with _store_errors():
             requests = {

@@ -18,6 +18,7 @@ path to 1.0. Historical release documents are labeled as such.
 - [Managed Data Protection](data-protection.md)
 - [Audit Events And Delivery](audit.md)
 - [Run Evidence Bundles](run-evidence.md)
+- [Multi-User Server Mode](multi-user.md)
 - [Coding Tools: Patches, Tests, And Web Fetch](coding-tools.md)
 - [Observability: OpenTelemetry And SIEM Forwarding](observability.md)
 - [Reference Audit Collector](audit-collector.md)

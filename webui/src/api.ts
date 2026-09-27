@@ -89,9 +89,11 @@ async function responseError(response: Response): Promise<Error> {
   }
 
   let detail = body.trim();
+  let code = "";
   if (detail.startsWith("{")) {
     try {
       const parsed = JSON.parse(detail);
+      code = String(parsed.error || "");
       detail = String(parsed.detail || parsed.error || detail);
     } catch {
       /* not JSON after all; keep the raw text */
@@ -108,6 +110,7 @@ async function responseError(response: Response): Promise<Error> {
         "or restart it to mint a new one.",
     );
   }
+  if (response.status === 403 && code === "forbidden") return new Error(detail);
   if (response.status === 403) {
     return new Error(
       detail.toLowerCase().includes("origin")
@@ -123,7 +126,7 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(detail || `${response.status} ${response.statusText}`);
 }
 
-export async function initialize(): Promise<{ workspace: string; identity?: Identity | null }> {
+export async function initialize(): Promise<{ workspace: string; identity?: Identity | null; roles?: string[]; permissions?: string[] }> {
   const me = await fetch("/auth/me", { headers: headers() });
   if (me.ok) {
     const info = (await me.json()) as AuthInfo;

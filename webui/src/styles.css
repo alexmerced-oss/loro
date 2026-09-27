@@ -796,3 +796,25 @@ select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
 .run-empty{color:var(--muted);font-size:12px;margin:4px 0 0}
 .run-metrics b{font-size:22px}
 @media(max-width:680px){.schedule-section form{grid-template-columns:1fr}.run-center-page .page-header{flex-direction:column;gap:12px}.run-center-page .page-header>div:last-child{justify-content:flex-start}}
+/* Access (RBAC) view and permission-aware controls. */
+.access-page .access-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px;background:var(--c-121814);max-width:920px}
+.access-page h2{font-size:15px;margin:0 0 10px}
+.access-page p{font-size:12px}
+.access-permissions{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px;font-size:12px}
+.access-permissions li{display:flex;gap:8px;align-items:baseline}
+.access-permissions li.granted span[aria-hidden]{color:var(--green)}
+.access-permissions li.missing{color:var(--muted)}
+.access-table{display:grid;border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12px}
+.access-row{display:grid;grid-template-columns:minmax(90px,1.4fr) repeat(4,minmax(52px,1fr));border-top:1px solid var(--line)}
+.access-row:first-child{border-top:0}
+.access-row span{padding:8px 10px;text-align:center}
+.access-row span:first-child{text-align:left}
+.access-row.head{background:var(--c-0e1310);font:500 10px 'DM Mono';letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.access-rule{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:10px;align-items:end;margin-bottom:10px}
+.access-page label{display:grid;gap:6px;color:var(--c-a2afa6);font-size:10px;font-weight:600;margin:12px 0 0}
+.access-page input,.access-page select,.access-page textarea{background:var(--c-0e1310);border:1px solid var(--c-2c3730);border-radius:6px;color:var(--ink);padding:9px;font-size:12px;min-width:0}
+.access-page .secondary-action{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:8px 12px;font-size:12px}
+.access-page input:focus-visible,.access-page select:focus-visible,.access-page textarea:focus-visible,.access-page button:focus-visible{outline:2px solid var(--c-82c899);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.composer-readonly{margin:0 max(24px,calc((100% - 790px)/2)) 22px;border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--muted);font-size:12px}
+@media(max-width:680px){.access-rule{grid-template-columns:1fr}.composer-readonly{margin:0 12px 10px}}
