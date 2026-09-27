@@ -98,5 +98,5 @@ A change to any single byte of the bundle fails verification.
   `--expect-digest`, or check against the original audit log with `--audit-log`.
 - The audit log's own guarantees apply: it is tamper-evident, not tamper-proof. See
   [Audit](audit.md) for anchoring the log's final hash.
-- AAIS receipts are read from the project's store (`.loro/aais-pending.json`), which keeps a
+- AAIS receipts are read from the project's store (`.loro/aais-approvals.json`), which keeps a
   bounded history. Very old approvals may be listed by id without receipts.

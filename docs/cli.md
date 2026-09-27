@@ -84,7 +84,7 @@ The test suite checks this map against the registered commands. Run `loro COMMAN
 loro: capabilities, agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
 loro agents: apply, configure, create, digest, explain, forget, generate, history, list, proposals, review, show, state, validate
 loro artifacts: verify
-loro approvals: list
+loro approvals: list, recovery
 loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
 loro brief: executive, incident, meeting, project
 loro credentials: delete, doctor, list, set

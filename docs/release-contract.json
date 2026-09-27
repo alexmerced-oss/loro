@@ -18,7 +18,8 @@
       "validate"
     ],
     "approvals": [
-      "list"
+      "list",
+      "recovery"
     ],
     "artifacts": [
       "verify"

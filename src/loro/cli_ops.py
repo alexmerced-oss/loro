@@ -6,6 +6,7 @@ These live outside `cli.py` so each domain stays reviewable on its own.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -352,3 +353,76 @@ def memory_sweep(
     )
     if any(entry.error for entry in result.entries):
         raise typer.Exit(code=1)
+
+
+@approvals_app.command("recovery")
+def approvals_recovery(
+    acknowledge: Annotated[
+        bool,
+        typer.Option(
+            "--acknowledge",
+            help="Clear a corruption hold after inspecting the quarantined file.",
+        ),
+    ] = False,
+    cancel_orphaned: Annotated[
+        bool,
+        typer.Option(
+            "--cancel-orphaned", help="Withdraw pending requests whose owning process stopped."
+        ),
+    ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+) -> None:
+    """Inspect and recover the project's AAIS approval store.
+
+    Example: loro approvals recovery ; loro approvals recovery --cancel-orphaned
+
+    A damaged store is moved aside and every process refuses to use it until you inspect the
+    quarantined copy and run --acknowledge. Stopped owners are never restarted.
+    """
+
+    from loro.aais_bridge import AAISBridge
+    from loro.approvals import ApprovalError
+
+    bridge = AAISBridge(Path.cwd())
+    payload: dict[str, Any] = {"store": str(bridge.path), "hold": bridge.recovery_status()}
+    if acknowledge:
+        if payload["hold"] is None:
+            console.print("No recovery hold is set; nothing to acknowledge.")
+        else:
+            bridge.acknowledge_recovery()
+            payload["acknowledged"] = True
+            payload["hold"] = None
+    try:
+        if cancel_orphaned:
+            payload["cancelled"] = [
+                receipt["resolution"]["request_id"] for receipt in bridge.cancel_orphaned()
+            ]
+        payload["report"] = bridge.recovery()
+    except ApprovalError as error:
+        if json_output:
+            console.print_json(data={**payload, "error": str(error)})
+        else:
+            console.print(f"[bold red]Error:[/bold red] {error}", highlight=False)
+        raise typer.Exit(code=1) from error
+    if json_output:
+        console.print_json(data=payload)
+        return
+    report = payload["report"]
+    console.print(f"Approval store: {payload['store']}", highlight=False, soft_wrap=True)
+    if payload.get("acknowledged"):
+        console.print("Recovery hold acknowledged; the store is usable again.")
+    for key, label in (
+        ("orphaned", "Orphaned (owner stopped)"),
+        ("unknown_owner", "No owner recorded"),
+        ("unverified_owner", "Owner on another host"),
+    ):
+        items = report.get(key) or []
+        console.print(f"{label}: {len(items)}")
+        for item in items:
+            console.print(f"  {item}", highlight=False)
+    if payload.get("cancelled"):
+        console.print(f"Withdrew {len(payload['cancelled'])} orphaned request(s).")
+    elif report.get("orphaned"):
+        console.print(
+            "Withdraw them with: loro approvals recovery --cancel-orphaned", style="dim"
+        )

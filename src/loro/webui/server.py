@@ -782,7 +782,8 @@ def create_app(
 
     @app.get("/api/approvals/events")
     async def approval_events(after: int = 0) -> dict[str, Any]:
-        return {"events": runs.aais.events_after(after)}
+        # `gap` is true when the caller missed compacted events; resync from the snapshot.
+        return runs.aais.events_after(after)
 
     @app.post("/api/approvals/decisions")
     async def decide_aais(payload: AAISDecision) -> dict[str, Any]:

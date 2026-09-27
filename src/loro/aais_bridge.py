@@ -1,31 +1,42 @@
-"""Durable AAIS authority/presenter bridge for Loro's web and stdio surfaces."""
+"""Loro's AAIS authority/presenter bridge for its web and stdio surfaces.
+
+Persistence, locking, owner liveness, retention and corruption handling come from
+``aais.store.FileApprovalStore`` (agent-approval-interchange 0.2). This module maps Loro's
+``ApprovalRequest`` onto AAIS envelopes, wakes the waiting run, and publishes events to the
+presenter that asked.
+"""
 
 from __future__ import annotations
 
 import copy
 import json
-import os
 import re
-import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
-from contextlib import suppress
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from aais import ApprovalStore, ConflictError, create_decision, create_request, validate
+from aais import ConflictError
+from aais.store import (
+    FileApprovalStore,
+    OwnerStoppedError,
+    RecoveryRequired,
+    RetentionPolicy,
+    StoreError,
+    UnknownRequestError,
+)
 
-from loro.approvals import ApprovalError, ApprovalRequest, ApprovalScope, JsonApprovalStore
+from loro.approvals import ApprovalError, ApprovalRequest, ApprovalScope
 
 Envelope = dict[str, Any]
 Publisher = Callable[[str, Mapping[str, Any]], None]
 
-
-def _time(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+STATE_FILE = "aais-approvals.json"
+LEGACY_STATE_FILE = "aais-pending.json"
+LOCK_TIMEOUT_SECONDS = 60.0
 
 
 def _identifier(value: str, fallback: str) -> str:
@@ -33,79 +44,72 @@ def _identifier(value: str, fallback: str) -> str:
     return cleaned if cleaned and cleaned[0].isalnum() else fallback
 
 
-@dataclass
-class _Waiter:
-    envelope: Envelope
-    resolved: threading.Event
-    scope: ApprovalScope | None = None
-    resolution: Envelope | None = None
+@contextmanager
+def _store_errors() -> Iterator[None]:
+    """Report store failures as Loro approval errors that say what to do next."""
+
+    try:
+        yield
+    except RecoveryRequired as error:
+        where = (
+            f" The damaged file was moved to {error.quarantined_to}."
+            if error.quarantined_to
+            else ""
+        )
+        raise ApprovalError(
+            f"Approval state requires recovery: {error.path}.{where} Inspect it, then run "
+            "`loro approvals recovery --acknowledge`."
+        ) from error
+    except StoreError as error:
+        raise ApprovalError(f"Approval store error: {error}") from error
 
 
 class AAISBridge:
     """One authority stream shared by chat, subagents, graphs, and tools."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, *, retention: RetentionPolicy | None = None) -> None:
         self.project_root = project_root.resolve()
-        self.path = self.project_root / ".loro" / "aais-pending.json"
+        self.path = self.project_root / ".loro" / STATE_FILE
+        self.legacy_path = self.project_root / ".loro" / LEGACY_STATE_FILE
+        self.store = FileApprovalStore(
+            self.path,
+            stream="loro.approvals",
+            presenter_stream="loro.presenter",
+            retention=retention,
+            # Every transaction fsyncs; on a busy disk a 10-second default can expire while
+            # several processes queue for the lock.
+            lock_timeout=LOCK_TIMEOUT_SECONDS,
+        )
         self._lock = threading.RLock()
-        self._disk = JsonApprovalStore(self.path)
-        self._waiters: dict[str, _Waiter] = {}
-        self._publishers: dict[str, Publisher] = {}
+        self._active: dict[str, threading.Event] = {}
+        self._migrate_legacy_state()
 
-    @staticmethod
-    def _empty() -> Envelope:
-        return {
-            "schema": "loro.aais-store.v1",
-            "sequence": 0,
-            "presenter_sequence": 0,
-            "pending": {},
-            "decisions": {},
-            "resolutions": {},
-            "events": [],
-        }
+    def _migrate_legacy_state(self) -> None:
+        """Import a pre-0.22 ``aais-pending.json`` once, then set it aside."""
 
-    def _read(self) -> Envelope:
-        if not self.path.exists():
-            return self._empty()
+        if not self.legacy_path.exists() or self.path.exists():
+            return
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ApprovalError(f"Approval state requires recovery: {self.path}") from error
-        expected = self._empty()
-        if (
-            not isinstance(value, dict)
-            or any(
-                key not in value or not isinstance(value[key], type(default))
-                for key, default in expected.items()
+            legacy = json.loads(self.legacy_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ApprovalError(
+                f"Legacy approval state requires recovery: {self.legacy_path}. It was left in "
+                "place; repair or remove it, then retry."
+            ) from error
+        if not isinstance(legacy, dict) or legacy.get("schema") != "loro.aais-store.v1":
+            raise ApprovalError(f"Unrecognized legacy approval state: {self.legacy_path}")
+        try:
+            self.store.import_legacy_state(legacy)
+        except StoreError:
+            if not self.path.exists():  # another process migrated first; anything else is real
+                raise
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        try:
+            self.legacy_path.rename(
+                self.legacy_path.with_name(f"{LEGACY_STATE_FILE}.migrated-{stamp}")
             )
-            or value["schema"] != expected["schema"]
-        ):
-            raise ApprovalError(f"Invalid approval state; preserve and recover {self.path}")
-        return value
-
-    def _write(self, state: Mapping[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
-        temporary = Path(name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(state, handle, sort_keys=True, separators=(",", ":"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.path)
-            with suppress(OSError):
-                directory = os.open(self.path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-        finally:
-            temporary.unlink(missing_ok=True)
-
-    @staticmethod
-    def _next(state: Envelope, key: str = "sequence") -> int:
-        state[key] = int(state.get(key, 0)) + 1
-        return int(state[key])
+        except FileNotFoundError:
+            pass
 
     def request(
         self,
@@ -126,7 +130,9 @@ class AAISBridge:
             "working_directory": str(self.project_root),
             "effects": [request.risk_reason or "Performs an action guarded by Loro policy."],
         }
-        choices: list[Envelope] = [{"decision": "approve", "scope": "once", "label": "Allow once"}]
+        choices: list[Mapping[str, Any]] = [
+            {"decision": "approve", "scope": "once", "label": "Allow once"}
+        ]
         if allow_session:
             choices.append(
                 {
@@ -137,10 +143,8 @@ class AAISBridge:
                 }
             )
         choices.append({"decision": "deny", "scope": "once", "label": "Deny"})
-        with self._lock, self._disk._locked():
-            state = self._read()
-            now = datetime.now(UTC)
-            envelope = create_request(
+        with _store_errors():
+            envelope = self.store.add_request(
                 action=action,
                 origin={
                     "harness": "loro",
@@ -155,45 +159,51 @@ class AAISBridge:
                     ],
                 },
                 choices=choices,
-                sequence=self._next(state),
-                stream="loro.approvals",
                 request_id=request.request_id,
-                created_at=_time(now),
-                expires_at=_time(now + timedelta(seconds=timeout)),
+                ttl=timeout,
             )
-            state["pending"][request.request_id] = envelope
-            state.setdefault("owners", {})[request.request_id] = os.getpid()
-            state["events"].append(envelope)
-            state["events"] = state["events"][-1000:]
-            self._write(state)
-            waiter = _Waiter(envelope, threading.Event())
-            self._waiters[request.request_id] = waiter
-            self._publishers[request.request_id] = publish
+        request_id = request.request_id
+        stop = threading.Event()
+        with self._lock:
+            self._active[request_id] = stop
         publish("approval.requested", envelope)
         deadline = time.monotonic() + timeout
+        resolution: Envelope | None = None
         try:
-            while not waiter.resolved.wait(timeout=0.1):
-                with self._lock, self._disk._locked():
-                    resolution = self._read()["resolutions"].get(request.request_id)
-                if resolution:
-                    waiter.resolution = resolution
-                    body = resolution["resolution"]
-                    waiter.scope = (
-                        body.get("effective_scope") if body["outcome"] == "approved" else None
+            while resolution is None:
+                remaining = deadline - time.monotonic()
+                with _store_errors():
+                    resolution = self.store.wait_for_resolution(
+                        request_id, timeout=max(0.0, min(remaining, 0.5)), cancelled=stop
                     )
-                    publish("approval.resolved", resolution)
+                if resolution is not None:
                     break
-                if cancelled.is_set() or time.monotonic() >= deadline:
-                    with suppress(ConflictError):
-                        if cancelled.is_set():
-                            self.cancel(request.request_id)
-                        else:
-                            self.deny(request.request_id, actor_id="loro.timeout")
-            return None if cancelled.is_set() else waiter.scope
+                if cancelled.is_set() or stop.is_set():
+                    resolution = self._withdraw(request_id, self.store.cancel, "loro.cancel")
+                elif time.monotonic() >= deadline:
+                    resolution = self._withdraw(request_id, self.store.deny, "loro.timeout")
         finally:
             with self._lock:
-                self._waiters.pop(request.request_id, None)
-                self._publishers.pop(request.request_id, None)
+                self._active.pop(request_id, None)
+        publish("approval.resolved", resolution)
+        if cancelled.is_set():
+            return None
+        body = resolution["resolution"]
+        return body.get("effective_scope") if body["outcome"] == "approved" else None
+
+    def _withdraw(
+        self, request_id: str, action: Callable[..., Envelope], actor_id: str
+    ) -> Envelope:
+        """Cancel or time out a request; if a decision landed first, keep that decision."""
+
+        with _store_errors():
+            try:
+                return action(request_id, actor_id=actor_id)
+            except ConflictError:
+                resolved = self.store.get_resolution(request_id)
+                if resolved is None:
+                    raise
+                return resolved
 
     def decide(
         self,
@@ -205,158 +215,104 @@ class AAISBridge:
         decision_id: str | None = None,
         reviewed_digest: str | None = None,
     ) -> Envelope:
-        publisher: Publisher | None
-        waiter: _Waiter | None
-        with self._lock, self._disk._locked():
-            state = self._read()
-            prior = state["resolutions"].get(request_id)
-            previous = state["decisions"].get(request_id)
-            if prior:
-                if previous and (
-                    previous["decision"]["decision"],
-                    previous["decision"]["scope"],
-                ) == (decision, scope):
-                    return copy.deepcopy(prior)
-                raise ConflictError(f"request {request_id} was already resolved")
-            pending = state["pending"].get(request_id)
-            if not pending:
-                raise ValueError(f"unknown pending approval: {request_id}")
-            if (
-                reviewed_digest is not None
-                and reviewed_digest != pending["request"]["action_digest"]
-            ):
-                raise ConflictError("Decision digest does not match the reviewed action")
-            owner = state.get("owners", {}).get(request_id)
-            if decision == "approve" and owner is not None and not self._owner_alive(owner):
+        actor = {
+            "id": _identifier(actor_id, "local-user"),
+            "type": "human" if not actor_id.startswith("loro.") else "policy",
+            "authenticated_by": (
+                "loro-web-session" if not actor_id.startswith("loro.") else "authority"
+            ),
+        }
+        with _store_errors():
+            try:
+                return self.store.decide(
+                    request_id,
+                    decision=decision,
+                    scope=scope,
+                    actor=actor,
+                    decision_id=decision_id,
+                    reviewed_digest=reviewed_digest,
+                )
+            except OwnerStoppedError as error:
                 raise ConflictError(
                     "The issuing process stopped; inspect recovery before starting new work"
-                )
-            decided = create_decision(
-                pending,
-                decision=decision,
-                scope=scope,
-                actor={
-                    "id": _identifier(actor_id, "local-user"),
-                    "type": "human" if not actor_id.startswith("loro.") else "policy",
-                    "authenticated_by": (
-                        "loro-web-session" if not actor_id.startswith("loro.") else "authority"
-                    ),
-                },
-                sequence=self._next(state, "presenter_sequence"),
-                stream="loro.presenter",
-                decision_id=decision_id,
-            )
-            machine = ApprovalStore()
-            machine.add(pending)
-            resolution = machine.decide(
-                decided,
-                current_action=pending["request"]["action"],
-                sequence=self._next(state),
-            )
-            state["pending"].pop(request_id, None)
-            state["decisions"][request_id] = decided
-            state["resolutions"][request_id] = resolution
-            state["events"].append(resolution)
-            state["events"] = state["events"][-1000:]
-            self._write(state)
-            waiter = self._waiters.get(request_id)
-            publisher = self._publishers.get(request_id)
-            if waiter:
-                waiter.resolution = resolution
-                waiter.scope = scope if resolution["resolution"]["outcome"] == "approved" else None
-        if publisher:
-            publisher("approval.resolved", resolution)
-        if waiter:
-            waiter.resolved.set()
-        return copy.deepcopy(resolution)
+                ) from error
+            except UnknownRequestError as error:
+                raise ValueError(str(error)) from error
 
     def deny(self, request_id: str, *, actor_id: str = "loro.policy") -> Envelope:
         return self.decide(request_id, decision="deny", scope="once", actor_id=actor_id)
 
     def cancel(self, request_id: str) -> Envelope:
-        return self.decide(request_id, decision="cancel", scope="once", actor_id="loro.cancel")
+        with _store_errors():
+            return self.store.cancel(request_id, actor_id="loro.cancel")
 
     def cancel_active(self) -> int:
-        """Cancel only requests owned by this live bridge instance."""
+        """Withdraw only the requests this bridge instance is waiting on."""
 
         with self._lock:
-            request_ids = list(self._waiters)
-        for request_id in request_ids:
-            try:
-                self.cancel(request_id)
-            except (ConflictError, ValueError):
-                pass
-        return len(request_ids)
-
-    @staticmethod
-    def _owner_alive(pid: int | None) -> bool:
-        from loro.process_liveness import process_alive
-
-        return process_alive(pid)
+            waiting = list(self._active.items())
+        for _request_id, stop in waiting:
+            stop.set()
+        return len(waiting)
 
     def recovery(self) -> Envelope:
-        with self._lock, self._disk._locked():
-            state = self._read()
-            owners = state.get("owners", {})
-            return {
-                "orphaned": [
-                    key
-                    for key in state["pending"]
-                    if key in owners and not self._owner_alive(owners[key])
-                ],
-                "unknown_owner": [key for key in state["pending"] if key not in owners],
-                "receipts": list(state["resolutions"].values())[-100:],
-                "guidance": (
-                    "Stopped owners are not restarted. "
-                    "Inspect completed effects before creating a new run."
-                ),
-            }
+        with _store_errors():
+            report = self.store.recovery().to_dict()
+        report["guidance"] = (
+            "Stopped owners are not restarted. Inspect completed effects before creating a new "
+            "run; `loro approvals recovery --cancel-orphaned` withdraws orphaned requests."
+        )
+        return report
+
+    def recovery_status(self) -> dict[str, Any] | None:
+        problem = self.store.recovery_status()
+        return problem.to_dict() if problem is not None else None
+
+    def acknowledge_recovery(self) -> None:
+        self.store.acknowledge_recovery()
+
+    def cancel_orphaned(self) -> list[Envelope]:
+        with _store_errors():
+            return self.store.cancel_orphaned(actor_id="loro.recovery")
+
+    def snapshot(self) -> Envelope:
+        with _store_errors():
+            return self.store.snapshot()
+
+    def events_after(self, sequence: int) -> dict[str, Any]:
+        """Events after ``sequence`` plus a ``gap`` flag; on a gap, resync from a snapshot."""
+
+        with _store_errors():
+            return self.store.events_after(sequence).to_dict()
 
     def receipts(self, request_ids: Iterable[str]) -> dict[str, Envelope]:
         """Read-only AAIS envelopes for the given request ids, for evidence export.
 
         Each entry holds whichever of the request, decision and resolution envelopes the
-        store still has. Requests are found in the pending map or the bounded event log.
+        store still has. Requests are found in the pending map or the retained event log.
         """
 
-        wanted = {str(item) for item in request_ids}
+        wanted = sorted({str(item) for item in request_ids})
         if not wanted or not self.path.exists():
             return {}
-        with self._lock, self._disk._locked():
-            state = self._read()
-        found: dict[str, Envelope] = {}
-        requests = {
-            str(item["request"].get("id")): item
-            for item in state["events"]
-            if isinstance(item.get("request"), dict)
-        }
-        requests.update(state["pending"])
-        for request_id in sorted(wanted):
-            entry: Envelope = {}
-            if request_id in requests:
-                entry["request"] = copy.deepcopy(requests[request_id])
-            if request_id in state["decisions"]:
-                entry["decision"] = copy.deepcopy(state["decisions"][request_id])
-            if request_id in state["resolutions"]:
-                entry["resolution"] = copy.deepcopy(state["resolutions"][request_id])
-            if entry:
-                found[request_id] = entry
+        with _store_errors():
+            requests = {
+                str(item["request"].get("id")): item
+                for item in self.store.events_after(0).events
+                if isinstance(item.get("request"), dict)
+            }
+            found: dict[str, Envelope] = {}
+            for request_id in wanted:
+                entry: Envelope = {}
+                request = self.store.get_pending(request_id) or requests.get(request_id)
+                if request is not None:
+                    entry["request"] = copy.deepcopy(request)
+                decision = self.store.get_decision(request_id)
+                if decision is not None:
+                    entry["decision"] = decision
+                resolution = self.store.get_resolution(request_id)
+                if resolution is not None:
+                    entry["resolution"] = resolution
+                if entry:
+                    found[request_id] = entry
         return found
-
-    def snapshot(self) -> Envelope:
-        with self._lock, self._disk._locked():
-            state = self._read()
-            machine = ApprovalStore(last_sequence=int(state.get("sequence", 0)))
-            for key, envelope in state["pending"].items():
-                owner = state.get("owners", {}).get(key)
-                if owner is None or self._owner_alive(owner):
-                    machine.add(validate(envelope))
-            return machine.snapshot(stream="loro.approvals")
-
-    def events_after(self, sequence: int) -> list[Envelope]:
-        with self._lock, self._disk._locked():
-            return [
-                copy.deepcopy(item)
-                for item in self._read()["events"]
-                if int(item.get("sequence", 0)) > sequence
-            ]

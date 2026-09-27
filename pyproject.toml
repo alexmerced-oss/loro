@@ -27,7 +27,7 @@ classifiers = [
   "Topic :: System :: Shells",
 ]
 dependencies = [
-  "agent-approval-interchange>=0.1.0,<0.2",
+  "agent-approval-interchange>=0.2.0,<0.3",
   "agentic-graph-spec>=1.0.1,<2",
   "open-agent-profile>=1.0.1,<2",
   "click>=8.1",
@@ -151,7 +151,6 @@ check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = [
-  "loro.aais_bridge",
   "loro.agent_profiles.compat",
   "loro.agent_profiles.delta",
   "loro.agraph.execute",

@@ -118,6 +118,32 @@ Loro emits `approval.requested`, `approval.granted`, `approval.denied`, `approva
 decision/reason/version/source, record scope/method/status, and timestamps. Raw argument content is not written
 to approval audit events.
 
+## AAIS Approval Store
+
+Approvals presented in the Web UI or over `loro run --approval-stdio` go through the project's
+AAIS authority, stored in `.loro/aais-approvals.json` by `aais.store.FileApprovalStore` from
+`agent-approval-interchange` 0.2:
+
+- every operation is one transaction under a cross-process file lock (`flock`, or `msvcrt` on
+  Windows), with a 60-second lock timeout;
+- writes go to a unique temporary file, are fsynced, and replace the state atomically;
+- each pending request records its owner as process id, process start time and host id, so a
+  reused PID is not mistaken for the original owner, and an approval for a stopped owner is
+  refused;
+- resolved requests, their decisions and owner records are compacted after 1,000 entries or 30
+  days, and the event log after 1,000 events or 30 days; `/api/approvals/events` reports
+  `gap: true` when a client asks for compacted events and must resync from the snapshot;
+- a damaged state file is moved to `aais-approvals.json.corrupt-<timestamp>` and every process
+  refuses the store until an operator inspects it and runs
+  `loro approvals recovery --acknowledge`.
+
+`loro approvals recovery` lists orphaned requests (owner stopped), requests without an owner, and
+requests owned on another host; `--cancel-orphaned` withdraws the orphaned ones and `--json`
+prints the report. Stopped owners are never restarted.
+
+A `.loro/aais-pending.json` file from Loro 0.21 or earlier is imported on first use and renamed
+to `aais-pending.json.migrated-<timestamp>`. Its bare-PID owners fall back to a PID-only check.
+
 ## Current Limitations
 
 - The default `memory` store is process-local. The optional `json` store persists metadata with
