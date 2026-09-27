@@ -175,11 +175,13 @@ tests. No independent tester, fuzzing campaign, or external audit has looked at 
 - **Threats:** tampering through lost updates when two deciders race; repudiation if decisions are
   overwritten; denial of service through lock waits or an unreachable database; information
   disclosure through connection errors.
-- **Mitigations:** `src/loro/aais_postgres.py` stores each stream in one JSONB row, reads it with
-  `SELECT ... FOR UPDATE` inside a transaction, applies the AAIS state machine from
-  `aais.store.FileApprovalStore` (decided requests cannot be re-decided), bounds lock waits with
-  `lock_timeout`, uses parameterized SQL only, and fails closed with a `StoreError` when the
-  database is unavailable. `src/loro/aais_bridge.py` binds decisions to the canonical arguments.
+- **Mitigations:** `src/loro/aais_postgres.py` implements the `aais.backends` protocols: one
+  JSONB row per stream, locked with `SELECT ... FOR UPDATE` for the whole transaction, a row
+  version counter, and a quarantine table plus `recovery` column for rows that fail validation.
+  The AAIS state machine is `aais.store.ApprovalAuthority` (decided requests cannot be
+  re-decided). Lock waits are bounded with `lock_timeout`, SQL is parameterized, errors never
+  include DSN credentials, and an unavailable database fails closed with a `StoreError`. The
+  backend passes the AAIS conformance kit. `src/loro/aais_bridge.py` binds decisions to the canonical arguments.
 - **Residual risk:** a database administrator can rewrite rows; rows are not signed; the
   connection string is operator-configured and must not be world readable.
 - **Tests:** `tests/integration/test_aais_postgres_integration.py`, `tests/test_aais_recovery.py`,

@@ -1,9 +1,10 @@
 """Loro's AAIS authority/presenter bridge for its web and stdio surfaces.
 
 Persistence, locking, owner liveness, retention and corruption handling come from
-``aais.store.FileApprovalStore`` (agent-approval-interchange 0.2). This module maps Loro's
-``ApprovalRequest`` onto AAIS envelopes, wakes the waiting run, and publishes events to the
-presenter that asked.
+``aais.store.ApprovalAuthority`` (agent-approval-interchange 0.2) over a file backend, or over
+``loro.aais_postgres.PostgresBackend`` when ``approvals.authority = "postgres"``. This module
+maps Loro's ``ApprovalRequest`` onto AAIS envelopes, wakes the waiting run, and publishes events
+to the presenter that asked.
 """
 
 from __future__ import annotations
@@ -20,7 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from aais import ConflictError
+from aais.backends import FileBackend
 from aais.store import (
+    ApprovalAuthority,
     FileApprovalStore,
     OwnerStoppedError,
     RecoveryRequired,
@@ -52,7 +55,7 @@ def _store_errors() -> Iterator[None]:
         yield
     except RecoveryRequired as error:
         where = (
-            f" The damaged file was moved to {error.quarantined_to}."
+            f" The damaged state was moved to {error.quarantined_to}."
             if error.quarantined_to
             else ""
         )
@@ -72,7 +75,7 @@ class AAISBridge:
         project_root: Path,
         *,
         retention: RetentionPolicy | None = None,
-        store: FileApprovalStore | None = None,
+        store: ApprovalAuthority | None = None,
     ) -> None:
         self.project_root = project_root.resolve()
         self.path = self.project_root / ".loro" / STATE_FILE
@@ -80,14 +83,16 @@ class AAISBridge:
         self.store = store or self._configured_store(retention)
         self._lock = threading.RLock()
         self._active: dict[str, threading.Event] = {}
-        if isinstance(self.store, FileApprovalStore) and not self._shared:
+        if isinstance(self.store.backend, FileBackend):
             self._migrate_legacy_state()
 
     @property
     def _shared(self) -> bool:
-        return type(self.store).__name__ == "PostgresApprovalStore"
+        """Whether state lives outside this project's ``.loro`` file (a shared database)."""
 
-    def _configured_store(self, retention: RetentionPolicy | None) -> FileApprovalStore:
+        return not isinstance(self.store.backend, FileBackend)
+
+    def _configured_store(self, retention: RetentionPolicy | None) -> ApprovalAuthority:
         from loro.config import load_config
 
         try:
@@ -97,7 +102,7 @@ class AAISBridge:
         if approvals is not None and approvals.authority == "postgres":
             import os
 
-            from loro.aais_postgres import PostgresApprovalStore
+            from loro.aais_postgres import postgres_authority
 
             dsn = os.environ.get(approvals.authority_dsn_env, "")
             if not dsn:
@@ -105,7 +110,7 @@ class AAISBridge:
                     'approvals.authority = "postgres" needs '
                     f"{approvals.authority_dsn_env} set to a Postgres connection string."
                 )
-            return PostgresApprovalStore(
+            return postgres_authority(
                 dsn,
                 stream="loro.approvals",
                 presenter_stream="loro.presenter",
@@ -122,9 +127,7 @@ class AAISBridge:
         )
 
     def _has_state(self) -> bool:
-        if self._shared:
-            return bool(self.store.exists())  # type: ignore[attr-defined]
-        return self.path.exists()
+        return bool(self.store.exists())
 
     def _migrate_legacy_state(self) -> None:
         """Import a pre-0.22 ``aais-pending.json`` once, then set it aside."""

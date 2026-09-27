@@ -1,4 +1,8 @@
-"""The Postgres AAIS authority against a real Postgres 16, from several processes."""
+"""The Postgres AAIS backend against a real Postgres 16, from several processes.
+
+``TestPostgresBackendConformance`` runs the AAIS backend conformance kit; the rest checks Loro's
+wiring (the bridge must really use Postgres, never a local file fallback).
+"""
 
 from __future__ import annotations
 
@@ -7,10 +11,12 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from aais.testing import BackendConformance
 
 pytestmark = pytest.mark.integration
 
@@ -45,9 +51,35 @@ def dsn() -> Iterator[str]:
 
 
 def _store(dsn: str, stream: str):
-    from loro.aais_postgres import PostgresApprovalStore
+    from loro.aais_postgres import postgres_authority
 
-    return PostgresApprovalStore(dsn, stream=stream)
+    return postgres_authority(dsn, stream=stream)
+
+
+class TestPostgresBackendConformance(BackendConformance):
+    """The AAIS backend conformance kit against ``PostgresBackend``.
+
+    ``corrupt_backend`` is not implemented: a JSONB column cannot hold undecodable bytes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _database(self, dsn: str) -> None:
+        self.dsn = dsn
+
+    def make_backend(self):
+        from loro.aais_postgres import PostgresBackend
+
+        return PostgresBackend(self.dsn, key=f"conformance-{uuid.uuid4().hex}", lock_timeout=5)
+
+    def reopen_backend(self, backend):
+        from loro.aais_postgres import PostgresBackend
+
+        return PostgresBackend(self.dsn, key=backend.key, lock_timeout=5)
+
+    def subprocess_backend_factory(self, backend):
+        from loro.aais_postgres import PostgresBackend
+
+        return PostgresBackend, (self.dsn, backend.key)
 
 
 def test_request_decide_replay_and_snapshot(dsn: str) -> None:
@@ -75,8 +107,8 @@ def test_request_decide_replay_and_snapshot(dsn: str) -> None:
 
 WORKER = """
 import sys
-from loro.aais_postgres import PostgresApprovalStore
-store = PostgresApprovalStore(sys.argv[1], stream=sys.argv[2])
+from loro.aais_postgres import postgres_authority
+store = postgres_authority(sys.argv[1], stream=sys.argv[2])
 for _ in range(int(sys.argv[3])):
     store.add_request(
         action={"kind": "tool.call", "name": "x", "summary": "x", "arguments": {}},
@@ -119,8 +151,8 @@ def test_decision_from_another_process_wakes_the_waiter(dsn: str) -> None:
     )
     request_id = envelope["request"]["id"]
     decider = (
-        "import sys\nfrom loro.aais_postgres import PostgresApprovalStore\n"
-        "PostgresApprovalStore(sys.argv[1], stream='t.wait').decide(sys.argv[2], "
+        "import sys\nfrom loro.aais_postgres import postgres_authority\n"
+        "postgres_authority(sys.argv[1], stream='t.wait').decide(sys.argv[2], "
         "decision='deny', scope='once', actor={'id':'bob','type':'human',"
         "'authenticated_by':'oidc'})\n"
     )
@@ -159,12 +191,65 @@ def test_bridge_uses_postgres_when_configured(dsn: str, tmp_path: Path, monkeypa
         'schema_version = "1.0"\n[approvals]\nauthority = "postgres"\n', encoding="utf-8"
     )
     monkeypatch.setenv("LORO_APPROVALS_DSN", dsn)
+    monkeypatch.chdir(tmp_path)
     bridge = AAISBridge(tmp_path)
-    assert type(bridge.store).__name__ == "PostgresApprovalStore"
-    assert not (loro_dir / "aais-approvals.json").exists()
+    from aais.backends import FileBackend
+
+    from loro.aais_postgres import PostgresBackend
+
+    assert isinstance(bridge.store.backend, PostgresBackend)
+    assert not isinstance(bridge.store.backend, FileBackend)
     assert bridge.snapshot()["type"] == "approval.snapshot"
+    bridge.store.add_request(
+        action=ACTION,
+        origin={"harness": "loro", "session_id": "s"},
+        risk={"level": "low", "reasons": ["r"]},
+        choices=CHOICES,
+    )
+    # The request is in the database row, and nothing was written to local files: the old
+    # subclass silently fell back to a file at postgres/<stream> under a newer AAIS.
+    import psycopg
+
+    with psycopg.connect(dsn) as connection:
+        row = connection.execute(
+            "SELECT state->'pending' FROM loro_aais_state WHERE stream = 'loro.approvals'"
+        ).fetchone()
+    assert row is not None and len(row[0]) >= 1
+    assert not (loro_dir / "aais-approvals.json").exists()
+    assert not (tmp_path / "postgres").exists()
     monkeypatch.delenv("LORO_APPROVALS_DSN")
     from loro.approvals import ApprovalError
 
     with pytest.raises(ApprovalError, match="LORO_APPROVALS_DSN"):
         AAISBridge(tmp_path)
+
+
+def test_quarantine_and_recovery_through_the_bridge(dsn: str, tmp_path: Path, monkeypatch) -> None:
+    import psycopg
+
+    from loro.aais_bridge import AAISBridge
+    from loro.approvals import ApprovalError
+
+    stream = f"t.recovery.{uuid.uuid4().hex}"
+    store = _store(dsn, stream)
+    store.add_request(
+        action=ACTION,
+        origin={"harness": "loro", "session_id": "s"},
+        risk={"level": "low", "reasons": ["r"]},
+        choices=CHOICES,
+    )
+    with psycopg.connect(dsn) as connection:
+        connection.execute(
+            "UPDATE loro_aais_state SET state = jsonb_set(state, '{events}', '{}'::jsonb) "
+            "WHERE stream = %s",
+            (stream,),
+        )
+    bridge = AAISBridge(tmp_path, store=store)
+    with pytest.raises(ApprovalError, match="loro_aais_quarantine id"):
+        bridge.snapshot()
+    status = bridge.recovery_status()
+    assert status is not None and "events" in status["reason"]
+    assert "password" not in str(status) and "@" not in str(status["path"])
+    bridge.acknowledge_recovery()
+    assert bridge.recovery_status() is None
+    assert bridge.snapshot()["type"] == "approval.snapshot"

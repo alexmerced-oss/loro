@@ -54,13 +54,19 @@ authority = "postgres"
 authority_dsn_env = "LORO_APPROVALS_DSN"   # environment variable holding the DSN
 ```
 
-Loro creates one table, `loro_aais_state`, and keeps each authority stream's state in one row.
-Every operation locks that row (`SELECT ... FOR UPDATE`) for its whole transaction, so sequence
-numbers, pending requests, decisions and receipts never interleave across processes or hosts.
-Semantics are those of the AAIS file store: exact action digests, offered choices only, expiry,
-idempotent replay, retention and gap-aware replay. Owners on another host are reported as
-unverified and never treated as stopped. There is no corruption quarantine in this backend; the
-database guarantees a well-formed row. Install `loro-agent[data]` for `psycopg`.
+Loro keeps each authority stream's state in one row of `loro_aais_state`. The approval logic is
+`aais.store.ApprovalAuthority`, the same code the file store runs; Loro's `PostgresBackend`
+supplies only storage and locking through the `aais.backends` protocols. Every operation locks
+the row (`SELECT ... FOR UPDATE`) for its whole transaction, so sequence numbers, pending
+requests, decisions and receipts never interleave across processes or hosts. Semantics match the
+file store: exact action digests, offered choices only, expiry, idempotent replay, retention and
+gap-aware replay. Owners on another host are reported as unverified and never treated as stopped.
+
+If a row fails validation (for example after a manual edit), the backend copies it to
+`loro_aais_quarantine`, clears the row, and records the problem in its `recovery` column. Every
+Loro process then refuses approvals until an operator inspects the quarantined copy and runs
+`loro approvals recovery --acknowledge`. Error messages name the host, port, database and row,
+never the credentials in the DSN. Install `loro-agent[data]` for `psycopg`.
 
 ## Limits In 0.22
 
@@ -69,8 +75,11 @@ database guarantees a well-formed row. Install `loro-agent[data]` for `psycopg`.
 - Conversations are stored per workspace in SQLite and are shared by everyone with access to that
   workspace. They are not partitioned per user; the audit log attributes every run and decision
   to the signed-in subject.
-- The Postgres backend reuses internals of `agent-approval-interchange` 0.2 (pinned `<0.3`); its
-  integration tests (`tests/integration/test_aais_postgres_integration.py`, run in the Integration
-  workflow against Postgres 16) guard that contract.
+- The Postgres backend implements the public `aais.backends` protocols of
+  `agent-approval-interchange` 0.2 and passes its backend conformance kit
+  (`aais.testing.BackendConformance`, run in
+  `tests/integration/test_aais_postgres_integration.py` against Postgres 16), including the
+  multi-process check. The kit's undecodable-bytes check is skipped because a JSONB column cannot
+  hold undecodable data.
 - No independent security review of this mode exists yet. See
   [Promotion Gates](project-status.md#promotion-gates-022).

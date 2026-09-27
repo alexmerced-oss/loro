@@ -296,3 +296,32 @@ def test_recovery_cli_reports_holds_and_acknowledges(tmp_path: Path, monkeypatch
     fixed = runner.invoke(app, ["approvals", "recovery", "--acknowledge"])
     assert fixed.exit_code == 0, fixed.output
     assert "acknowledged" in fixed.output
+
+
+def test_postgres_authority_never_falls_back_to_a_local_file(tmp_path, monkeypatch) -> None:
+    """Regression: the pre-A-5 subclass overrode hooks a newer AAIS no longer calls, so it
+    silently kept approvals in a local file at postgres/<stream>."""
+
+    pytest.importorskip("psycopg")
+    from aais.backends import ApprovalStateBackend, FileBackend
+
+    from loro.aais_postgres import PostgresBackend
+    from loro.approvals import ApprovalError
+
+    loro_dir = tmp_path / ".loro"
+    loro_dir.mkdir()
+    (loro_dir / "config.local.toml").write_text(
+        'schema_version = "1.0"\n[approvals]\nauthority = "postgres"\n', encoding="utf-8"
+    )
+    # Port 1 refuses connections immediately; credentials must never reach messages.
+    monkeypatch.setenv("LORO_APPROVALS_DSN", "postgresql://loro:hunter2@127.0.0.1:1/approvals")
+    monkeypatch.chdir(tmp_path)
+    bridge = AAISBridge(tmp_path)
+    backend = bridge.store.backend
+    assert isinstance(backend, PostgresBackend) and not isinstance(backend, FileBackend)
+    assert isinstance(backend, ApprovalStateBackend)
+    with pytest.raises(ApprovalError, match="Could not connect") as raised:
+        bridge.snapshot()
+    assert "hunter2" not in str(raised.value)
+    assert sorted(path.name for path in tmp_path.iterdir()) == [".loro"]
+    assert sorted(path.name for path in loro_dir.iterdir()) == ["config.local.toml"]

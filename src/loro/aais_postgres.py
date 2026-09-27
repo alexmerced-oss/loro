@@ -1,68 +1,161 @@
-"""An AAIS approval authority stored in Postgres, for multi-user and multi-host servers.
+"""A Postgres backend for the AAIS approval authority, for multi-user and multi-host servers.
 
-``PostgresApprovalStore`` keeps the exact semantics of ``aais.store.FileApprovalStore`` (it
-reuses its transaction, decision, snapshot, replay, owner-liveness and retention logic) and
-replaces only persistence and locking: the state for one authority stream is a JSONB row,
-and each transaction holds that row's lock (``SELECT ... FOR UPDATE``) for its whole
-read-modify-write cycle, so several Web UI processes on several hosts share one approval
-queue. Owners on another host report ``UNKNOWN`` liveness and are never treated as stopped.
+``aais.store.ApprovalAuthority`` owns every AAIS rule (sequences, decisions, replay, owner
+liveness, retention, validation, recovery). ``PostgresBackend`` implements only the
+``aais.backends`` storage protocols: the state for one key is a JSONB row, and each
+transaction holds that row's lock (``SELECT ... FOR UPDATE``) for its whole read-modify-write
+cycle, so several Web UI processes on several hosts share one approval queue. ``version``
+is a row counter bumped on every commit that changes the row, and a quarantine moves the
+damaged document to ``loro_aais_quarantine`` and records the recovery condition in the
+``recovery`` column until an operator acknowledges it.
 
-This subclasses internals of agent-approval-interchange 0.2 (pinned ``<0.3``). The tests in
-``tests/integration/test_aais_postgres_integration.py`` exercise the full API against Postgres 16
-so an incompatible library change fails loudly.
+The backend is checked with ``aais.testing.BackendConformance`` in
+``tests/integration/test_aais_postgres_integration.py`` against Postgres 16.
 """
 
 from __future__ import annotations
 
 import contextlib
-import copy
 import json
 import threading
-import time
-from collections.abc import Iterator
-from pathlib import Path
+from collections.abc import Hashable, Iterator
+from datetime import UTC, datetime
 from typing import Any
 
-from aais.store import FileApprovalStore, RetentionPolicy, StoreError
+from aais.backends import BackendTransaction, LockTimeout, RecoveryRequired, StoreError
+from aais.store import ApprovalAuthority, RetentionPolicy
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS loro_aais_state (
-    stream text PRIMARY KEY,
-    state jsonb NOT NULL,
-    version bigint NOT NULL DEFAULT 0,
-    updated_at timestamptz NOT NULL DEFAULT now()
+SCHEMA_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS loro_aais_state (
+        stream text PRIMARY KEY,
+        state jsonb NOT NULL,
+        version bigint NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    "ALTER TABLE loro_aais_state ADD COLUMN IF NOT EXISTS recovery jsonb",
+    """
+    CREATE TABLE IF NOT EXISTS loro_aais_quarantine (
+        id bigserial PRIMARY KEY,
+        stream text NOT NULL,
+        state jsonb,
+        reason text NOT NULL,
+        detected_at text NOT NULL,
+        sequence_hint bigint NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
 )
-"""
+
+# (dsn, key) pairs with an open transaction on the current thread, across every handle: a
+# second handle to the same row on the same thread would otherwise wait on its own lock.
+_HELD = threading.local()
 
 
-def _store_internals() -> tuple[Any, Any]:
-    from aais import store as module
+def _held() -> set[tuple[str, str]]:
+    held: set[tuple[str, str]] | None = getattr(_HELD, "keys", None)
+    if held is None:
+        held = set()
+        _HELD.keys = held
+    return held
 
-    return module._empty_state, module._check_state
+
+def _describe(dsn: str, key: str) -> str:
+    """A location for messages that never includes credentials."""
+
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        parts = conninfo_to_dict(dsn)
+    except Exception:  # noqa: BLE001 - psycopg missing or an unparsable DSN
+        return f"postgres approval row {key}"
+    host = parts.get("host") or parts.get("hostaddr") or "localhost"
+    port = parts.get("port") or "5432"
+    return f"postgres://{host}:{port}/{parts.get('dbname') or ''} (approval row {key})"
 
 
-class PostgresApprovalStore(FileApprovalStore):
-    """``FileApprovalStore`` semantics with Postgres row locking and storage."""
+def _why(error: Exception) -> str:
+    """The first line of a database error (libpq messages name hosts and users, not secrets)."""
 
-    def __init__(
-        self,
-        dsn: str,
-        *,
-        stream: str,
-        presenter_stream: str | None = None,
-        retention: RetentionPolicy | None = None,
-        lock_timeout: float = 30.0,
-    ) -> None:
-        super().__init__(
-            Path(f"postgres/{stream}"),  # never touched on disk; used only in messages
-            stream=stream,
-            presenter_stream=presenter_stream,
-            retention=retention,
-            lock_timeout=lock_timeout,
-            max_bytes=None,
+    text = str(error).strip()
+    return text.splitlines()[0] if text else type(error).__name__
+
+
+def _condition(description: str, payload: Any) -> RecoveryRequired | None:
+    if not isinstance(payload, dict):
+        return None
+    return RecoveryRequired(
+        description,
+        reason=str(payload.get("reason", "unknown")),
+        quarantined_to=payload.get("quarantined_to"),
+        detected_at=str(payload.get("detected_at", "")),
+        sequence_hint=int(payload.get("sequence_hint", 0)),
+    )
+
+
+class _PostgresTransaction:
+    """The locked row for one transaction; writes commit with the database transaction."""
+
+    def __init__(self, backend: PostgresBackend, connection: Any, row: tuple[Any, ...]) -> None:
+        self._backend = backend
+        self._connection = connection
+        self._state = row[0]
+        self._recovery = row[1]
+
+    def recovery_marker(self) -> RecoveryRequired | None:
+        return _condition(self._backend.description, self._recovery)
+
+    def load(self) -> Any:
+        return self._state
+
+    def save(self, state: dict[str, Any]) -> None:
+        text = json.dumps(state, sort_keys=True, separators=(",", ":"))
+        self._update("state = %s::jsonb", (text,))
+        self._state = json.loads(text)
+
+    def quarantine(
+        self, *, reason: str, detected_at: datetime, sequence_hint: int
+    ) -> RecoveryRequired:
+        stamp = detected_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        row = self._connection.execute(
+            "INSERT INTO loro_aais_quarantine (stream, state, reason, detected_at, sequence_hint) "
+            "VALUES (%s, %s::jsonb, %s, %s, %s) RETURNING id",
+            (self._backend.key, json.dumps(self._state), reason, stamp, sequence_hint),
+        ).fetchone()
+        payload = {
+            "reason": reason,
+            "quarantined_to": f"loro_aais_quarantine id {row[0]}",
+            "detected_at": stamp,
+            "sequence_hint": sequence_hint,
+        }
+        self._update("state = 'null'::jsonb, recovery = %s::jsonb", (json.dumps(payload),))
+        self._state = None
+        self._recovery = payload
+        condition = _condition(self._backend.description, payload)
+        assert condition is not None
+        return condition
+
+    def clear_recovery(self) -> None:
+        self._update("recovery = NULL", ())
+        self._recovery = None
+
+    def _update(self, assignments: str, params: tuple[Any, ...]) -> None:
+        self._connection.execute(
+            f"UPDATE loro_aais_state SET {assignments}, version = version + 1, "  # noqa: S608
+            "updated_at = now() WHERE stream = %s",
+            (*params, self._backend.key),
         )
+
+
+class PostgresBackend:
+    """``aais.backends.ApprovalStateBackend`` over one row of ``loro_aais_state``."""
+
+    def __init__(self, dsn: str, key: str, *, lock_timeout: float = 30.0) -> None:
         self.dsn = dsn
-        self._local = threading.local()
+        self.key = key
+        self.lock_timeout = float(lock_timeout)
+        self.description = _describe(dsn, key)
         self._schema_ready = False
 
     # ------------------------------------------------------------ connection
@@ -78,147 +171,106 @@ class PostgresApprovalStore(FileApprovalStore):
             return psycopg.connect(
                 self.dsn,
                 connect_timeout=10,
-                options=f"-c lock_timeout={int(self.lock_timeout * 1000)}",
+                options=f"-c lock_timeout={max(1, int(self.lock_timeout * 1000))}",
             )
         except psycopg.Error as error:
-            raise StoreError(f"Could not connect to the approval database: {error}") from error
+            raise StoreError(
+                f"Could not connect to the approval database at {self.description}: {_why(error)}"
+            ) from error
 
     def ensure_schema(self) -> None:
         if self._schema_ready:
             return
-        with self._connect() as connection:
-            connection.execute(SCHEMA_SQL)
+        import psycopg
+
+        try:
+            with self._connect() as connection:
+                # Serialize concurrent first starts: CREATE ... IF NOT EXISTS can still race.
+                connection.execute("SELECT pg_advisory_xact_lock(hashtext('loro_aais_schema'))")
+                for statement in SCHEMA_SQL:
+                    connection.execute(statement)
+        except psycopg.Error as error:
+            raise StoreError(f"Approval database error: {_why(error)}") from error
         self._schema_ready = True
 
-    # --------------------------------------------------------------- locking
+    def _scalar(self, query: str) -> Any:
+        import psycopg
+
+        self.ensure_schema()
+        try:
+            with self._connect() as connection:
+                return connection.execute(query, (self.key,)).fetchone()
+        except psycopg.Error as error:
+            raise StoreError(f"Approval database error: {_why(error)}") from error
+
+    # -------------------------------------------------------------- protocol
 
     @contextlib.contextmanager
-    def _locked(self) -> Iterator[None]:
-        if getattr(self._local, "connection", None) is not None:
-            raise StoreError("nested approval-store transaction; reuse the open transaction")
+    def transaction(self) -> Iterator[BackendTransaction]:
+        marker = (self.dsn, self.key)
+        held = _held()
+        if marker in held:
+            raise StoreError(
+                f"nested transaction on {self.description}; reuse the open transaction instead"
+            )
         self.ensure_schema()
         import psycopg
 
-        connection = self._connect()
+        held.add(marker)
         try:
-            with connection.transaction():
-                connection.execute(
-                    "INSERT INTO loro_aais_state (stream, state) VALUES (%s, %s::jsonb) "
-                    "ON CONFLICT (stream) DO NOTHING",
-                    (self.stream, json.dumps(None)),
-                )
-                row = connection.execute(
-                    "SELECT state, version FROM loro_aais_state WHERE stream = %s FOR UPDATE",
-                    (self.stream,),
-                ).fetchone()
-                self._local.connection = connection
-                self._local.row = row
-                try:
-                    yield
-                finally:
-                    self._local.connection = None
-                    self._local.row = None
-        except psycopg.errors.LockNotAvailable as error:
-            raise StoreError(
-                f"timed out after {self.lock_timeout:g}s waiting for the approval row lock"
-            ) from error
-        except psycopg.Error as error:
-            raise StoreError(f"Approval database error: {error}") from error
+            connection = self._connect()
+            try:
+                with connection.transaction():
+                    connection.execute(
+                        "INSERT INTO loro_aais_state (stream, state) VALUES (%s, 'null'::jsonb) "
+                        "ON CONFLICT (stream) DO NOTHING",
+                        (self.key,),
+                    )
+                    row = connection.execute(
+                        "SELECT state, recovery FROM loro_aais_state WHERE stream = %s FOR UPDATE",
+                        (self.key,),
+                    ).fetchone()
+                    yield _PostgresTransaction(self, connection, row)
+            except psycopg.errors.LockNotAvailable as error:
+                raise LockTimeout(
+                    f"timed out after {self.lock_timeout:g}s waiting for {self.description}"
+                ) from error
+            except psycopg.Error as error:
+                raise StoreError(f"Approval database error: {_why(error)}") from error
+            finally:
+                connection.close()
         finally:
-            connection.close()
+            held.discard(marker)
 
-    # -------------------------------------------------------------- storage
+    def version(self) -> Hashable | None:
+        row = self._scalar("SELECT version FROM loro_aais_state WHERE stream = %s")
+        return None if row is None else int(row[0])
 
-    def _raise_if_marked(self) -> None:
-        return None
-
-    def _load(self, *, mutable: bool = True) -> dict[str, Any]:
-        empty_state, check_state = _store_internals()
-        row = getattr(self._local, "row", None)
-        value = row[0] if row else None
-        if value is None:
-            return empty_state()
-        reason = check_state(value)
-        if reason is not None:
-            raise StoreError(f"Approval state for stream {self.stream} is invalid: {reason}")
-        return copy.deepcopy(value) if mutable else value
-
-    def _save(self, state: dict[str, Any]) -> None:
-        import uuid
-
-        if not state["store_id"]:
-            state["store_id"] = uuid.uuid4().hex
-        connection = self._local.connection
-        connection.execute(
-            "UPDATE loro_aais_state SET state = %s::jsonb, version = version + 1, "
-            "updated_at = now() WHERE stream = %s",
-            (json.dumps(state, sort_keys=True, separators=(",", ":")), self.stream),
-        )
-
-    def _signature(self) -> tuple[int, int, int, int] | None:
-        """A cheap change marker for ``wait_for_resolution``: the row version."""
-
-        self.ensure_schema()
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT version FROM loro_aais_state WHERE stream = %s", (self.stream,)
-            ).fetchone()
-        return None if row is None else (int(row[0]), 0, 0, 0)
-
-    def _read(self) -> dict[str, Any]:
-        with self._locked():
-            return self._load(mutable=True)
-
-    def wait_for_resolution(  # type: ignore[override]
-        self,
-        request_id: str,
-        *,
-        timeout: float,
-        poll_interval: float = 0.25,
-        cancelled: threading.Event | None = None,
-        refresh_interval: float = 2.0,
-    ) -> dict[str, Any] | None:
-        """Poll the row version and re-read only when it changed."""
-
-        from aais.store import UnknownRequestError
-
-        deadline = time.monotonic() + max(0.0, timeout)
-        last: tuple[int, int, int, int] | None | bool = False
-        while True:
-            signature = self._signature()
-            if signature != last:
-                last = signature
-                state = self._read()
-                resolution = state["resolutions"].get(request_id)
-                if resolution is not None:
-                    return dict(copy.deepcopy(resolution))
-                if request_id not in state["pending"]:
-                    raise UnknownRequestError(f"unknown approval request: {request_id}")
-            if cancelled is not None and cancelled.is_set():
-                return None
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return None
-            pause = min(max(poll_interval, 0.01), remaining)
-            if cancelled is not None:
-                cancelled.wait(pause)
-            else:
-                time.sleep(pause)
-
-    # ------------------------------------------------------------- recovery
-
-    def recovery_status(self) -> Any:
-        return None  # Postgres guarantees a well-formed row; there is no quarantine state.
-
-    def acknowledge_recovery(self, *, start_sequence: int | None = None) -> None:
-        return None
+    def invalidate(self) -> None:
+        return None  # nothing is cached; every transaction reads the locked row
 
     def exists(self) -> bool:
-        self.ensure_schema()
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT state IS NOT NULL AND state <> 'null'::jsonb FROM loro_aais_state "
-                "WHERE stream = %s",
-                (self.stream,),
-            ).fetchone()
+        row = self._scalar("SELECT state <> 'null'::jsonb FROM loro_aais_state WHERE stream = %s")
         return bool(row and row[0])
+
+    def recovery_status(self) -> RecoveryRequired | None:
+        row = self._scalar("SELECT recovery FROM loro_aais_state WHERE stream = %s")
+        return None if row is None else _condition(self.description, row[0])
+
+
+def postgres_authority(
+    dsn: str,
+    *,
+    stream: str,
+    presenter_stream: str | None = None,
+    retention: RetentionPolicy | None = None,
+    lock_timeout: float = 30.0,
+) -> ApprovalAuthority:
+    """An approval authority whose state lives in Postgres, keyed by ``stream``."""
+
+    return ApprovalAuthority(
+        PostgresBackend(dsn, key=stream, lock_timeout=lock_timeout),
+        stream=stream,
+        presenter_stream=presenter_stream,
+        retention=retention,
+    )

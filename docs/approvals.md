@@ -137,6 +137,10 @@ AAIS authority, stored in `.loro/aais-approvals.json` by `aais.store.FileApprova
   refuses the store until an operator inspects it and runs
   `loro approvals recovery --acknowledge`.
 
+With `approvals.authority = "postgres"`, the same `aais.store.ApprovalAuthority` logic runs over
+Loro's Postgres backend instead of the file; see
+[Multi-User Server Mode](multi-user.md#shared-approval-authority-in-postgres).
+
 `loro approvals recovery` lists orphaned requests (owner stopped), requests without an owner, and
 requests owned on another host; `--cancel-orphaned` withdraws the orphaned ones and `--json`
 prints the report. Stopped owners are never restarted.
