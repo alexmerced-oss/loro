@@ -20,6 +20,7 @@ from loro.cli.mcp import mcp_app
 from loro.cli.memory import memory_app
 from loro.cli.operations import operations_app
 from loro.cli.ops import approvals_app
+from loro.cli.plugins import plugins_app
 from loro.cli.providers import providers_app
 from loro.cli.sessions import sessions_app
 from loro.cli.setup import setup_app
@@ -53,5 +54,6 @@ app.add_typer(operations_app, name="operations")
 app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(web_app, name="web")
 app.add_typer(agents_app, name="agents")
+app.add_typer(plugins_app, name="plugins")
 
 __all__ = ["_runtime", "app"]

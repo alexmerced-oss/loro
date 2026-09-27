@@ -81,7 +81,7 @@ The test suite checks this map against the registered commands. Run `loro COMMAN
 `loro GROUP COMMAND --help` for arguments, options, defaults, and safety behavior.
 
 ```text
-loro: capabilities, agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
+loro: capabilities, agents, approvals, artifacts, audit, brief, config, configure, create, credentials, data, docs, doctor, file, gateway, get-started, graph, identity, mcp, memory, operations, plan, plugins, policy, providers, remember, repl, run, safety, sandbox, sessions, setup, sheets, shell, skills, slides, web
 loro agents: apply, configure, create, digest, explain, forget, generate, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list, recovery
@@ -99,6 +99,7 @@ loro config: check, show, summary
 loro memory: accept-proposal, apply-schema, backend-check, commit-draft, drafts, lifecycle, list, migrate, migration-status, proposals, propose, reconcile, remember, schema, search, shared-search, snapshots, sweep
 loro operations: backup, benchmark, recovery-targets, release-readiness, restore, verify-backup
 loro policy: explain
+loro plugins: doctor, list
 loro providers: check, conformance, list, request, show, smoke
 loro run: export, list, verify
 loro safety: doctor, scan

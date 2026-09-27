@@ -187,6 +187,8 @@ loro setup quickstart
 - Read-only Agentic Graph validation and planning over explicitly exported MCP tools.
 - Digest-tracked Agent Skills with progressive loading, lifecycle controls, and reviewed installs.
 - OS-keyring credential vault references with named provider and integration accounts.
+- Plugins and tool hooks that can block but never approve, with opt-in entry-point plugins and
+  sandboxed command hooks (experimental; see [Plugins And Hooks](docs/plugins.md)).
 - Policy-gated coding tools: all-or-nothing `patch.apply`, sandboxed `tests.run` for pytest,
   npm and cargo, and SSRF-protected `web.fetch` for allowlisted domains (experimental; see
   [Coding Tools](docs/coding-tools.md)).

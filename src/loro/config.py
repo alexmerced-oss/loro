@@ -226,6 +226,12 @@ def _default_sandbox_profiles() -> dict[str, SandboxProfileConfig]:
             max_seconds=60,
             max_output_bytes=250_000,
         ),
+        "hook": SandboxProfileConfig(
+            allowed_executables=["python*", "sh", "bash", "node"],
+            environment_allowlist=["PATH", "LANG", "LC_ALL", "LORO_HOOK_EVENT"],
+            max_seconds=30,
+            max_output_bytes=100_000,
+        ),
         "test-runner": SandboxProfileConfig(
             # npm-cli.js is what an nvm-installed npm resolves to.
             allowed_executables=[
@@ -251,6 +257,7 @@ class SandboxConfig(BaseModel):
     mcp_stdio_profile: str = "mcp-stdio"
     skill_profile: str = "skill-script"
     test_profile: str = "test-runner"
+    hook_profile: str = "hook"
     profiles: dict[str, SandboxProfileConfig] = Field(default_factory=_default_sandbox_profiles)
 
     @model_validator(mode="before")
@@ -268,6 +275,7 @@ class SandboxConfig(BaseModel):
             str(data.get("mcp_stdio_profile", "mcp-stdio")),
             str(data.get("skill_profile", "skill-script")),
             str(data.get("test_profile", "test-runner")),
+            str(data.get("hook_profile", "hook")),
         ):
             if selected not in profiles and selected in defaults:
                 profiles[selected] = defaults[selected]
@@ -281,6 +289,7 @@ class SandboxConfig(BaseModel):
         "mcp_stdio_profile",
         "skill_profile",
         "test_profile",
+        "hook_profile",
     )
     @classmethod
     def _normalize_profile_name(cls, value: str) -> str:
@@ -300,6 +309,7 @@ class SandboxConfig(BaseModel):
                 self.mcp_stdio_profile,
                 self.skill_profile,
                 self.test_profile,
+                self.hook_profile,
             )
             if name not in self.profiles
         }
@@ -398,6 +408,7 @@ class PermissionsConfig(BaseModel):
     skills: PermissionDecision = "ask"
     session_message: PermissionDecision = "ask"
     web: PermissionDecision = "deny"
+    plugins: PermissionDecision = "ask"
     workspace_roots: list[str] = Field(default_factory=list)
     rules: list["PermissionRuleConfig"] = Field(default_factory=list)
 
@@ -785,6 +796,26 @@ class AuditConfig(BaseModel):
     forward: AuditForwardConfig = Field(default_factory=AuditForwardConfig)
 
 
+class CommandHookConfig(BaseModel):
+    """An executable run before or after matching tool calls (exit 2 blocks a pre_tool call)."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    event: Literal["pre_tool", "post_tool"] = "pre_tool"
+    match: list[str] = Field(default_factory=lambda: ["*"])  # tool-name globs
+    command: list[str] = Field(min_length=1)
+    sandbox_profile: str | None = None  # default: sandbox.hook_profile
+    cwd: str | None = None
+    timeout_seconds: int = Field(default=10, ge=1, le=300)
+
+
+class PluginsConfig(BaseModel):
+    """Entry-point plugins load only when listed; hooks can block but never approve."""
+
+    enabled: list[str] = Field(default_factory=list)
+    hook_failure: Literal["deny", "allow"] = "deny"
+    hooks: list[CommandHookConfig] = Field(default_factory=list)
+
+
 LoroRole = Literal["viewer", "operator", "approver", "admin"]
 
 
@@ -1108,6 +1139,7 @@ class LoroConfig(BaseModel):
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     web_fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
     webui: WebUIConfig = Field(default_factory=WebUIConfig)
+    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)

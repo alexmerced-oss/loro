@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import sys
 from collections.abc import Callable
@@ -93,6 +94,8 @@ class ToolRegistry:
         allowed_subagents: frozenset[str] | None = None,
         subagent_runner: Callable[[str, str, str], str] | None = None,
         project_root: Path | None = None,
+        audit: Callable[..., object] | None = None,
+        plugin_manager: Any = None,
     ) -> None:
         self.config = config
         self.identity = identity or resolve_identity(config.identity)
@@ -127,8 +130,68 @@ class ToolRegistry:
         from loro.tools.web_fetch import WebFetcher
 
         self.web_fetcher_factory: Callable[..., Any] = WebFetcher
+        self._audit_writer = audit
+        self.plugins = plugin_manager
+        if self.plugins is None and (config.plugins.enabled or config.plugins.hooks):
+            from loro.plugins import PluginManager
+
+            self.plugins = PluginManager(
+                config.plugins,
+                config.sandbox,
+                workspace_roots=config.permissions.workspace_roots,
+                audit=self._audit,
+            )
+
+    def _audit(self, event_type: str, **details: Any) -> object:
+        if self._audit_writer is not None:
+            return self._audit_writer(event_type, **details)
+        from loro.audit import AuditLogger
+
+        return AuditLogger(
+            self.config.audit, self.identity, safety_config=self.config.safety
+        ).write(event_type, **details)
 
     def execute(self, call: ToolCall) -> ToolExecution:
+        manager = self.plugins
+        if manager is not None and manager.active:
+            from loro.plugins import ToolEvent
+
+            decision = manager.before(
+                ToolEvent(
+                    "pre_tool",
+                    call.name,
+                    copy.deepcopy(call.args),  # hooks observe; they cannot rewrite the call
+                    call.origin,
+                    self.identity.subject,
+                    self.active_session_id,
+                )
+            )
+            if not decision.allow:
+                return ToolExecution(
+                    call=call,
+                    ok=False,
+                    output=f"Blocked by hook: {decision.reason}",
+                    metadata={"hook_blocked": True},
+                )
+        execution = self._protected(call)
+        if manager is not None and manager.active:
+            from loro.plugins import ToolEvent
+
+            manager.after(
+                ToolEvent(
+                    "post_tool",
+                    call.name,
+                    copy.deepcopy(call.args),
+                    call.origin,
+                    self.identity.subject,
+                    self.active_session_id,
+                    ok=execution.ok,
+                    output_preview=execution.output[:2000],
+                )
+            )
+        return execution
+
+    def _protected(self, call: ToolCall) -> ToolExecution:
         execution = self._execute(call)
         decision = self.protection.evaluate(execution.output, "tool_output")
         if decision.blocked:
@@ -164,6 +227,8 @@ class ToolRegistry:
                 return self._write_file(call)
             if call.name == "file.replace":
                 return self._replace_file(call)
+            if call.name.startswith("plugin."):
+                return self._run_plugin_tool(call)
             if call.name == "patch.apply":
                 return self._apply_patch(call)
             if call.name == "tests.run":
@@ -412,6 +477,34 @@ class ToolRegistry:
                 "sandbox_os_enforced": result.os_enforced,
                 "output_truncated": result.output_truncated,
             },
+        )
+
+    def _run_plugin_tool(self, call: ToolCall) -> ToolExecution:
+        """Run a plugin-provided tool under the plugins permission, approvals and audit."""
+
+        if self.plugins is None:
+            return ToolExecution(
+                call=call, ok=False, output=f"No enabled plugin provides {call.name}."
+            )
+        plugin, tool = self.plugins.tool(call.name)
+        self._authorize(
+            call,
+            PermissionRequest(tool="plugins", action=f"run {call.name}", target=call.name),
+            approval_target=call.name,
+            risk_reason=tool.risk_reason,
+        )
+        arguments = {key: value for key, value in call.args.items() if key != "approved"}
+        try:
+            output = str(tool.run(arguments))
+            ok = True
+        except Exception as error:  # noqa: BLE001 - plugin failures become tool errors
+            output, ok = f"Plugin tool failed: {type(error).__name__}: {error}", False
+        self._audit("plugin.tool_executed", plugin=plugin.name, tool=call.name, ok=ok)
+        return ToolExecution(
+            call=call,
+            ok=ok,
+            output=output,
+            metadata={"plugin": plugin.name, "plugin_version": plugin.version},
         )
 
     def _apply_patch(self, call: ToolCall) -> ToolExecution:

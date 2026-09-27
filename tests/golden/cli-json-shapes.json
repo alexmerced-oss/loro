@@ -82,6 +82,10 @@
       }
     ]
   },
+  "loro plugins list --json": {
+    "hooks": [],
+    "plugins": []
+  },
   "loro run --json": {
     "context": {
       "compacted_messages": "int",

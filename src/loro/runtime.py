@@ -105,6 +105,7 @@ class AgentRuntime:
             allowed_subagents=(profile.subagents if profile is not None else frozenset()),
             subagent_runner=(self._run_subagent if profile is not None else None),
             project_root=self.profile_cwd,
+            audit=self.audit.write,
         )
         self.usage = UsageBudget(config.runtime, config.model)
         self.telemetry = telemetry or shared_telemetry(self.config.telemetry)

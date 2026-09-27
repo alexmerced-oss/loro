@@ -126,4 +126,5 @@ def test_every_json_output_shape_matches_golden(isolated: Path) -> None:
     capture("loro graph plan --json", ["graph", "plan", str(EXAMPLE_GRAPH), "--json"], (0, 1))
     capture("loro approvals list --json", ["approvals", "list", "--json"])
     capture("loro approvals recovery --json", ["approvals", "recovery", "--json"])
+    capture("loro plugins list --json", ["plugins", "list", "--json"])
     _compare("cli-json-shapes.json", shapes)

@@ -23,6 +23,7 @@ AUDIT_EVENT_FAMILIES = (
     AuditEventFamily("mcp.", "MCP client and server operations", True),
     AuditEventFamily("memory.", "Local and shared-memory operations", True),
     AuditEventFamily("polaris.", "Polaris governed-data operations", True),
+    AuditEventFamily("plugin.", "Plugin loading, plugin tools, and hook decisions", True),
     AuditEventFamily("policy.", "Permission decisions", True),
     AuditEventFamily("provider.", "Direct provider diagnostics", False),
     AuditEventFamily("runtime.", "Agent task and model/tool lifecycle", True),

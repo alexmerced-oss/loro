@@ -13,10 +13,11 @@ export function ExtensionsView({ setError }: { setError: (message: string) => vo
   const [tool, setTool] = useState<any>(null);
   const [args, setArgs] = useState("{}");
   const [result, setResult] = useState<any>(null);
+  const [plugins, setPlugins] = useState<{ plugins: any[]; hooks: any[]; hook_failure: string } | null>(null);
 
   async function load() {
-    const [inventory, status] = await Promise.all([request<any>("/api/workspace/extensions"), request<any>("/api/webmcp/status")]);
-    setData(inventory); setWebmcp(status); if (status.url) setUrl(status.url);
+    const [inventory, status, pluginInventory] = await Promise.all([request<any>("/api/workspace/extensions"), request<any>("/api/webmcp/status"), request<any>("/api/plugins")]);
+    setData(inventory); setWebmcp(status); setPlugins(pluginInventory); if (status.url) setUrl(status.url);
   }
   useEffect(() => { load().catch((reason) => setError(String(reason))); }, [setError]);
 
@@ -67,6 +68,11 @@ export function ExtensionsView({ setError }: { setError: (message: string) => vo
     </section>
     <section><div className="section-heading"><h2>MCP servers <span>{data.mcp_enabled ? "enabled" : "disabled"}</span></h2><button onClick={() => setEditor(blank("mcp"))}>＋ New server</button></div><div className="extension-grid">{data.mcp_servers.map((item: any) => <article key={item.name}><b>{item.name}</b><span>{item.enabled ? "Enabled" : "Disabled"}</span><p>{item.transport} · {item.command || item.url || "unconfigured"}</p><small>Protocol {item.protocol_mode || "auto"}</small><div className="profile-actions"><button className="secondary-action" onClick={() => setEditor({ ...blank("mcp"), ...item, args: (item.args || []).join("\n"), env_allowlist: (item.env_allowlist || []).join("\n") })}>Edit</button><button className="secondary-action danger" onClick={() => void remove("mcp", item.name)}>Delete</button></div></article>)}</div>{!data.mcp_servers.length && <p>No MCP servers configured.</p>}</section>
     <section><h2>MCP protocol extensions <span>managed</span></h2><p className="gov-note">Protocol extensions are supplied by harness policy and cannot be changed from a project.</p><div className="extension-grid">{data.mcp_extensions.map((item: any) => <article key={item.name}><b>{item.name}</b><span>{item.enabled ? `v${item.version}` : "Disabled"}</span><p>{item.adapter || "protocol extension"}</p></article>)}</div></section>
+    <section aria-labelledby="plugins-heading"><div className="section-heading"><div><h2 id="plugins-heading">Plugins and hooks <span>{(plugins?.plugins || []).filter((item) => item.enabled && item.loaded).length} enabled</span></h2><p className="gov-note">Plugins load only when listed in [plugins] enabled. Hooks can block a tool call but never approve one. Failing pre-tool hooks {plugins?.hook_failure === "allow" ? "allow" : "block"} the call.</p></div></div>
+      {plugins && plugins.plugins.length > 0 && <div className="extension-grid">{plugins.plugins.map((item) => <article key={item.name} className={item.error ? "has-error" : ""}><b>{item.name}</b><span>{item.error ? "Error" : item.enabled ? "Enabled" : "Not enabled"}</span><p>{item.error || item.description || "No description."}</p><small>{item.version ? `v${item.version} · ` : ""}{item.tools.length} tool(s) · pre {item.hooks.pre_tool} / post {item.hooks.post_tool} hooks</small></article>)}</div>}
+      {plugins && plugins.hooks.length > 0 && <div className="extension-grid">{plugins.hooks.map((hook) => <article key={hook.name}><b>{hook.name}</b><span>{hook.event === "pre_tool" ? "Before tools" : "After tools"}</span><p><code>{hook.command.join(" ")}</code></p><small>Matches {hook.match.join(", ")}</small></article>)}</div>}
+      {plugins && !plugins.plugins.length && !plugins.hooks.length && <p>No plugins installed and no hooks configured. See the plugin guide in docs/plugins.md.</p>}
+    </section>
     <section><div className="section-heading"><h2>Skills</h2><button onClick={() => setEditor(blank("skill"))}>＋ New project skill</button></div><div className="extension-grid">{data.skills.map((item: any) => <article key={item.path}><b>{item.name}</b><span>{item.editable ? "Project · editable" : "Managed · read-only"}</span><p>{item.path}</p>{item.editable && <div className="profile-actions"><button className="secondary-action" onClick={() => setEditor({ ...blank("skill"), name: item.name, description: item.description || "", body: item.body || "" })}>Edit</button><button className="secondary-action danger" onClick={() => void remove("skill", item.name)}>Delete</button></div>}</article>)}</div>{!data.skills.length && <p>No skills discovered.</p>}</section>
     {editor && <EditorModal editor={editor} setEditor={setEditor} save={save} />}
   </div>;

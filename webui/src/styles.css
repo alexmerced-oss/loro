@@ -818,3 +818,7 @@ select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .composer-readonly{margin:0 max(24px,calc((100% - 790px)/2)) 22px;border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--muted);font-size:12px}
 @media(max-width:680px){.access-rule{grid-template-columns:1fr}.composer-readonly{margin:0 12px 10px}}
+.extensions-page .extension-grid+.extension-grid{margin-top:10px}
+.extensions-page .extension-grid article.has-error{border-color:var(--c-a85353)}
+.extensions-page .extension-grid article.has-error>span{color:var(--c-e7a3a3)}
+.extensions-page .extension-grid code{font-size:11px;overflow-wrap:anywhere}

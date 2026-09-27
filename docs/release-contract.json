@@ -161,6 +161,10 @@
       "verify-backup"
     ],
     "plan": [],
+    "plugins": [
+      "doctor",
+      "list"
+    ],
     "policy": [
       "explain"
     ],

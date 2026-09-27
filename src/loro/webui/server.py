@@ -602,6 +602,17 @@ def create_app(
             "permissions": request.state.permissions,
         }
 
+    @app.get("/api/plugins")
+    async def plugins_inventory() -> dict[str, Any]:
+        from loro.plugins import discover
+
+        config = load_config(root).plugins
+        return {
+            "plugins": [item.to_payload() for item in discover(config)],
+            "hooks": [hook.model_dump() for hook in config.hooks],
+            "hook_failure": config.hook_failure,
+        }
+
     @app.get("/api/access")
     async def access(request: Request) -> dict[str, Any]:
         rbac = load_config(root).webui.rbac

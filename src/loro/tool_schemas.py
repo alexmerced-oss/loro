@@ -12,6 +12,7 @@ by providers with no native tool-calling support.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from loro.config import LoroConfig
@@ -303,7 +304,19 @@ def tool_catalog(config: LoroConfig) -> list[ToolSchema]:
         disabled.add("web.fetch")
     if config.permissions.artifact == "deny":
         disabled.add("artifact.create")
-    return [schema for schema in BUILTIN_TOOL_SCHEMAS if schema.name not in disabled]
+    schemas = [schema for schema in BUILTIN_TOOL_SCHEMAS if schema.name not in disabled]
+    if config.plugins.enabled and config.permissions.plugins != "deny":
+        schemas.extend(_plugin_schemas(config.plugins.model_dump_json()))
+    return schemas
+
+
+@lru_cache(maxsize=8)
+def _plugin_schemas(serialized: str) -> tuple[ToolSchema, ...]:
+    from loro.config import PluginsConfig, SandboxConfig
+    from loro.plugins import PluginManager
+
+    manager = PluginManager(PluginsConfig.model_validate_json(serialized), SandboxConfig())
+    return tuple(manager.schemas())
 
 
 def openai_tools(schemas: list[ToolSchema]) -> list[dict[str, Any]]:
