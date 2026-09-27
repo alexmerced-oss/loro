@@ -263,8 +263,8 @@ def graph_generate(
 @graph_app.command("skill-path")
 def graph_skill_path() -> None:
     """Print the bundled AGS authoring Skill path for reviewed installation."""
-    bundled = Path(__file__).parent / "bundled_skills" / "agentic-graph"
-    source = Path(__file__).resolve().parents[2] / "skills" / "agentic-graph"
+    bundled = Path(__file__).resolve().parents[1] / "bundled_skills" / "agentic-graph"
+    source = Path(__file__).resolve().parents[3] / "skills" / "agentic-graph"
     path = bundled if bundled.is_dir() else source
     if not path.is_dir():
         raise typer.BadParameter("bundled agentic-graph Skill is unavailable")

@@ -44,7 +44,10 @@ flowchart LR
 
 ## Package Layout
 
-- `loro.cli`: Typer command surface and command-specific orchestration.
+- `loro.cli`: Typer command surface and command-specific orchestration, one module per command
+  family (`core`, `setup`, `memory`, `mcp`, `data`, `audit`, `runs`, ...), assembled in
+  `loro/cli/__init__.py`. No module exceeds 1,000 lines; `tests/golden/` snapshots every `--help`
+  screen and `--json` output shape so refactors cannot change the user-facing surface.
 - `loro.runtime`: task runtime, memory recall, audit events, and session persistence.
 - `loro.budgets`: model byte/token/cost and tool-call accounting with fail-closed limits.
 - `loro.config`: versioned layered configuration, legacy migration, managed overlays, and writers.

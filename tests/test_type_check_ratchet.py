@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORE_CEILING = 24
+IGNORE_CEILING = 21
 
 
 def _config() -> dict:

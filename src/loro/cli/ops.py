@@ -1,6 +1,6 @@
 """Operator-facing commands: aggregate health, compliance queries, retention, linting.
 
-These live outside `cli.py` so each domain stays reviewable on its own.
+Part of the `loro.cli` package; see `loro/cli/__init__.py` for how families are assembled.
 """
 
 from __future__ import annotations
@@ -423,6 +423,4 @@ def approvals_recovery(
     if payload.get("cancelled"):
         console.print(f"Withdrew {len(payload['cancelled'])} orphaned request(s).")
     elif report.get("orphaned"):
-        console.print(
-            "Withdraw them with: loro approvals recovery --cancel-orphaned", style="dim"
-        )
+        console.print("Withdraw them with: loro approvals recovery --cancel-orphaned", style="dim")

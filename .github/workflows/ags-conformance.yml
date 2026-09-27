@@ -6,7 +6,7 @@ on:
   pull_request:
     paths:
       - "src/loro/agraph/**"
-      - "src/loro/cli_graph.py"
+      - "src/loro/cli/graph.py"
       - "tests/test_agraph.py"
       - "tests/fixtures/agraph/**"
       - ".github/workflows/ags-conformance.yml"

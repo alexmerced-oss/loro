@@ -571,8 +571,8 @@ def test_agents_cli_create_list_explain_run_and_review(tmp_path: Path, monkeypat
     config.sessions.path = str(tmp_path / "sessions")
     config.sessions.message_path = str(tmp_path / "messages")
     config.approvals.interactive = False
-    monkeypatch.setattr("loro.cli_agents.load_config", lambda: config)
-    monkeypatch.setattr("loro.cli.load_config", lambda: config)
+    monkeypatch.setattr("loro.cli.agents.load_config", lambda: config)
+    monkeypatch.setattr("loro.cli._common.load_config", lambda: config)
     runner = CliRunner()
 
     created = runner.invoke(

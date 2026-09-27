@@ -240,7 +240,7 @@ def test_cli_task_cancellation_preserves_audit_continuity(tmp_path, monkeypatch)
         operation="tools/call",
         remote=task_payload(status="working"),
     )
-    monkeypatch.setattr("loro.cli._mcp_service", lambda: service)
+    monkeypatch.setattr("loro.cli.mcp._mcp_service", lambda: service)
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[mcp]\nenabled = true\n"

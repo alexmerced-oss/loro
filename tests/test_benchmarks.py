@@ -54,7 +54,7 @@ def test_operations_benchmark_cli_writes_evidence(
     def pinned(**kwargs):
         return dataclasses.replace(real(**kwargs), passed=passed)
 
-    monkeypatch.setattr("loro.cli.run_reference_benchmarks", pinned)
+    monkeypatch.setattr("loro.cli.operations.run_reference_benchmarks", pinned)
     output = tmp_path / "benchmark.json"
 
     result = CliRunner().invoke(

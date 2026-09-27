@@ -58,9 +58,14 @@ def gateway_setup(
     """Configure one gateway endpoint without storing secret values in TOML."""
     interactive = endpoint_id is None
     endpoint_id = endpoint_id or typer.prompt("Endpoint id", default="remote")
-    platform = platform or typer.prompt(
-        "Platform", default="slack", type=typer.Choice(sorted(_REQUIRED_CREDENTIALS))
-    )
+    choices = sorted(_REQUIRED_CREDENTIALS)
+    while not platform:
+        # typer 0.27 no longer exports Choice, so validate the answer here.
+        answer = typer.prompt(f"Platform ({', '.join(choices)})", default="slack")
+        if answer in choices:
+            platform = answer
+        else:
+            typer.echo(f"Choose one of: {', '.join(choices)}")
     if platform not in _REQUIRED_CREDENTIALS:
         raise typer.BadParameter(f"unsupported gateway platform: {platform}")
     default_route = f"/gateway/{endpoint_id}"

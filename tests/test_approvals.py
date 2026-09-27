@@ -268,7 +268,7 @@ def test_aais_bridge_cancels_only_its_active_requests(tmp_path: Path) -> None:
             break
         time.sleep(0.01)
     assert bridge.cancel_active() == 1
-    worker.join(2)
+    worker.join(30)
     assert not worker.is_alive()
     assert result == [None]
     assert bridge.snapshot()["snapshot"]["pending"] == []

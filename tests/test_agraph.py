@@ -262,7 +262,7 @@ def test_graph_generate_uses_model_authored_graph_by_default(tmp_path: Path, mon
         def run(self, _prompt, **_kwargs):
             return SimpleNamespace(response=json.dumps(authored))
 
-    monkeypatch.setattr("loro.cli_graph.AgentRuntime", FakeRuntime)
+    monkeypatch.setattr("loro.cli.graph.AgentRuntime", FakeRuntime)
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         '[model]\nprovider = "openai"\nmodel = "test-model"\nsmall_model = "test-model"\n'

@@ -282,7 +282,7 @@ def test_create_docs_alias_uses_model_draft(tmp_path, monkeypatch) -> None:
         }
     )
     monkeypatch.setattr(
-        "loro.cli._run_task",
+        "loro.cli._common._run_task",
         lambda *args, **kwargs: SimpleNamespace(
             response=generated, summary="Verbose report that should not be parsed"
         ),
@@ -336,7 +336,7 @@ def test_docs_create_retries_invalid_model_draft_once(tmp_path, monkeypatch) -> 
         response = "not valid JSON" if len(calls) == 1 else generated
         return SimpleNamespace(response=response, summary="ignored")
 
-    monkeypatch.setattr("loro.cli._run_task", run_task)
+    monkeypatch.setattr("loro.cli._common._run_task", run_task)
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         '[model]\nprovider = "openai"\nmodel = "test-model"\nsmall_model = "test-model"\n'
@@ -380,7 +380,7 @@ def test_configure_interactive_uses_live_provider_catalog(tmp_path, monkeypatch)
         f'[audit]\npath = "{tmp_path / "audit.jsonl"}"\n',
     )
     monkeypatch.setattr(
-        "loro.cli.discover_provider_models",
+        "loro.cli.core.discover_provider_models",
         lambda *args, **kwargs: ModelCatalog(
             "opencode-go",
             ("glm-5", "kimi-k3", "deepseek-v4-flash"),
@@ -413,7 +413,7 @@ def test_configure_interactive_falls_back_to_bundled_models(tmp_path, monkeypatc
     def fail_discovery(*args, **kwargs):
         raise ModelDiscoveryError("catalog offline")
 
-    monkeypatch.setattr("loro.cli.discover_provider_models", fail_discovery)
+    monkeypatch.setattr("loro.cli.core.discover_provider_models", fail_discovery)
 
     result = CliRunner().invoke(app, ["configure"], input="\n\n\n")
 
@@ -425,7 +425,7 @@ def test_configure_interactive_falls_back_to_bundled_models(tmp_path, monkeypatc
 
 def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("loro.cli.os.isatty", lambda _fd: True)
+    monkeypatch.setattr("loro.cli.core.os.isatty", lambda _fd: True)
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         f'[sessions]\npath = "{tmp_path / "sessions"}"\n'
@@ -1142,7 +1142,7 @@ def test_configure_rolls_back_when_required_audit_delivery_fails(tmp_path, monke
     output = tmp_path / "config.local.toml"
     original = b'[model]\nprovider = "mock"\nmodel = "original"\n'
     output.write_bytes(original)
-    monkeypatch.setattr("loro.cli._audit", lambda: FailingAudit())
+    monkeypatch.setattr("loro.cli.core._audit", lambda: FailingAudit())
 
     result = CliRunner().invoke(
         app,
@@ -1162,7 +1162,7 @@ def test_configure_removes_new_file_when_required_audit_delivery_fails(
             raise AuditDeliveryError("audit path is unwritable")
 
     output = tmp_path / "config.local.toml"
-    monkeypatch.setattr("loro.cli._audit", lambda: FailingAudit())
+    monkeypatch.setattr("loro.cli.core._audit", lambda: FailingAudit())
 
     result = CliRunner().invoke(
         app,

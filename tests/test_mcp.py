@@ -394,7 +394,7 @@ def test_mcp_cli_call_requires_and_records_explicit_approval(tmp_path, monkeypat
 
     client = FakeMCPClient()
     service = MCPService(mcp_config(), client_factory=fake_factory(client))
-    monkeypatch.setattr("loro.cli._mcp_service", lambda: service)
+    monkeypatch.setattr("loro.cli.mcp._mcp_service", lambda: service)
     monkeypatch.setenv(
         "LORO_CONFIG_CONTENT",
         "[mcp]\nenabled = true\n"

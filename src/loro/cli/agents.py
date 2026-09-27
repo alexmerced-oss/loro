@@ -20,6 +20,7 @@ from loro.agent_profiles import (
     load_path,
 )
 from loro.agent_profiles.generation import generate_profile_proposal, save_generated_profile
+from loro.agent_profiles.models import DeltaOperation
 from loro.audit import AuditLogger
 from loro.config import load_config, write_config_sections
 from loro.fileio import atomic_write_text
@@ -243,7 +244,7 @@ def forget(
         profile=name,
         base_revision=profile.document.metadata.revision,
         spec_digest=profile.spec_digest,
-        operations=[{"op": "remove", "path": f"/state/{entry_id}"}],
+        operations=[DeltaOperation(op="remove", path=f"/state/{entry_id}")],
     )
     audit = _audit(config)
     result = apply_delta(

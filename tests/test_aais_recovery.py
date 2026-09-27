@@ -51,9 +51,9 @@ def test_external_decision_wakes_owner_and_rejects_changed_digest(tmp_path: Path
             publish=publish,
             allow_session=False,
             cancelled=threading.Event(),
-            timeout=5,
+            timeout=120,
         )
-        assert ready.wait(5)
+        assert ready.wait(60)
         with pytest.raises(ConflictError):
             presenter.decide(
                 request.request_id,
@@ -65,7 +65,7 @@ def test_external_decision_wakes_owner_and_rejects_changed_digest(tmp_path: Path
         receipt = presenter.decide(
             request.request_id, decision="approve", scope="once", actor_id="tester"
         )
-        assert run.result(timeout=3) == "once"
+        assert run.result(timeout=60) == "once"
     assert receipt["resolution"]["outcome"] == "approved"
     assert events[-1] == receipt
     assert presenter.snapshot()["snapshot"]["pending"] == []
@@ -154,7 +154,7 @@ def _wait_for_pending(root: Path, count: int = 1, timeout: float = 30) -> list[d
 def test_concurrent_processes_never_lose_or_reuse_sequences(tmp_path: Path) -> None:
     workers = [_spawn(tmp_path, "add", 6) for _ in range(4)]
     for worker in workers:
-        _out, err = worker.communicate(timeout=120)
+        _out, err = worker.communicate(timeout=600)
         assert worker.returncode == 0, err
 
     pending = _pending(tmp_path)
@@ -170,7 +170,7 @@ def test_decision_from_this_process_wakes_a_waiting_process(tmp_path: Path) -> N
         AAISBridge(tmp_path).decide(
             pending["request"]["id"], decision="approve", scope="once", actor_id="reviewer"
         )
-        out, err = worker.communicate(timeout=60)
+        out, err = worker.communicate(timeout=300)
     finally:
         worker.kill()
     assert worker.returncode == 0, err

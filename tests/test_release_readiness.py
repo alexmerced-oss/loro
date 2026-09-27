@@ -52,7 +52,7 @@ def test_release_readiness_fails_missing_required_identity_and_invalid_audit() -
 
 
 def test_release_readiness_cli_supports_warning_gate(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("loro.cli.load_config", LoroConfig)
+    monkeypatch.setattr("loro.cli.operations.load_config", LoroConfig)
     runner = CliRunner()
 
     output = tmp_path / "readiness.json"
