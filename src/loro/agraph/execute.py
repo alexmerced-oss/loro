@@ -61,6 +61,43 @@ class GraphExecutionError(RuntimeError):
     pass
 
 
+# Run records replace sensitive values with a marker: the data-protection pass on the run store
+# (``safety.redaction_text``, whole values or a token inside a longer string) and params declared
+# ``redact: true``. MagAgent writes ``[REDACTED]``. A resumed run must never receive a marker in
+# place of the real value, so every spelling is recognized anywhere inside a param value.
+REDACTION_MARKERS = ("[redacted]", "[REDACTED]")
+
+
+def _contains_marker(value: Any, markers: tuple[str, ...]) -> bool:
+    if isinstance(value, str):
+        return any(marker in value for marker in markers)
+    if isinstance(value, Mapping):
+        return any(_contains_marker(item, markers) for item in (*value.keys(), *value.values()))
+    if isinstance(value, list | tuple):
+        return any(_contains_marker(item, markers) for item in value)
+    return False
+
+
+def redacted_param_names(
+    params: Mapping[str, Any], markers: tuple[str, ...] = REDACTION_MARKERS
+) -> list[str]:
+    """Names of params whose value contains a redaction marker anywhere (sorted)."""
+
+    return sorted(name for name, value in params.items() if _contains_marker(value, markers))
+
+
+class RedactedParamsError(GraphExecutionError):
+    """A run would receive redaction markers instead of real param values."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.names = list(names)
+        super().__init__(
+            "graph params were redacted in the run record and must be supplied again: "
+            + ", ".join(self.names)
+            + ". Pass them with --param NAME=VALUE, --params JSON or --param-file FILE."
+        )
+
+
 class GraphExecutor:
     """Governed AGS level-3 executor built on Loro's bounded task runtime."""
 
@@ -155,6 +192,9 @@ class GraphExecutor:
                 non_interactive=self.gate_provider is not None,
             )
         bound = self._bind_params(document.data, params or {})
+        missing = redacted_param_names(bound, self.redaction_markers)
+        if missing:
+            raise RedactedParamsError(missing)
         now = _now()
         record: dict[str, Any] = {
             "ags_version": "1.0",
@@ -212,6 +252,10 @@ class GraphExecutor:
             raise GraphExecutionError(
                 "run was created with --dry-run; start a real run instead of resuming a plan"
             )
+        # Check before any approval is consumed, so the operator can retry with the values.
+        missing = redacted_param_names(self.resume_params(record, params), self.redaction_markers)
+        if missing:
+            raise RedactedParamsError(missing)
         if isinstance(record.get("nodes"), list):
             record["nodes"] = {node["node_id"]: node for node in record["nodes"]}
         uncertain = [key for key, node in record["nodes"].items() if node["status"] == "running"]
@@ -256,18 +300,41 @@ class GraphExecutor:
             )
             record["graph_digest"] = document.digest
         record["status"] = "running"
-        resumed_params = dict(record["metadata"].get("params", {}))
-        resumed_params.update(params or {})
-        if "[redacted]" in resumed_params.values():
-            raise GraphExecutionError(
-                "redacted graph params must be supplied again with --params when resuming"
-            )
+        resumed_params = self.resume_params(record, params)
+        missing = redacted_param_names(resumed_params, self.redaction_markers)
+        if missing:
+            raise RedactedParamsError(missing)
         bound = self._bind_params(document.data, resumed_params)
         return self._execute_document(document.data, record, bound)
+
+    @property
+    def redaction_markers(self) -> tuple[str, ...]:
+        configured = self.config.safety.redaction_text
+        return tuple(dict.fromkeys((*REDACTION_MARKERS, *([configured] if configured else []))))
+
+    @staticmethod
+    def resume_params(
+        record: Mapping[str, Any], supplied: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        """Saved params overlaid with the values supplied again for this resume."""
+
+        values = dict(record.get("metadata", {}).get("params", {}) or {})
+        values.update(supplied or {})
+        return values
+
+    def redacted_params(self, run_id: str, supplied: Mapping[str, Any] | None = None) -> list[str]:
+        """Params of a saved run that still hold a redaction marker after ``supplied``."""
+
+        record = self.store.get(run_id)
+        return redacted_param_names(self.resume_params(record, supplied), self.redaction_markers)
 
     def _execute_document(
         self, graph: dict[str, Any], record: dict[str, Any], params: Mapping[str, Any]
     ) -> dict[str, Any]:
+        # Backstop for every caller: a marker is never a real value.
+        missing = redacted_param_names(params, self.redaction_markers)
+        if missing:
+            raise RedactedParamsError(missing)
         constraints = graph.get("constraints", {})
         cost_limits = [
             value

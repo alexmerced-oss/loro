@@ -92,6 +92,28 @@ Run records conform to the support library's `agentic-graph-run-1.0.schema.json`
 session records; graph records contain references, outputs, criteria evidence, routing, usage, and
 human outcomes. The safety policy for session persistence applies before atomic record writes.
 
+### Redacted params on resume
+
+The run record never stores a secret. The session data-protection pass replaces a detected secret
+with `safety.redaction_text` (`[redacted]` by default), either the whole value or only the token
+inside a longer string such as a URL, and a param declared `redact: true` is stored as the marker.
+A resumed run must not receive the marker in place of the real value, so `loro graph resume`
+checks every saved param for `[redacted]`, `[REDACTED]`, or the configured redaction text
+anywhere in its value, including nested lists and objects, and asks for those params again:
+
+```bash
+loro graph resume RUN_ID --param endpoint=https://api.example.test/v1?token=...
+loro graph resume RUN_ID --params '{"endpoint": "..."}'
+loro graph resume RUN_ID --param-file values.json   # a JSON object
+```
+
+`--param NAME=VALUE` is repeatable; its value is text for `string` params and JSON for other
+declared types (`--param retries=3`). When sources overlap, `--params` is applied first, then
+`--param-file`, then each `--param`. In a terminal, Loro asks for each missing value with hidden
+input. Without a terminal it exits with code 2 and names the params to supply. The executor also
+refuses any param that contains a marker, whoever starts the run, and it checks before
+consuming a `--force` approval, so the command can be retried with the values.
+
 ## Examples
 
 - [Enterprise brief](examples/agraph/enterprise-brief.agraph.yaml)

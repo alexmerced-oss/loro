@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
 
 from loro.agraph.document import GraphDocumentError, load_graph
-from loro.agraph.execute import GraphExecutionError, GraphExecutor
+from loro.agraph.execute import GraphExecutionError, GraphExecutor, RedactedParamsError
 from loro.agraph.generate import write_ai_generated_graph, write_generated_graph
 from loro.agraph.plan import build_plan
 from loro.agraph.policy import evaluate_policy
@@ -187,6 +189,49 @@ def graph_recovery(run_id: Annotated[str, typer.Argument(help="Durable graph run
         raise typer.BadParameter(str(error)) from error
 
 
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _param_value(raw: str, spec: Mapping[str, Any] | None) -> Any:
+    """A --param or prompted value: text for string params, JSON for other declared types."""
+
+    if spec is None or spec.get("type") in (None, "string"):
+        return raw
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _resume_values(
+    params: str, param_file: Path | None, pairs: list[str], specs: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Merge --params, then --param-file, then each --param NAME=VALUE (later wins)."""
+
+    values: dict[str, Any] = {}
+    sources: list[tuple[str, str]] = [("--params", params)]
+    if param_file is not None:
+        try:
+            sources.append((f"--param-file {param_file}", param_file.read_text(encoding="utf-8")))
+        except OSError as error:
+            raise ValueError(f"cannot read --param-file {param_file}: {error.strerror}") from error
+    for label, text in sources:
+        try:
+            loaded = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{label} is not valid JSON: {error.msg}") from error
+        if not isinstance(loaded, dict):
+            raise ValueError(f"{label} must be a JSON object")
+        values.update(loaded)
+    for pair in pairs:
+        name, separator, raw = pair.partition("=")
+        if not separator or not name:
+            raise ValueError(f"--param expects NAME=VALUE, got {pair.split('=')[0]!r}")
+        values[name] = _param_value(raw, specs.get(name))
+    return values
+
+
 @graph_app.command("resume")
 def graph_resume(
     run_id: Annotated[str, typer.Argument(help="Durable graph run id.")],
@@ -195,33 +240,65 @@ def graph_resume(
         bool, typer.Option("--yes", help="Approve pending gates when policy allows.")
     ] = False,
     params: Annotated[
-        str, typer.Option("--params", help="JSON params, required again for redacted values.")
+        str, typer.Option("--params", help="JSON object of params to supply again.")
     ] = "{}",
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            help="Supply one param again as NAME=VALUE (repeatable; JSON for non-string types).",
+        ),
+    ] = None,
+    param_file: Annotated[
+        Path | None,
+        typer.Option("--param-file", help="JSON file with params to supply again."),
+    ] = None,
 ) -> None:
-    """Resume a paused Agentic Graph with digest protection."""
+    """Resume a paused Agentic Graph with digest protection.
+
+    Values redacted in the run record (secrets caught by data protection) must be supplied
+    again. In a terminal, Loro asks for each one with hidden input; otherwise it exits 2 and
+    names them.
+    """
     config = load_config()
     if yes and not config.approvals.allow_non_interactive:
         raise typer.BadParameter("--yes is denied by approvals.allow_non_interactive")
-    force_approved = not force or yes
-    if force and not yes:
-        force_approved = typer.confirm(
-            "The graph changed. Approve forced resume using the new digest?"
-        )
     try:
-        values = json.loads(params)
-        if not isinstance(values, dict):
-            raise ValueError("params must be an object")
         # `graph run` executes with the graph file's directory as the workspace. Resume
         # used to default to Path.cwd(), so file_exists/artifact_present/json_schema
         # criteria and local subgraph refs resolved against a different root.
         store = GraphRunStore(config.agraph, DataProtectionEngine(config.safety))
         source = str(store.get(run_id).get("metadata", {}).get("source", ""))
         workspace = Path(source).resolve().parent if source else None
-        record = GraphExecutor(
+        specs: Mapping[str, Any] = {}
+        if source and Path(source).is_file():
+            specs = _load(Path(source)).data.get("params", {}) or {}
+        values = _resume_values(params, param_file, list(param or []), specs)
+        executor = GraphExecutor(
             config,
             workspace=workspace,
             gate_provider=(lambda _prompt, _roles: True) if yes else None,
-        ).resume(
+        )
+        missing = executor.redacted_params(run_id, values)
+        if missing and _interactive():
+            console.print(
+                "These params were redacted in the run record; enter them again "
+                "(input is hidden): " + ", ".join(missing)
+            )
+            for name in missing:
+                entered = typer.prompt(name, hide_input=True)
+                values[name] = _param_value(entered, specs.get(name))
+        elif missing:
+            raise RedactedParamsError(missing)
+    except (FileNotFoundError, ValueError, GraphExecutionError) as error:
+        raise typer.BadParameter(str(error)) from error
+    force_approved = not force or yes
+    if force and not yes:
+        force_approved = typer.confirm(
+            "The graph changed. Approve forced resume using the new digest?"
+        )
+    try:
+        record = executor.resume(
             run_id,
             force=force,
             force_approved=force_approved,
