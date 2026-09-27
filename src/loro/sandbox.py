@@ -35,6 +35,9 @@ class SandboxLaunch:
     environment: dict[str, str]
     profile: str
     os_enforced: bool
+    # Run when the launch is killed (timeout or output limit): the container backend must stop
+    # the container itself, because killing the engine CLI leaves the container running.
+    cleanup: list[str] | None = None
 
 
 class SandboxRunner:
@@ -68,6 +71,7 @@ class SandboxRunner:
             timeout=effective_timeout,
             output_limit=profile.max_output_bytes,
             profile_name=profile_name,
+            cleanup=launch.cleanup,
         )
         return SandboxResult(
             args=list(args),
@@ -98,6 +102,8 @@ class SandboxRunner:
                 if "\x00" in name or "=" in name or "\x00" in value:
                     raise SandboxError("Explicit sandbox environment contains an invalid entry.")
                 environment[name] = value
+        if profile.backend == "container":
+            return self._container_launch(args, resolved_cwd, environment, profile, profile_name)
         executable = self._resolve_executable(args[0], environment)
         self._require_allowed_executable(executable, profile)
         command, os_enforced = self._command(args, executable, resolved_cwd, profile)
@@ -112,6 +118,9 @@ class SandboxRunner:
     def diagnose(self) -> dict[str, Any]:
         profiles: dict[str, object] = {}
         for name, profile in self.config.profiles.items():
+            if profile.backend == "container":
+                profiles[name] = self._diagnose_container(profile)
+                continue
             backend_available = profile.backend == "process" or shutil.which("bwrap") is not None
             backend_operational = profile.backend == "process" or _bubblewrap_usable(profile)
             network_policy_enforced = profile.network == "inherit" or (
@@ -135,6 +144,41 @@ class SandboxRunner:
                 and (profile.backend == "bubblewrap" or not profile.require_os_enforcement),
             }
         return {"enabled": self.config.enabled, "profiles": profiles}
+
+    @staticmethod
+    def _diagnose_container(profile: SandboxProfileConfig) -> dict[str, Any]:
+        details = container_diagnosis(profile)
+        operational = bool(details["engine_operational"] and details["image_present"])
+        return {
+            "backend": "container",
+            "backend_available": details["engine_available"],
+            "backend_operational": operational,
+            "require_os_enforcement": profile.require_os_enforcement,
+            "network": profile.network,
+            "network_policy_enforced": profile.network == "inherit" or operational,
+            "network_isolated": profile.network == "deny" and operational,
+            "filesystem_os_enforced": operational,
+            "environment_allowlist": profile.environment_allowlist,
+            "max_seconds": profile.max_seconds,
+            "max_output_bytes": profile.max_output_bytes,
+            "ready": operational,
+            "container": details,
+            "notes": [
+                note
+                for note in (
+                    "gVisor (runsc) adds a user-space kernel between the process and the host."
+                    if details["gvisor"]
+                    else "Runs on the host kernel (runc); install gVisor for a stronger boundary.",
+                    "The container engine runs as root; a container escape is a host compromise."
+                    if details["engine_rootless"] is False
+                    else None,
+                    "Image not present locally; pull it before use."
+                    if details["engine_operational"] and not details["image_present"]
+                    else None,
+                )
+                if note
+            ],
+        }
 
     def _profile(self, name: str) -> SandboxProfileConfig:
         if not self.config.enabled:
@@ -204,6 +248,75 @@ class SandboxRunner:
             return
         raise SandboxError(f"Executable is not allowed by sandbox profile: {executable}")
 
+    def _container_launch(
+        self,
+        args: list[str],
+        cwd: Path,
+        environment: dict[str, str],
+        profile: SandboxProfileConfig,
+        profile_name: str,
+    ) -> SandboxLaunch:
+        """Run ``args`` inside a fresh container; executables come from the image."""
+
+        import uuid
+
+        settings = profile.container
+        engine = shutil.which(settings.engine)
+        if engine is None:
+            raise SandboxError(
+                f"Sandbox profile {profile_name!r} uses the container backend, but "
+                f"{settings.engine!r} is not installed."
+            )
+        name = args[0]
+        if "/" in name:
+            allowed = any(
+                fnmatch.fnmatchcase(name, pattern)
+                for pattern in profile.allowed_executables
+                if "/" in pattern or pattern == "*"
+            )
+        else:
+            allowed = any(
+                fnmatch.fnmatchcase(name, pattern) for pattern in profile.allowed_executables
+            )
+        if not allowed:
+            raise SandboxError(f"Executable is not allowed by sandbox profile: {name}")
+        runtimes = container_runtimes(settings.engine)
+        if settings.runtime == "runsc" and "runsc" not in runtimes:
+            raise SandboxError(
+                "Sandbox profile requires the gVisor runtime (runsc), but the container engine "
+                "has not registered it."
+            )
+        runtime = "runsc" if settings.runtime != "default" and "runsc" in runtimes else None
+        container_name = f"loro-sandbox-{uuid.uuid4().hex[:12]}"
+        user = f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else "65534:65534"
+        command = [engine, *_container_isolation(profile, runtime, container_name, user)]
+        mounts: list[tuple[Path, bool]] = [(cwd, settings.writable_workspace)]
+        for root_value in profile.writable_roots:
+            root = Path(root_value).expanduser().resolve()
+            if self.workspace_roots and not any(
+                _is_within(root, item) for item in self.workspace_roots
+            ):
+                raise SandboxError(f"Writable sandbox root is outside workspace policy: {root}")
+            if not root.exists():
+                raise SandboxError(f"Writable sandbox root does not exist: {root}")
+            mounts.append((root, True))
+        for path, writable in mounts:
+            # Same path inside and out, so arguments that name workspace files stay valid.
+            command.extend(["--volume", f"{path}:{path}:{'rw' if writable else 'ro'}"])
+        for variable, value in sorted(environment.items()):
+            if variable == "PATH":
+                continue  # the image's PATH, not the host's
+            command.extend(["--env", f"{variable}={value}"])
+        command.extend(["--workdir", str(cwd), settings.image or "", *args])
+        return SandboxLaunch(
+            args=command,
+            cwd=cwd,
+            environment={"PATH": environment.get("PATH", os.defpath)},
+            profile=profile_name,
+            os_enforced=True,
+            cleanup=[engine, "rm", "--force", container_name],
+        )
+
     def _command(
         self,
         args: list[str],
@@ -237,6 +350,112 @@ class SandboxRunner:
             command.extend(["--bind", str(root), str(root)])
         command.extend(["--chdir", str(cwd), "--", *normalized])
         return command, True
+
+
+def _container_isolation(
+    profile: SandboxProfileConfig, runtime: str | None, name: str, user: str
+) -> list[str]:
+    """Flags for an isolated, resource-limited, read-only container."""
+
+    settings = profile.container
+    flags = [
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--init",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        str(settings.pids_limit),
+        "--memory",
+        f"{settings.memory_mb}m",
+        "--memory-swap",
+        f"{settings.memory_mb}m",
+        "--cpus",
+        f"{settings.cpus:g}",
+        "--tmpfs",
+        f"/tmp:rw,noexec,nosuid,size={settings.tmp_mb}m",  # nosec B108
+        "--user",
+        user,
+        "--network",
+        "none" if profile.network == "deny" else "bridge",
+    ]
+    if runtime:
+        flags.extend(["--runtime", runtime])
+    return flags
+
+
+def container_runtimes(engine: str) -> set[str]:
+    """Runtimes the engine has registered (``runsc`` means gVisor is available)."""
+
+    binary = shutil.which(engine)
+    if binary is None:
+        return set()
+    try:
+        result = subprocess.run(  # nosec B603 - fixed engine query
+            [binary, "info", "--format", "{{json .Runtimes}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0:
+        return set()
+    try:
+        import json
+
+        return set(json.loads(result.stdout or "{}"))
+    except ValueError:
+        return set()
+
+
+def container_diagnosis(profile: SandboxProfileConfig) -> dict[str, Any]:
+    """What the container backend would actually enforce on this machine."""
+
+    settings = profile.container
+    binary = shutil.which(settings.engine)
+    operational = False
+    rootless = None
+    image_present = False
+    if binary is not None:
+        try:
+            info = subprocess.run(  # nosec B603 - fixed engine query
+                [binary, "info", "--format", "{{json .SecurityOptions}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            operational = info.returncode == 0
+            rootless = "rootless" in info.stdout if operational else None
+            if operational and settings.image:
+                image = subprocess.run(  # nosec B603 - fixed engine query
+                    [binary, "image", "inspect", settings.image],
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+                image_present = image.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            operational = False
+    runtimes = container_runtimes(settings.engine) if operational else set()
+    gvisor = "runsc" in runtimes and settings.runtime in {"auto", "runsc"}
+    return {
+        "engine": settings.engine,
+        "engine_available": binary is not None,
+        "engine_operational": operational,
+        "engine_rootless": rootless,
+        "image": settings.image,
+        "image_present": image_present,
+        "runtime": "runsc" if gvisor else "default",
+        "gvisor": gvisor,
+    }
 
 
 def _bubblewrap_isolation(profile: SandboxProfileConfig) -> list[str]:
@@ -317,6 +536,7 @@ def _run_bounded(
     timeout: int,
     output_limit: int,
     profile_name: str,
+    cleanup: list[str] | None = None,
 ) -> tuple[int, str, str, bool]:
     # The sandbox validates executable, cwd, environment, limits, and structured argv first.
     process = subprocess.Popen(  # nosec B603
@@ -354,6 +574,7 @@ def _run_bounded(
     except subprocess.TimeoutExpired as error:
         process.kill()
         process.wait()
+        _run_cleanup(cleanup)
         for thread in threads:
             thread.join()
         raise SandboxError(
@@ -362,6 +583,8 @@ def _run_bounded(
     for thread in threads:
         thread.join()
     truncated = bool(state["truncated"])
+    if truncated:
+        _run_cleanup(cleanup)
     stdout = bytes(buffers[0]).decode(errors="replace")
     stderr = bytes(buffers[1]).decode(errors="replace")
     if truncated:
@@ -369,3 +592,14 @@ def _run_bounded(
         if returncode == 0:
             returncode = 125
     return returncode, stdout, stderr, truncated
+
+
+def _run_cleanup(cleanup: list[str] | None) -> None:
+    if not cleanup:
+        return
+    try:
+        subprocess.run(  # nosec B603 - fixed engine command built by the sandbox
+            cleanup, capture_output=True, check=False, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass

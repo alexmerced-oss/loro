@@ -45,6 +45,13 @@ jobs:
           sudo apt-get install -y postgresql-client
           python -m pip install -e ".[dev,integration]"
 
+      - name: Run container sandbox integration tests
+        env:
+          LORO_INTEGRATION_DOCKER: "1"
+        run: |
+          docker pull alpine:latest
+          python -m pytest -m integration tests/test_container_sandbox.py
+
       - name: Run Postgres integration tests
         env:
           LORO_INTEGRATION_POSTGRES: "1"

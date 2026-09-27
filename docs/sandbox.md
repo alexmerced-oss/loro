@@ -96,6 +96,44 @@ Filesystem exposure is controlled by two profile fields:
 `--unshare-pid` also means a sandboxed process can no longer read another process's
 `/proc/<pid>/environ`.
 
+## Container Backend (Docker, Podman, gVisor)
+
+Status: experimental in 0.22. `backend = "container"` runs each command in a fresh container.
+It is the enforced option on macOS (Docker Desktop or Podman) and on Linux hosts without
+Bubblewrap.
+
+```toml
+[sandbox.profiles.tests-in-container]
+backend = "container"
+network = "deny"
+allowed_executables = ["python3", "pytest"]
+writable_roots = ["./build"]
+
+[sandbox.profiles.tests-in-container.container]
+engine = "docker"          # or "podman"
+image = "python:3.12-slim" # the image supplies the executables
+runtime = "auto"           # auto uses gVisor (runsc) when registered; "runsc" requires it
+memory_mb = 1024
+cpus = 1.0
+pids_limit = 256
+tmp_mb = 64
+writable_workspace = false
+```
+
+Every run uses `--rm --init --read-only --cap-drop ALL --security-opt no-new-privileges`, memory,
+swap, CPU and PID limits, a small `noexec` `/tmp`, the calling user's uid and gid, and
+`--network none` when `network = "deny"`. The working directory is mounted read-only at the same
+path (read-write only with `writable_workspace = true`) and `writable_roots` are mounted
+read-write; nothing else from the host is visible. Allowlisted environment variables are passed
+in, except `PATH`, which comes from the image. Executables are checked against
+`allowed_executables` by name (or by path pattern for paths) and must exist in the image. When a
+run times out or exceeds its output limit, Loro removes the container, not only the CLI process.
+
+`loro sandbox doctor` reports, per container profile: whether the engine is installed and
+reachable, whether the image is present, whether gVisor is used, and whether the engine runs as
+root (in which case a container escape is a host compromise). With the default runtime the
+process shares the host kernel; gVisor adds a user-space kernel in between.
+
 ## Environment And Output
 
 Child environments start empty and inherit only named variables. Provider, audit, database, MCP,

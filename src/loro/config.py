@@ -144,8 +144,23 @@ DEFAULT_MASKED_PATHS = (
 )
 
 
+class ContainerSandboxConfig(BaseModel):
+    """Settings for the container backend (Docker, or a Docker-compatible CLI like Podman)."""
+
+    engine: str = "docker"  # the CLI to run, e.g. "docker" or "podman"
+    image: str | None = None  # required: the image that provides the allowed executables
+    runtime: Literal["auto", "runsc", "default"] = "auto"  # auto uses gVisor when registered
+    memory_mb: int = Field(default=1024, ge=64, le=65536)
+    cpus: float = Field(default=1.0, gt=0, le=64)
+    pids_limit: int = Field(default=256, ge=16, le=65536)
+    tmp_mb: int = Field(default=64, ge=1, le=16384)
+    # Mount the working directory writable. Off by default: the workspace is read-only and only
+    # writable_roots are mounted read-write.
+    writable_workspace: bool = False
+
+
 class SandboxProfileConfig(BaseModel):
-    backend: Literal["process", "bubblewrap"] = "process"
+    backend: Literal["process", "bubblewrap", "container"] = "process"
     require_os_enforcement: bool = False
     network: Literal["inherit", "deny"] = "inherit"
     allowed_executables: list[str] = Field(default_factory=lambda: ["*"])
@@ -166,6 +181,13 @@ class SandboxProfileConfig(BaseModel):
     trusted_executable_prefixes: list[str] = Field(default_factory=list)
     max_seconds: int = Field(default=120, ge=1, le=3600)
     max_output_bytes: int = Field(default=1_000_000, ge=1024, le=100_000_000)
+    container: ContainerSandboxConfig = Field(default_factory=ContainerSandboxConfig)
+
+    @model_validator(mode="after")
+    def _container_needs_image(self) -> "SandboxProfileConfig":
+        if self.backend == "container" and not self.container.image:
+            raise ValueError("A container sandbox profile needs container.image.")
+        return self
 
     @field_validator("environment_allowlist")
     @classmethod
