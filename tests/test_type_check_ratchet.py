@@ -63,6 +63,15 @@ def test_ignore_list_matches_modules_that_still_fail(tmp_path: Path) -> None:
     ):
         value = config[key]
         lines.append(f"{key} = {str(value) if not isinstance(value, bool) else value}")
+    # Keep every override except the ignore list itself (for example the numpy import skip),
+    # so the unrestricted run sees the same third-party handling as CI.
+    for override in config.get("overrides", []):
+        if override.get("ignore_errors"):
+            continue
+        lines.append(f"[mypy-{','.join(override['module'])}]")
+        for key, value in override.items():
+            if key != "module":
+                lines.append(f"{key} = {value}")
     unrestricted = tmp_path / "mypy.ini"
     unrestricted.write_text("\n".join(lines) + "\n", encoding="utf-8")
     completed = subprocess.run(
@@ -81,6 +90,9 @@ def test_ignore_list_matches_modules_that_still_fail(tmp_path: Path) -> None:
         text=True,
         timeout=600,
         check=False,
+    )
+    assert "errors prevented further checking" not in completed.stdout, (
+        "mypy stopped before checking Loro's modules:\n" + completed.stdout[-2000:]
     )
     failing = {
         re.sub(r"\.__init__$", "", match.group(1).replace("/", "."))
