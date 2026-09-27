@@ -106,7 +106,7 @@ covers contrast in both themes, accessible names, heading structure, pointer-tar
 text, and horizontal overflow; the second covers the tab ring, focus indication,
 `prefers-reduced-motion`, 200% zoom, and narrow viewports. Both are clean across every view.
 
-The 0.17.0 release candidate aligns OAP and AGS with their canonical 1.0 schemas and 1.0.1 Python
+Release 0.17.0 aligned OAP and AGS with their canonical 1.0 schemas and 1.0.1 Python
 support libraries. CI pins OAP commit `7fb633a1a59dd7636ffb0030d254f2f58934f74a` and AGS commit
 `f180a4dbd07911f90dd0821f531d7ccd51bb0764`. Loro claims OAP Level 3 and AGS Level 3 in
 [machine-readable OAP evidence](oap-conformance.json) and

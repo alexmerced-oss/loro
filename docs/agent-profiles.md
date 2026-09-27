@@ -1,6 +1,6 @@
 # Open Agent Profiles
 
-Loro `0.17.0` implements Open Agent Profile (OAP) 1.0 Level 3 named agents using
+Since `0.17.0`, Loro implements Open Agent Profile (OAP) 1.0 Level 3 named agents using
 `open-agent-profile>=1.0.1,<2`. CI pins the canonical upstream repository at commit
 `7fb633a1a59dd7636ffb0030d254f2f58934f74a` and checks the upstream examples in addition to Loro's
 behavioral tests. OAP remains an experimental Loro product surface until the 1.0 support boundary

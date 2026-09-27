@@ -422,7 +422,7 @@ references. `loro setup gateway` configures one signed endpoint and trusted iden
 
 ## Open Agent Profiles
 
-Loro `0.17.0` provides an optional additive `[agent_profiles]` section for named OAP 1.0 agents:
+Since `0.17.0`, Loro provides an optional additive `[agent_profiles]` section for named OAP 1.0 agents:
 
 ```toml
 [agent_profiles]

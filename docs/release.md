@@ -148,6 +148,11 @@ Release `0.17.0` aligns OAP and AGS with the published 1.0.1 support libraries, 
 OAP documents and state deltas, uses RFC 8785 digests, and pins immutable upstream conformance
 fixtures in CI. See [Loro 0.17.0](releases/0.17.0.md).
 
+Releases `0.18.0` through `0.21.0` are described in their own notes:
+[0.18.0](releases/0.18.0.md), [0.19.0](releases/0.19.0.md), [0.19.1](releases/0.19.1.md),
+[0.19.2](releases/0.19.2.md), [0.20.0](releases/0.20.0.md) and [0.21.0](releases/0.21.0.md).
+Unreleased work for the next version collects in [0.22.0](releases/0.22.0.md) until it is tagged.
+
 ## Documentation
 
 - Confirm `README.md` examples still match CLI behavior.
