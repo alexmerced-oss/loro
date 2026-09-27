@@ -28,6 +28,7 @@
       "collect",
       "collector-verify",
       "doctor",
+      "export",
       "flush",
       "metrics",
       "query",

@@ -37,6 +37,7 @@ from loro.resources import memory_resource, provider_resource
 from loro.session_messages import SessionMailbox, SessionMessage
 from loro.sessions import SessionRecord, SessionStore
 from loro.skills import LoadedSkill, SkillRegistry
+from loro.telemetry import Telemetry, shared_telemetry
 from loro.tool_runtime import ToolCall, ToolExecution, ToolRegistry, parse_tool_calls
 from loro.tool_schemas import canonical_tool_name, tool_catalog
 
@@ -74,6 +75,7 @@ class AgentRuntime:
         _subagent_depth: int = 0,
         _profile_cwd: Path | None = None,
         identity: IdentityContext | None = None,
+        telemetry: Telemetry | None = None,
     ) -> None:
         self.profile = profile
         self.base_config = config
@@ -88,10 +90,7 @@ class AgentRuntime:
         self.approvals = ApprovalManager(
             config.approvals,
             self.identity,
-            event_handler=lambda event_type, payload: self.audit.write(
-                event_type,
-                **dict(payload),
-            ),
+            event_handler=self._approval_event,
         )
         self.sessions = SessionStore(config.sessions, config.safety)
         self.mailbox = SessionMailbox(config.sessions, config.safety)
@@ -108,8 +107,65 @@ class AgentRuntime:
             project_root=self.profile_cwd,
         )
         self.usage = UsageBudget(config.runtime, config.model)
+        self.telemetry = telemetry or shared_telemetry(self.config.telemetry)
 
     def run(
+        self,
+        prompt: str,
+        mode: str,
+        *,
+        session_id: str | None = None,
+        on_token: Callable[[str], None] | None = None,
+        on_event: RuntimeEventHandler | None = None,
+        history: Sequence[ModelMessage] | None = None,
+    ) -> AgentResult:
+        """Run one task inside a ``loro.run`` span when telemetry is enabled."""
+
+        attributes = {
+            "loro.mode": mode,
+            "gen_ai.system": self.config.model.provider,
+            "gen_ai.request.model": self.config.model.model,
+            "loro.agent": self.profile.resolved.document.metadata.name if self.profile else None,
+            "loro.subagent_depth": self.subagent_depth,
+        }
+        with self.telemetry.span("loro.run", attributes) as span:
+            result = self._run(
+                prompt,
+                mode,
+                session_id=session_id,
+                on_token=on_token,
+                on_event=on_event,
+                history=history,
+            )
+            usage = result.usage
+            self.telemetry.set(
+                span,
+                {
+                    "loro.run_id": result.run_id,
+                    "loro.stop_reason": result.stop_reason,
+                    "loro.steps": result.steps,
+                    "loro.tool_calls": len(result.tool_executions),
+                    "gen_ai.usage.input_tokens": usage.get("input_tokens"),
+                    "gen_ai.usage.output_tokens": usage.get("output_tokens"),
+                },
+            )
+            if result.stop_reason == "provider_error":
+                self.telemetry.error(span, "provider request failed")
+            common = {"loro.mode": mode, "gen_ai.system": self.config.model.provider}
+            self.telemetry.count("runs", 1, **common, **{"loro.stop_reason": result.stop_reason})
+            self.telemetry.count(
+                "tokens", usage.get("input_tokens", 0), **common, **{"gen_ai.token.type": "input"}
+            )
+            self.telemetry.count(
+                "tokens", usage.get("output_tokens", 0), **common, **{"gen_ai.token.type": "output"}
+            )
+            return result
+
+    def _approval_event(self, event_type: str, payload: Mapping[str, Any]) -> object:
+        self.telemetry.count("approvals", 1, **{"loro.approval.event": event_type})
+        return self.audit.write(event_type, **dict(payload))
+
+    def _run(
         self,
         prompt: str,
         mode: str,
@@ -319,11 +375,26 @@ class AgentRuntime:
                 _emit_runtime_event(on_event, "model.started", {"step": step})
                 model_started = monotonic()
                 self.usage.before_model(messages)
-                model_response = (
-                    _stream_completion(client, messages, on_token)
-                    if on_token is not None
-                    else client.complete(messages)
-                )
+                with self.telemetry.span(
+                    "loro.model.call",
+                    {
+                        "loro.step": step,
+                        "gen_ai.system": self.config.model.provider,
+                        "gen_ai.request.model": self.config.model.model,
+                    },
+                ):
+                    try:
+                        model_response = (
+                            _stream_completion(client, messages, on_token)
+                            if on_token is not None
+                            else client.complete(messages)
+                        )
+                    finally:
+                        self.telemetry.record(
+                            "model_latency",
+                            (monotonic() - model_started) * 1000,
+                            **{"gen_ai.system": self.config.model.provider},
+                        )
                 self.usage.after_model(model_response)
                 output_decision = self.protection.enforce(model_response.content, "model_output")
                 model_response_content = output_decision.content
@@ -717,8 +788,18 @@ class AgentRuntime:
                 {"tool": call.name, "args": call.args, "step": step},
             )
             started = monotonic()
-            execution = self.tools.execute(call)
+            with self.telemetry.span(
+                "loro.tool", {"loro.tool": call.name, "loro.step": step}
+            ) as span:
+                execution = self.tools.execute(call)
+                self.telemetry.set(span, {"loro.tool.ok": execution.ok})
+                if not execution.ok:
+                    self.telemetry.error(span, "tool reported an error")
             latency_ms = round((monotonic() - started) * 1000, 3)
+            self.telemetry.count(
+                "tool_calls", 1, **{"loro.tool": call.name, "loro.tool.ok": execution.ok}
+            )
+            self.telemetry.record("tool_latency", latency_ms, **{"loro.tool": call.name})
             executions.append(execution)
             self.audit.write(
                 "runtime.tool_executed",

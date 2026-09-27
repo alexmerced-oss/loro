@@ -85,7 +85,7 @@ loro: capabilities, agents, approvals, artifacts, audit, brief, config, configur
 loro agents: apply, configure, create, digest, explain, forget, generate, history, list, proposals, review, show, state, validate
 loro artifacts: verify
 loro approvals: list, recovery
-loro audit: collect, collector-verify, doctor, flush, metrics, query, report, verify
+loro audit: collect, collector-verify, doctor, export, flush, metrics, query, report, verify
 loro brief: executive, incident, meeting, project
 loro credentials: delete, doctor, list, set
 loro data: applicable-policies, catalog, catalog-role, catalog-roles, catalogs, explain-access, namespace, namespaces, polaris, policies, policy, principal-role, principal-roles, privileges, schema, table, tables, view, views

@@ -706,6 +706,19 @@ class MCPConfig(BaseModel):
         return self
 
 
+class AuditForwardConfig(BaseModel):
+    """Best-effort copy of each audit event to a SIEM over syslog."""
+
+    enabled: bool = False
+    format: Literal["ocsf", "cef"] = "ocsf"
+    protocol: Literal["udp", "tcp"] = "tcp"
+    host: str = "127.0.0.1"
+    port: int = Field(default=6514, ge=1, le=65535)
+    app_name: str = Field(default="loro", pattern=r"^[!-~]{1,48}$")
+    facility: int = Field(default=13, ge=0, le=23)  # 13 = log audit
+    timeout_seconds: float = Field(default=3.0, gt=0, le=60)
+
+
 class AuditConfig(BaseModel):
     enabled: bool = True
     schema_version: str = "1.0"
@@ -725,6 +738,30 @@ class AuditConfig(BaseModel):
     timeout_seconds: float = Field(default=10, gt=0, le=300)
     metrics_enabled: bool = False
     metrics_path: str = "~/.local/state/loro/operational-metrics.json"
+    forward: AuditForwardConfig = Field(default_factory=AuditForwardConfig)
+
+
+class TelemetryConfig(BaseModel):
+    """OpenTelemetry traces and metrics (requires the loro-agent[otel] extra)."""
+
+    enabled: bool = False
+    exporter: Literal["otlp", "console", "none"] = "otlp"
+    # Base OTLP/HTTP URL such as http://collector:4318; unset uses the OTEL_EXPORTER_OTLP_*
+    # environment variables and then the OpenTelemetry default.
+    otlp_endpoint: str | None = None
+    # Header name -> environment variable holding its value, so tokens never sit in TOML.
+    otlp_headers_env: dict[str, str] = Field(default_factory=dict)
+    service_name: str = "loro"
+    resource_attributes: dict[str, str] = Field(default_factory=dict)
+    metric_interval_seconds: int = Field(default=60, ge=5, le=3600)
+
+    def otlp_headers_from_env(self) -> dict[str, str] | None:
+        headers = {
+            name: value
+            for name, variable in self.otlp_headers_env.items()
+            if (value := os.environ.get(variable))
+        }
+        return headers or None
 
 
 class ContextConfig(BaseModel):
@@ -992,6 +1029,7 @@ class LoroConfig(BaseModel):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     sessions: SessionConfig = Field(default_factory=SessionConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     agraph: AGraphConfig = Field(default_factory=AGraphConfig)
@@ -1097,6 +1135,8 @@ def _config_section_data(config: LoroConfig, section: str) -> dict[str, Any]:
         return {"safety": config.safety.model_dump(exclude_none=True)}
     if section == "context":
         return {"context": config.context.model_dump()}
+    if section == "telemetry":
+        return {"telemetry": config.telemetry.model_dump(exclude_none=True)}
     raise ValueError(f"Unsupported config section: {section}")
 
 

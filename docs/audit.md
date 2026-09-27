@@ -155,6 +155,11 @@ events remain.
 - Schema completeness depends on call sites supplying action, normalized target, policy, approval,
   and result metadata. The governed event-family inventory checks literal event families in CI.
 
+## SIEM Forwarding
+
+Audit events can be forwarded over syslog as OCSF JSON or CEF (`[audit.forward]`) and exported
+with `loro audit export`. See [Observability](observability.md).
+
 ## Per-Run Evidence
 
 `loro run export RUN_ID --out run.zip` packages the hash-chained audit events of one run, with

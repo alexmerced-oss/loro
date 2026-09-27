@@ -140,3 +140,64 @@ def audit_collector_verify(
         raise typer.BadParameter(str(error)) from error
     console.print_json(data=result.__dict__)
     raise typer.Exit(code=0 if result.ok else 1)
+
+
+@audit_app.command("export")
+def audit_export(
+    format: Annotated[
+        str, typer.Option("--format", help="ocsf (OCSF 1.3 JSON lines) or cef (ArcSight CEF).")
+    ] = "ocsf",
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="File to write; stdout when omitted.")
+    ] = None,
+    since: Annotated[
+        str | None, typer.Option("--since", help="Only events at or after this ISO-8601 time.")
+    ] = None,
+) -> None:
+    """Convert the local audit log to OCSF JSON or CEF lines for a SIEM.
+
+    Example: loro audit export --format cef --since 2026-09-01T00:00:00Z -o loro.cef
+
+    Live forwarding over syslog is configured with [audit.forward]; this command backfills.
+    """
+
+    import json
+    from datetime import datetime
+
+    from loro.audit.forwarding import render
+
+    if format not in {"ocsf", "cef"}:
+        raise typer.BadParameter("--format must be ocsf or cef.")
+    lower = None
+    if since:
+        try:
+            lower = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise typer.BadParameter("--since must be an ISO-8601 timestamp.") from error
+    path = Path(load_config().audit.path).expanduser()
+    if not path.exists():
+        raise typer.BadParameter(f"No audit log at {path}. Check `loro audit doctor`.")
+    lines: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise typer.BadParameter(
+                "The audit log contains invalid JSON; run `loro audit verify`."
+            ) from error
+        if lower is not None:
+            try:
+                stamp = datetime.fromisoformat(str(event.get("timestamp")).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if stamp < lower:
+                continue
+        lines.append(render(event, format))
+    text = "\n".join(lines) + ("\n" if lines else "")
+    if output is None:
+        typer.echo(text, nl=False)
+        return
+    output.write_text(text, encoding="utf-8")
+    console.print(f"Wrote {len(lines)} {format.upper()} event(s) to {output}", highlight=False)

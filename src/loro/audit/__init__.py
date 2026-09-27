@@ -21,6 +21,8 @@ from loro.config import AuditConfig, SafetyConfig
 from loro.data_protection import DataProtectionEngine
 from loro.identity import IdentityContext
 
+_FORWARDERS: dict[str, Any] = {}
+
 
 class AuditDeliveryError(RuntimeError):
     """Raised when required audit delivery cannot be completed or buffered."""
@@ -86,6 +88,7 @@ class AuditLogger:
             self.sink.deliver(payload)
             event.delivery_status = "delivered"
             self._observe_metrics(event_type, details, event.delivery_status)
+            self._forward(payload)
             return event
         except AuditSinkError as error:
             if self.config.sink != "http":
@@ -110,6 +113,27 @@ class AuditLogger:
             warnings.warn(message, RuntimeWarning, stacklevel=2)
             self._observe_metrics(event_type, details, event.delivery_status)
             return event
+
+    def _forward(self, payload: dict[str, Any]) -> None:
+        """Copy an event to the configured SIEM; failures warn and never block the run."""
+
+        if not self.config.forward.enabled:
+            return
+        from loro.audit.forwarding import SyslogForwarder
+
+        forwarder = _FORWARDERS.get(self.config.forward.model_dump_json())
+        if forwarder is None:
+            forwarder = SyslogForwarder(self.config.forward)
+            _FORWARDERS[self.config.forward.model_dump_json()] = forwarder
+        try:
+            forwarder.send(payload)
+        except OSError as error:
+            warnings.warn(
+                f"Audit forwarding to {self.config.forward.host}:{self.config.forward.port} "
+                f"failed: {error}. The local audit log is unaffected.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
     def flush(self) -> AuditFlushResult:
         if self.config.sink != "http":
