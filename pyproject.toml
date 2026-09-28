@@ -98,6 +98,8 @@ dev = [
   # or add lint rules. Raise both bounds together after reformatting.
   "ruff>=0.16,<0.17",
   "mypy>=1.11,<2",
+  # Without stubs, mypy reports every `import yaml` as an error despite ignore_missing_imports.
+  "types-PyYAML>=6,<7",
   "opentelemetry-api>=1.27,<2",
   "opentelemetry-sdk>=1.27,<2",
   "mcp>=2.0,<3",
