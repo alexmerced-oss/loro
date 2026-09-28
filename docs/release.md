@@ -149,10 +149,10 @@ Release `0.17.0` aligns OAP and AGS with the published 1.0.1 support libraries, 
 OAP documents and state deltas, uses RFC 8785 digests, and pins immutable upstream conformance
 fixtures in CI. See [Loro 0.17.0](releases/0.17.0.md).
 
-Releases `0.18.0` through `0.21.0` are described in their own notes:
+Releases `0.18.0` through `0.22.0` are described in their own notes:
 [0.18.0](releases/0.18.0.md), [0.19.0](releases/0.19.0.md), [0.19.1](releases/0.19.1.md),
-[0.19.2](releases/0.19.2.md), [0.20.0](releases/0.20.0.md) and [0.21.0](releases/0.21.0.md).
-Unreleased work for the next version collects in [0.22.0](releases/0.22.0.md) until it is tagged.
+[0.19.2](releases/0.19.2.md), [0.20.0](releases/0.20.0.md), [0.21.0](releases/0.21.0.md) and
+[0.22.0](releases/0.22.0.md).
 
 ## Documentation
 
@@ -161,6 +161,16 @@ Unreleased work for the next version collects in [0.22.0](releases/0.22.0.md) un
 - Confirm `scripts/generate_release_contract.py --check` passes without unreviewed drift.
 - Confirm `scripts/check_release_metadata.py --strict` passes after the version bump (see
   "Version bump" below).
+- Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
+  changed command names or safety guarantees.
+- Confirm the MCP support matrix matches green conformance workflow artifacts for the release
+  commit, and run Agent Skills/session-message security tests.
+- Confirm the AGS conformance workflow is green on the release commit and the bundled Skill is
+  present in the wheel.
+- Confirm gateway signature/replay/identity tests pass and the supported adapters match
+  [Channel Gateways](channel-gateways.md).
+- Confirm the OS credential backend fails closed when unavailable and release artifacts contain no
+  vault values.
 
 ## Version bump
 
@@ -177,7 +187,11 @@ The version appears in these places. Change all of them in one release-preparati
 6. The README "Current release" line: point it at the new notes and drop the "work in progress"
    sentence.
 7. `docs/roadmap-1.0.md`: set the milestone row for the new minor to `Released`.
-8. Regenerate the release contract, which picks up the package version, release line and matrix
+8. The prose that names the current release: the opening paragraph of `docs/project-status.md`,
+   the opening and "Current Baseline" paragraphs of `docs/roadmap-1.0.md`, the release-notes
+   index in `docs/README.md` (drop "(unreleased)"), the release list above in this file, and the
+   example tag and wheel names in `docs/release-signing.md` and `docs/consumer-verification.md`.
+9. Regenerate the release contract, which picks up the package version, release line and matrix
    digests: `PYTHONPATH=src python scripts/generate_release_contract.py --write`.
 
 Then all of these must pass:
@@ -193,18 +207,8 @@ Tests read the release line from the package version, so the bump needs no test 
 sequence was rehearsed for 0.22.0 in a scratch worktree on 2026-09-27: every check passed and the
 full suite passed at 0.22.0.
 
-**Prerequisite for 0.22.0:** `agent-approval-interchange` 0.2.0 must be on PyPI first; Loro
-requires `>=0.2.0,<0.3`.
-- Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
-  changed command names or safety guarantees.
-- Confirm the MCP support matrix matches green conformance workflow artifacts for the release
-  commit, and run Agent Skills/session-message security tests.
-- Confirm the AGS conformance workflow is green on the release commit and the bundled Skill is
-  present in the wheel.
-- Confirm gateway signature/replay/identity tests pass and the supported adapters match
-  [Channel Gateways](channel-gateways.md).
-- Confirm the OS credential backend fails closed when unavailable and release artifacts contain no
-  vault values.
+Loro 0.22.0 requires `agent-approval-interchange>=0.2.0,<0.3`; a release whose dependency floor
+moves must wait until that dependency is on PyPI, or CI and clean installs cannot resolve it.
 
 ## Packaging
 

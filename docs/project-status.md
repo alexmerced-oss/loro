@@ -2,7 +2,7 @@
 
 ## Assessment
 
-Loro `0.21.0` is an **experimental feature release built on the release-quality 0.10
+Loro `0.22.0` is an **experimental feature release built on the release-quality 0.10
 stabilization baseline for controlled evaluation**. The deliberately limited stable core remains
 unchanged. Open Agent Profile and Agentic Graph support are aligned with their published 1.0
 specifications and compatible 1.x support libraries, while remaining experimental in Loro's product
@@ -177,7 +177,7 @@ private interface and may change between minor releases.
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| Official conformance scenarios for every advertised server capability pass | Met | `MCP Conformance` workflow: `@modelcontextprotocol/conformance` 0.1.16 server scenarios, green on the v0.21.0 tag and weekly on `main`; must be green again on the 0.22.0 tag |
+| Official conformance scenarios for every advertised server capability pass | Met | `MCP Conformance` workflow: `@modelcontextprotocol/conformance` 0.1.16 server scenarios, green on the v0.21.0 tag and weekly on `main`; must be green on the v0.22.0 tag before publication |
 | Official SDK interoperability tests pass | Met | `tests/test_mcp_sdk.py`, `tests/test_mcp_server.py` |
 | Least privilege: only explicitly exported read-only tools, deny by default | Met | `mcp.server.export_tools` ceiling tests; [MCP](mcp.md) |
 | DNS-rebinding protection on Streamable HTTP | Met | `dns-rebinding-protection` conformance scenario |

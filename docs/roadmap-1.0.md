@@ -1,13 +1,13 @@
 # Loro Roadmap To 1.0
 
-Loro `0.21.0` (released 2026-09-12) is the current release. It focused on durable approvals,
-capability readiness and explicit graph recovery; see the [0.21.0 release notes](releases/0.21.0.md).
-Work for `0.22.0` is tracked in the [unreleased 0.22.0 notes](releases/0.22.0.md). The stable-core
-and enterprise GA boundaries below remain unchanged.
+Loro `0.22.0` (released 2026-09-28) is the current release. It focused on multi-turn conversation
+context with compaction, per-run evidence export and the shared AAIS approval store; see the
+[0.22.0 release notes](releases/0.22.0.md). The stable-core and enterprise GA boundaries below
+remain unchanged.
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.21.0`. It records the
+This is the single authoritative roadmap for work remaining after Loro `0.22.0`. It records the
 experimental Open Agent Profile releases and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -18,7 +18,7 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.21.0` preserves the 0.10 stable-core baseline; releases 0.18 through 0.21 are summarized
+Loro `0.22.0` preserves the 0.10 stable-core baseline; releases 0.18 through 0.22 are summarized
 in the milestone table below. As of `0.17.0`, Loro includes the
 Level 3 OAP harness delivered provisionally in 0.12 and aligned to the published specification in
 0.17, the interactive workflows introduced in 0.13, the
@@ -104,7 +104,7 @@ available for evaluation.
 | `0.19` | Released | Governed prompt-driven OAP profile authoring, `~/.agentprofiles` discovery, a packaged WebMCP bridge, and (in 0.19.2) the AAIS 1.0 approval authority. |
 | `0.20` | Released | WebMCP becomes a governed capability in the CLI and Web UI, with exact-origin allowlists. |
 | `0.21` | Released | Durable cross-client approvals, capability readiness reporting, and explicit graph recovery. |
-| `0.22` | In progress | Multi-turn conversation context with compaction, per-run evidence export, and lenient type checking. |
+| `0.22` | Released | Multi-turn conversation context with compaction, per-run evidence export, and lenient type checking. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 0.11: Open Agent Profile
