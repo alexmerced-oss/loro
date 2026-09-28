@@ -176,7 +176,19 @@ class AgentProfileRegistry:
         composed_raw = _deep_merge(composed_raw, raw)
         composed_raw["extends"] = list(document.extends)
         composed_raw["metadata"] = document.metadata.model_dump(mode="json", exclude_none=True)
+        leaf_source = raw.get("canonical_source")
         document = AgentProfileModel.model_validate(composed_raw)
+        if parents and isinstance(leaf_source, dict):
+            # Digests cover authored content only (OAP SPEC 2.2, no filled-in defaults). A
+            # composed profile hashes its parents' authored documents merged under its own,
+            # so a parent that gains authority still changes the child's digest.
+            merged: dict[str, Any] = {}
+            for parent in parents:
+                merged = _deep_merge(merged, parent.document.canonical_source or {})
+            merged = _deep_merge(merged, leaf_source)
+            merged["extends"] = deepcopy(leaf_source.get("extends", []))
+            merged["metadata"] = deepcopy(leaf_source.get("metadata", {}))
+            document.canonical_source = merged
         warnings = tuple(
             [*inherited_warnings, *(f"shadowed profile: {path}" for path in metadata.shadowed)]
         )
@@ -325,12 +337,13 @@ def _markdown_document(text: str) -> dict[str, Any]:
     value = _safe_load(match.group(1)) or {}
     if not isinstance(value, dict):
         raise ProfileError("Markdown agent profile frontmatter must be an object.")
-    body = match.group(2).strip()
+    body = match.group(2).lstrip("\n")
     role = value.setdefault("spec", {}).setdefault("role", {})
-    if body and role.get("instructions"):
+    if body.strip() and role.get("instructions"):
         raise ProfileError("Role instructions cannot appear in both frontmatter and body.")
-    if body:
-        role["instructions"] = body
+    if body.strip():
+        # Same normalization as the reference library (OAP SPEC 2.1), so digests agree.
+        role["instructions"] = body.rstrip() + "\n"
     return value
 
 

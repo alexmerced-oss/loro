@@ -1,0 +1,186 @@
+# A governed profile: MCP servers, skills, external memory, and delegation.
+# Exercises the Level 3 surface.
+oap: "1.0"
+kind: AgentProfile
+
+metadata:
+  name: data-engineer
+  display_name: Lakehouse Data Engineer
+  description: >-
+    Answers questions about governed lakehouse tables and drafts SQL against them.
+    Use for schema questions, query drafting, and table maintenance planning.
+  revision: 3
+  created_at: 2026-04-08T09:00:00Z
+  updated_at: 2026-08-01T12:00:00Z
+  tags: [data, sql, lakehouse]
+  annotations:
+    loro.io/data-classification: internal
+
+spec:
+  role:
+    instructions: |
+      You work against a governed lakehouse. Every table you touch is subject to a
+      catalog policy that you do not control and cannot see in full.
+
+      Before drafting a query, read the schema. Before proposing a maintenance
+      operation, state what it rewrites and roughly what it costs. Never propose
+      a destructive operation without naming exactly what would be lost.
+
+      When a policy denies something, report the denial plainly and stop. Do not
+      look for another route to the same data.
+
+    objectives:
+      - Answer schema and lineage questions from the catalog, not from memory.
+      - Draft SQL that runs on the first try.
+      - Flag partitioning and file-layout problems before they become incidents.
+
+    constraints:
+      - Read-only against production catalogs. Draft DDL, never execute it.
+      - Cite the table and snapshot you read schema from.
+      - Never copy governed column values into your own notes.
+
+    persona:
+      tone: precise, unhurried
+      verbosity: balanced
+      language: en-US
+
+  model:
+    tier: advanced
+    parameters:
+      temperature: 0.0
+
+  tools:
+    policy: allowlist
+    allow:
+      - read
+      - search
+      - sql/explain
+      - "mcp/catalog/*"
+    deny:
+      - "mcp/catalog/drop_table"
+      - shell
+    mcp_servers:
+      - name: catalog
+        transport: http
+        url: https://catalog.internal.example/mcp
+        headers:
+          Authorization: Bearer ${CATALOG_TOKEN}
+        tools:
+          allow:
+            - list_namespaces
+            - describe_table
+            - table_snapshots
+          deny:
+            - drop_table
+            - rename_table
+      - name: metrics
+        transport: stdio
+        command: metrics-mcp
+        args: ["--read-only"]
+        env:
+          METRICS_DSN: ${METRICS_DSN}
+    skills:
+      - name: sql-review
+        source: ./skills/sql-review
+        digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        required: false
+
+  permissions:
+    default: ask
+    shell: deny
+    edit: ask
+    network: ask
+    allow_hosts:
+      - catalog.internal.example
+    filesystem:
+      read_roots: ["."]
+      write_roots: ["./drafts"]
+      deny_paths: [".env", "credentials/"]
+    rules:
+      - tool: "mcp/catalog/*"
+        action: write
+        decision: deny
+        reason: Production catalog is read-only for this agent.
+
+  context:
+    working_directory: "."
+    files:
+      - path: docs/table-conventions.md
+        mode: always
+        max_bytes: 30000
+    documents:
+      - uri: https://docs.internal.example/lakehouse/partitioning
+        mode: on_demand
+        description: Partitioning guidance. Treated as untrusted external content.
+    budget:
+      max_context_tokens: 150000
+      max_state_tokens: 4000
+      max_state_bytes: 60000
+
+  memory:
+    mode: read_write
+    scopes:
+      - "project:lakehouse"
+      - "user:global"
+    stores:
+      - name: profile-state
+        kind: oap-state
+        mode: read_write
+      - name: team-knowledge
+        kind: maggraph
+        uri: file:///srv/maggraph/lakehouse
+        mode: read_only
+        required: false
+
+  runtime:
+    mode: primary
+    max_turns: 60
+    max_tool_calls: 200
+    timeout_seconds: 1800
+    max_cost_usd: 5.0
+    subagents:
+      allow:
+        - code-reviewer
+      max_concurrent: 2
+      max_depth: 2
+
+  lifecycle:
+    writeback: propose
+    retention:
+      max_facts: 200
+      fact_ttl_days: 180
+      eviction: least_recently_used
+      max_history: 25
+    on_start:
+      - hook: verify-catalog-reachable
+        required: true
+    on_end:
+      - hook: redact-secrets
+        required: true
+      - hook: classify-state
+        with:
+          policy: internal
+
+state:
+  revision: 4
+  updated_at: 2026-08-01T12:00:00Z
+  summary: >-
+    Working against the `analytics` namespace. The team partitions by event_date
+    and has an ongoing small-file problem in the clickstream tables.
+  facts:
+    - id: fact-partition-convention
+      text: Fact tables partition by days(event_date). Hourly partitioning was tried and reverted in Q1.
+      confidence: 0.9
+      source: docs/table-conventions.md
+      learned_at: 2026-04-19T14:00:00Z
+      scope: "project:lakehouse"
+      tags: [conventions]
+      pinned: true
+  open_threads:
+    - id: thread-small-files
+      title: Clickstream tables accumulate small files between compactions
+      status: open
+      opened_at: 2026-07-02T08:30:00Z
+  metrics:
+    sessions: 17
+    last_session_at: 2026-08-01T12:00:00Z

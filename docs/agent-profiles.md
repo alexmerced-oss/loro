@@ -54,7 +54,8 @@ adjustment made by Loro policy.
 
 `extends` accepts one profile name or an ordered list. Loro resolves the inheritance graph from
 the same trusted discovery roots, rejects cycles and references deeper than
-`max_reference_depth`, and computes digests from the composed document. Every inheritance layer is
+`max_reference_depth`, and computes digests from the composed authored documents (see
+[Digests](#digests)). Every inheritance layer is
 then evaluated separately, so a child cannot widen a parent's tool, permission, path, runtime,
 MCP, Skill, memory, or subagent ceiling. Composed profiles use `writeback = "off"`; update a leaf
 profile explicitly rather than applying a state delta to an ambiguous merged document.
@@ -145,6 +146,22 @@ loro agents apply reviewer delta.json --approve
 Writes hold a sidecar lock across revision and digest checks, update a same-directory temporary
 file, fsync content, atomically replace the profile, and fsync the parent directory where
 supported. Conflicts reject instead of rebasing.
+
+## Digests
+
+Profile and spec digests follow OAP SPEC 2.2: the JCS SHA-256 of the document exactly as authored,
+with nothing filled in, computed by the reference `open-agent-profile` library. The same file has
+the same digest in Loro, MagAgent and Merced AI, so a spec digest pinned in one harness matches in
+another. `tests/test_oap_digest.py` checks this against the reference library on the upstream
+example profiles. A profile that `extends` others hashes its parents' authored documents merged
+under its own, so a parent that gains authority still changes the child's digest.
+
+Before 0.22, Loro hashed its internal projection with empty defaults added (for example
+`memory.stores: []`), so its digests differed from every other implementation. Digests stored in
+that form keep working: a conversation pin or a state-delta proposal carrying a pre-0.22 digest is
+recognized as the same profile, the conversation pin is re-stamped with the canonical digest, and
+each migration writes an `agent_profile.digest_migrated` audit event with both values. Any other
+mismatch is still a conflict. Profile `history` entries keep the digests they were written with.
 
 ## Configuration
 

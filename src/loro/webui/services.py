@@ -14,8 +14,10 @@ import yaml
 from loro.aais_bridge import AAISBridge
 from loro.agent_profiles import AgentProfileRegistry, build_effective_profile, load_path
 from loro.agent_profiles.compat import canonical_document
+from loro.agent_profiles.digest import match_spec_digest
 from loro.agent_profiles.models import AgentProfileModel
 from loro.approvals import ApprovalRequest, ApprovalScope
+from loro.audit import AuditLogger
 from loro.config import LoroConfig, load_config, write_config_sections
 from loro.data_protection import DataProtectionEngine
 from loro.fileio import atomic_write_text
@@ -524,6 +526,9 @@ class RunManager:
         config: Any,
         name: str,
         pinned_digest: str | None,
+        *,
+        conversation_id: str | None = None,
+        participant: str | None = None,
     ) -> Any:
         """Load a profile, refusing it if its contract changed mid-conversation.
 
@@ -536,10 +541,30 @@ class RunManager:
             cwd=self.project_root,
             safety=config.safety,
         ).load(name)
-        if pinned_digest and resolved.spec_digest != pinned_digest:
+        match = (
+            None
+            if not pinned_digest
+            else "canonical"
+            if resolved.spec_digest == pinned_digest
+            else match_spec_digest(resolved.document, pinned_digest)
+        )
+        if pinned_digest and match is None:
             raise ValueError(
                 f"The profile {name} changed after this conversation started. "
                 "Start a new conversation to use the new revision."
+            )
+        if match == "legacy" and conversation_id is not None:
+            # Pinned before 0.22 with Loro's old digest form: same profile, canonical digest now.
+            self.store.restamp_profile_digest(
+                conversation_id, resolved.spec_digest, participant=participant
+            )
+            AuditLogger(config.audit, safety_config=config.safety).write(
+                "agent_profile.digest_migrated",
+                profile=name,
+                surface="conversation_pin",
+                conversation_id=conversation_id,
+                legacy_spec_digest=pinned_digest,
+                spec_digest=resolved.spec_digest,
             )
         return build_effective_profile(resolved, config)
 
@@ -604,7 +629,13 @@ class RunManager:
                             if is_group
                             else conversation.get("profile_spec_digest")
                         )
-                        profile = self._resolve_profile(config, speaker, pinned)
+                        profile = self._resolve_profile(
+                            config,
+                            speaker,
+                            pinned,
+                            conversation_id=handle.conversation_id,
+                            participant=speaker if is_group else None,
+                        )
                     if is_group:
                         handle.publish("speaker.started", profile=speaker, index=index)
                     runtime = AgentRuntime(

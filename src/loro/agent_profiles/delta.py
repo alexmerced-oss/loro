@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from loro.agent_profiles.compat import canonical_document
-from loro.agent_profiles.digest import profile_digest, spec_digest
+from loro.agent_profiles.digest import match_spec_digest, profile_digest, spec_digest
 from loro.agent_profiles.errors import ConflictError, ProfileError
 from loro.agent_profiles.models import AgentProfileModel, AgentStateDelta, HistoryEntry, StateEntry
 from loro.agent_profiles.registry import load_path
@@ -36,8 +36,20 @@ def apply_delta(
                     f"Profile revision conflict: expected {delta.base_revision}, "
                     f"found {document.metadata.revision}."
                 )
-            if spec_digest(document) != delta.spec_digest:
+            match = match_spec_digest(document, delta.spec_digest)
+            if match is None:
                 raise ConflictError("Profile spec digest changed since delta creation.")
+            if match == "legacy" and event_handler is not None:
+                # A delta or proposal made before 0.22 carries Loro's old digest form.
+                event_handler(
+                    "agent_profile.digest_migrated",
+                    {
+                        "profile": delta.profile,
+                        "surface": "state_delta",
+                        "legacy_spec_digest": delta.spec_digest,
+                        "spec_digest": spec_digest(document),
+                    },
+                )
             protection = DataProtectionEngine(safety)
             entries = {item.id: item for item in document.state}
             for operation in delta.operations:
@@ -58,7 +70,8 @@ def apply_delta(
                     revision=old_revision,
                     session_id=delta.session_id,
                     timestamp=updated_at,
-                    digest=profile_digest(document),
+                    # The document being written, not the stale authored source.
+                    digest=profile_digest(canonical_document(document)),
                 )
             )
             _write_profile(path, document, config.max_bytes)

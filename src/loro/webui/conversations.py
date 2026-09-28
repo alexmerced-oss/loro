@@ -218,6 +218,26 @@ class ConversationStore:
             )
         return self.get_conversation(conversation_id)
 
+    def restamp_profile_digest(
+        self, conversation_id: str, digest: str, *, participant: str | None = None
+    ) -> None:
+        """Replace a pinned spec digest in place (legacy digest migration)."""
+
+        current = self.get_conversation(conversation_id)
+        with self._connection() as connection:
+            if participant is None:
+                connection.execute(
+                    "UPDATE conversations SET profile_spec_digest = ? WHERE id = ?",
+                    (digest, conversation_id),
+                )
+                return
+            digests = dict(current.get("participant_digests") or {})
+            digests[participant] = digest
+            connection.execute(
+                "UPDATE conversations SET participant_digests = ? WHERE id = ?",
+                (json.dumps(digests), conversation_id),
+            )
+
     def set_session_id(self, conversation_id: str, session_id: str) -> None:
         self.get_conversation(conversation_id)
         with self._connection() as connection:

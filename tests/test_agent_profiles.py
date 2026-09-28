@@ -62,7 +62,8 @@ def test_markdown_body_supplies_instructions_and_duplicate_is_rejected(tmp_path:
         "---\napiVersion: oap/v1\nkind: AgentProfile\nmetadata:\n  name: writer\n---\nBody role.\n",
         encoding="utf-8",
     )
-    assert load_path(path).spec.role.instructions == "Body role."
+    # The body keeps one trailing newline, as the reference library normalizes it.
+    assert load_path(path).spec.role.instructions == "Body role.\n"
     path.write_text(
         "---\nmetadata:\n  name: writer\nspec:\n  role:\n    instructions: Front\n---\nBody\n",
         encoding="utf-8",
