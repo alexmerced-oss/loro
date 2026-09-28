@@ -239,7 +239,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
       source.addEventListener("run.failed", (event) => {
         track(event);
         const data = JSON.parse((event as MessageEvent).data);
-        setStatus("failed");
+        setStatus("Failed");
         setError(data.error || "The graph run failed.");
       });
       source.addEventListener("run.closed", (event) => {
@@ -259,7 +259,7 @@ export function GraphsView({ setError }: { setError: (message: string) => void }
         if (retries.current >= MAX_RECONNECTS) {
           retries.current = 0;
           setRunId(null);
-          setStatus("disconnected");
+          setStatus("Disconnected");
           setError(
             "Lost the connection to this run. It may still be going; reload to pick it back up.",
           );

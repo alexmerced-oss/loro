@@ -316,4 +316,4 @@ def test_cli_run_prints_id_and_evidence_commands_work(cli_project: Path) -> None
 def test_double_dash_runs_a_prompt_named_like_a_subcommand(cli_project: Path) -> None:
     result = CliRunner().invoke(app, ["run", "--", "export"])
     assert result.exit_code == 0, result.output
-    assert "Mock response for" in result.output and "export" in result.output
+    assert "offline demo reply" in result.output and "export" in result.output

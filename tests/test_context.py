@@ -14,6 +14,7 @@ from loro.config import (
     LocalMemoryConfig,
     LoroConfig,
     MemoryConfig,
+    ModelConfig,
     RuntimeConfig,
 )
 from loro.context import (
@@ -55,6 +56,8 @@ def _config(tmp_path: Path, **context: object) -> LoroConfig:
         audit=AuditConfig(path=str(tmp_path / "audit.jsonl")),
         sessions=SessionConfig(path=str(tmp_path / "sessions")),
         context=ContextConfig(**context),
+        # The echo mode returns every user turn it was sent, which these tests read back.
+        model=ModelConfig(model="mock-echo"),
     )
 
 
@@ -298,7 +301,7 @@ async def test_web_ui_conversation_sends_native_turns_through_the_runtime(
     config = tmp_path / ".loro" / "config.local.toml"
     config.parent.mkdir(parents=True)
     config.write_text(
-        'schema_version = "1.0"\n\n[model]\nprovider = "mock"\nmodel = "mock-agent"\n\n'
+        'schema_version = "1.0"\n\n[model]\nprovider = "mock"\nmodel = "mock-echo"\n\n'
         f'[audit]\nenabled = false\npath = "{tmp_path / ".loro" / "audit.jsonl"}"\n\n'
         f'[sessions]\npath = "{tmp_path / ".loro" / "sessions"}"\n'
         f'message_path = "{tmp_path / ".loro" / "session-messages"}"\n\n'

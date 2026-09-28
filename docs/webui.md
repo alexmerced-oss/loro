@@ -99,6 +99,12 @@ a text field has focus, so typing `/` in the composer inserts a slash.
 Below 680px the conversation list becomes a drawer reached from the header, and closes once a
 conversation is chosen.
 
+The UI bundles its fonts (Manrope and DM Mono, latin subsets, SIL Open Font License; the licenses
+are served under `/fonts/`), so it looks the same on a machine without them installed and makes no
+font requests to other hosts. Stylesheets use the `--font-sans` and `--font-mono` tokens, which end
+in generic families, and `webui/src/fonts.test.ts` fails if a font declaration lacks a generic
+fallback.
+
 ## Agentic Graphs
 
 The Graphs view lists every `.agraph.yaml`, `.agraph.yml`, and `.agraph.json` in the workspace,
@@ -246,6 +252,12 @@ in a file on disk, so keys stay in the environment or the OS keyring and the pan
 whether one was found and which variable it expects. `Try it offline first` selects the `mock`
 provider, which answers without any credential, so the whole loop can be seen before a key is
 found.
+
+The offline reply is short and labeled `[Loro mock provider: offline demo reply, no model was
+called]`. It restates the question, makes one read-only, governed tool call (`memory.search`, which
+needs no approval and is audited) when local memory is on, and says how to choose a real provider.
+It never repeats Loro's system prompt. The `mock-echo` model keeps the old behavior of echoing the
+user turns, for tests and debugging.
 
 ## Reconnecting To A Run
 

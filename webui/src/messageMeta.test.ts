@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messageMeta } from "./messageMeta";
+import { messageMeta, streamStepBreak } from "./messageMeta";
 
 describe("messageMeta", () => {
   it("adds input and output tokens when no total is reported", () => {
@@ -19,5 +19,13 @@ describe("messageMeta", () => {
     expect(messageMeta({ stop_reason: "completed", usage: {}, context: { compacted_messages: 6 } })).toContain(
       "6 earlier messages summarized",
     );
+  });
+});
+
+describe("streamStepBreak", () => {
+  it("separates the text of consecutive model steps", () => {
+    expect(streamStepBreak("")).toBe("");
+    expect(streamStepBreak("Checking memory. ")).toBe("Checking memory.\n\n");
+    expect(streamStepBreak("Done.\n\n")).toBe("Done.\n\n");
   });
 });

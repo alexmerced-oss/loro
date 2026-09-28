@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -304,7 +305,46 @@ class BaseModelClient:
                 return
 
 
+MOCK_DEMO_LABEL = "[Loro mock provider: offline demo reply, no model was called]"
+MOCK_ECHO_MODEL = "mock-echo"
+
+
+def _mock_task(messages: list[ModelMessage]) -> str:
+    """The user's own request from the latest user turn, without the harness preamble."""
+
+    for message in reversed(messages):
+        if message.role != "user" or message.content.startswith("Tool results:"):
+            continue
+        text = message.content
+        if "User task: " in text:
+            text = text.split("User task: ", 1)[1]
+        text = " ".join(text.split("\n\n", 1)[0].split())
+        return text if len(text) <= 160 else text[:157].rstrip() + "..."
+    return ""
+
+
+def _mock_tool_result(messages: list[ModelMessage]) -> str | None:
+    """The tool result the demo is waiting for, when the last message carries one."""
+
+    last = messages[-1] if messages else None
+    if last is None:
+        return None
+    if last.tool_results:
+        return last.tool_results[0].content
+    if last.role == "user" and last.content.startswith("Tool results:"):
+        return last.content.removeprefix("Tool results:")
+    return None
+
+
 class MockModelClient(BaseModelClient):
+    """The offline provider.
+
+    By default it gives a short, clearly labeled demo reply and makes one read-only, governed
+    tool call (``memory.search``) so a first run shows the real loop: request, policy check,
+    execution, audit, result. The ``mock-echo`` model echoes the user turns instead, for tests
+    and debugging.
+    """
+
     def build_request(self, messages: list[ModelMessage]) -> ModelRequest:
         return ModelRequest(
             method="MOCK",
@@ -314,8 +354,46 @@ class MockModelClient(BaseModelClient):
         )
 
     def complete(self, messages: list[ModelMessage]) -> ModelResponse:
-        user_text = "\n".join(message.content for message in messages if message.role == "user")
-        return ModelResponse(content=f"Mock response for: {user_text}".strip())
+        if self.config.model == MOCK_ECHO_MODEL:
+            user_text = "\n".join(message.content for message in messages if message.role == "user")
+            return ModelResponse(content=f"Mock response for: {user_text}".strip())
+        task = _mock_task(messages)
+        result = _mock_tool_result(messages)
+        demo_tool = any(schema.name == "memory.search" for schema in self.tools)
+        if result is None and demo_tool:
+            query = next((word for word in re.findall(r"[A-Za-z]{4,}", task)), "loro")
+            return ModelResponse(
+                # The label belongs to the final reply; this step only announces the tool call.
+                content="Offline demo: checking local memory first, so you can see a governed "
+                "tool call.",
+                tool_calls=[
+                    ModelToolCall(
+                        name="memory.search",
+                        args={"query": query.lower(), "limit": 3},
+                        call_id="mock-demo-1",
+                    )
+                ],
+            )
+        lines = [line.strip() for line in (result or "").splitlines() if line.strip()]
+        body = [line for line in lines if "memory.search" not in line] or lines
+        asked = f"You asked: \u201c{task}\u201d\n\n" if task else ""
+        if result is None:
+            loop = ""
+        else:
+            outcome = " ".join(body)[:120] or "no output"
+            loop = (
+                " It did run the same loop a real model uses: it asked for a tool "
+                "(memory.search), Loro checked that request against your permissions, ran it, "
+                "recorded it in the audit log and passed back the result: "
+                f"\u201c{outcome}\u201d"
+            )
+        return ModelResponse(
+            content=(
+                f"{MOCK_DEMO_LABEL}\n\n{asked}"
+                f"This is the offline demo, so there is no real answer here.{loop}\n\n"
+                "To get real replies, choose a provider in Settings or run `loro configure`."
+            )
+        )
 
     def stream(self, messages: list[ModelMessage]) -> Iterator[str]:
         response = self.complete(messages).content

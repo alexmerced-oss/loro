@@ -32,7 +32,7 @@ def _prepare_project(path: Path) -> None:
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
         'schema_version = "1.0"\n\n[model]\nprovider = "mock"\n'
-        'model = "mock-agent"\nsmall_model = "mock-small"\n\n'
+        'model = "mock-echo"\nsmall_model = "mock-small"\n\n'
         f'[audit]\nenabled = false\npath = "{path / ".loro" / "audit.jsonl"}"\n\n'
         f'[sessions]\npath = "{path / ".loro" / "sessions"}"\n'
         f'message_path = "{path / ".loro" / "session-messages"}"\n\n'

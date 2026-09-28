@@ -14,6 +14,8 @@ for the primary and small model, and writes `.loro/config.local.toml`. Large cat
 and searchable. API keys stay in environment variables or the OS credential vault. Export or
 store the key before starting the wizard when model discovery requires authentication. Choose
 `mock` for a no-key first run, or pick a cloud provider after exporting the matching API key.
+The `mock` provider's default model (`mock-agent`) gives a short, labeled offline demo reply with
+one read-only tool call; `mock-echo` echoes the user turns instead.
 
 Discovery uses each protocol's catalog API: OpenAI-compatible `/models`, Anthropic `/v1/models`,
 Gemini `/v1beta/models`, Ollama `/api/tags`, and AWS Bedrock `ListFoundationModels`. This covers

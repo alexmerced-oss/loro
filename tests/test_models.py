@@ -111,13 +111,13 @@ class FakeTransientHttpClient(FakeHttpClient):
 
 
 def test_mock_model_client_complete() -> None:
-    client = MockModelClient(ModelConfig())
+    client = MockModelClient(ModelConfig(model="mock-echo"))
     response = client.complete([ModelMessage(role="user", content="hello")])
     assert response.content == "Mock response for: hello"
 
 
 def test_mock_model_client_stream() -> None:
-    client = MockModelClient(ModelConfig())
+    client = MockModelClient(ModelConfig(model="mock-echo"))
     chunks = list(client.stream([ModelMessage(role="user", content="hello")]))
     assert "".join(chunks).strip() == "Mock response for: hello"
 
@@ -627,7 +627,9 @@ def test_smoke_model_client_dry_run_redacts_request(monkeypatch: pytest.MonkeyPa
 
 
 def test_smoke_model_client_execute_stream_mock() -> None:
-    result = smoke_model_client(ModelConfig(), execute=True, stream=True, prompt="hello")
+    result = smoke_model_client(
+        ModelConfig(model="mock-echo"), execute=True, stream=True, prompt="hello"
+    )
     assert result["ok"] is True
     assert "Mock response for: hello" in result["content"]
 
@@ -654,3 +656,39 @@ def test_redact_model_request_redacts_headers_and_query() -> None:
     assert redacted["headers"]["Authorization"] == "[redacted]"
     assert redacted["headers"]["x-api-key"] == "[redacted]"
     assert "key=%5Bredacted%5D" in redacted["url"]
+
+
+def test_mock_demo_reply_is_labeled_and_never_echoes_the_prompt() -> None:
+    from loro.models import MOCK_DEMO_LABEL
+
+    client = MockModelClient(ModelConfig())
+    preamble = "You are Loro, a CLI agent harness.\n\nMode: run\n\nUser task: Plan my week"
+    response = client.complete([ModelMessage(role="user", content=preamble)])
+    assert response.content.startswith(MOCK_DEMO_LABEL)
+    assert "You are Loro" not in response.content
+    assert "Plan my week" in response.content and not response.tool_calls
+
+
+def test_mock_demo_makes_one_read_only_tool_call_when_the_tool_is_published() -> None:
+    from loro.tool_schemas import ToolSchema
+
+    client = MockModelClient(ModelConfig(), [ToolSchema("memory.search", "Search memory.")])
+    first = client.complete([ModelMessage(role="user", content="User task: Summarize the repo")])
+    [call] = first.tool_calls
+    assert call.name == "memory.search" and call.args == {"query": "summarize", "limit": 3}
+    followup = [
+        ModelMessage(role="user", content="User task: Summarize the repo"),
+        ModelMessage(role="assistant", content=first.content, tool_calls=first.tool_calls),
+        ModelMessage(
+            role="tool",
+            tool_results=[
+                ModelToolResult(
+                    name="memory.search", content="No matching local memories.", call_id="x"
+                )
+            ],
+        ),
+    ]
+    final = client.complete(followup)
+    assert not final.tool_calls
+    assert "No matching local memories." in final.content
+    assert final.content == client.complete(followup).content  # deterministic

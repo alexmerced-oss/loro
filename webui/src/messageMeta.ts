@@ -7,3 +7,9 @@ export function messageMeta(metadata: Record<string, unknown>): string {
   if (compacted > 0) parts.push(`${compacted} earlier message${compacted === 1 ? "" : "s"} summarized`);
   return parts.join(" · ");
 }
+
+/** Start a new paragraph when a later model step streams, so step texts never run together. */
+export function streamStepBreak(current: string): string {
+  if (!current.trim() || current.endsWith("\n\n")) return current;
+  return `${current.replace(/\s+$/, "")}\n\n`;
+}

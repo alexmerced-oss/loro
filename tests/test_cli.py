@@ -441,7 +441,7 @@ def test_plain_loro_opens_repl_in_interactive_terminal(tmp_path, monkeypatch) ->
     assert "/ 6  6" in result.stdout
     assert "Provider" in result.stdout
     assert "mock-agent" in result.stdout
-    assert "Mock response for" in result.stdout
+    assert "offline demo reply" in result.stdout
     assert "Session closed" in result.stdout
     assert len(list((tmp_path / "sessions").glob("*.json"))) == 1
 
@@ -1407,7 +1407,7 @@ def test_providers_smoke_execute_mock() -> None:
     )
     assert result.exit_code == 0
     assert '"ok": true' in result.stdout
-    assert "Mock response for" in result.stdout
+    assert "offline demo reply" in result.stdout
 
 
 def test_identity_show_uses_environment(monkeypatch) -> None:

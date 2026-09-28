@@ -10,6 +10,7 @@ from loro.config import (
     LocalMemoryConfig,
     LoroConfig,
     MemoryConfig,
+    ModelConfig,
     RuntimeConfig,
 )
 from loro.memory.base import SharedMemorySearchRecord, SharedMemorySearchResult
@@ -513,7 +514,24 @@ def test_runtime_blocks_restricted_recalled_memory_before_provider(tmp_path, mon
 def _runtime_config(tmp_path, *, max_steps: int) -> LoroConfig:
     return LoroConfig(
         runtime=RuntimeConfig(max_steps=max_steps),
+        model=ModelConfig(model="mock-echo"),
         memory=MemoryConfig(local=LocalMemoryConfig(enabled=False)),
         audit=AuditConfig(path=str(tmp_path / "audit.jsonl")),
         sessions=SessionConfig(path=str(tmp_path / "sessions")),
     )
+
+
+def test_offline_demo_runs_one_governed_read_only_tool_and_completes(tmp_path) -> None:
+    config = LoroConfig(
+        memory=MemoryConfig(local=LocalMemoryConfig(path=str(tmp_path / "memory"))),
+        audit=AuditConfig(path=str(tmp_path / "audit.jsonl")),
+        sessions=SessionConfig(path=str(tmp_path / "sessions")),
+    )
+    result = AgentRuntime(config).run("Summarize this project", mode="run")
+    assert result.stop_reason == "completed"
+    assert [item.call.name for item in result.tool_executions] == ["memory.search"]
+    assert result.response.startswith("[Loro mock provider: offline demo reply")
+    assert "Summarize this project" in result.response
+    assert "You are Loro" not in result.response
+    audit = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+    assert "memory.search" in audit

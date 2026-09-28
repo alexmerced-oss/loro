@@ -39,6 +39,11 @@ type Provider = {
   credential_ready?: boolean;
 };
 
+/** Server copy marks commands with backticks; show them as code, not literal backticks. */
+export function withInlineCode(text: string) {
+  return text.split("`").map((part, index) => (index % 2 ? <code key={index}>{part}</code> : part));
+}
+
 export function FirstRun({
   onReady,
   setError,
@@ -110,7 +115,7 @@ export function FirstRun({
                   {step.offline && <i className="tag">offline</i>}
                 </b>
                 <small>{step.detail}</small>
-                {!step.ok && <em>{step.action}</em>}
+                {!step.ok && <em>{withInlineCode(step.action)}</em>}
               </div>
             </li>
           ))}
