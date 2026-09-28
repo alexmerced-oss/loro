@@ -193,3 +193,17 @@ def idp() -> Iterator[MockIdP]:
         yield provider
     finally:
         provider.close()
+
+
+@pytest.fixture(autouse=True)
+def _plain_cli_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep Typer's help and error output plain, as it is outside CI.
+
+    Typer forces a color terminal when ``GITHUB_ACTIONS``, ``FORCE_COLOR`` or ``PY_COLORS`` is
+    set, which it reads once at import. On GitHub runners that wrapped help and usage errors in
+    ANSI codes, so text assertions and the help goldens failed only in CI.
+    """
+
+    import typer.rich_utils
+
+    monkeypatch.setattr(typer.rich_utils, "FORCE_TERMINAL", None, raising=False)
