@@ -78,6 +78,16 @@ def _contains_marker(value: Any, markers: tuple[str, ...]) -> bool:
     return False
 
 
+def _policy_warnings(findings: Any) -> list[dict[str, Any]]:
+    """Graph-policy warnings as run-record diagnostics, so they stay visible after the run."""
+
+    return [
+        {"code": item.code, "severity": "warning", "message": item.message, "pointer": item.pointer}
+        for item in findings
+        if item.severity == "warning"
+    ]
+
+
 def redacted_param_names(
     params: Mapping[str, Any], markers: tuple[str, ...] = REDACTION_MARKERS
 ) -> list[str]:
@@ -215,7 +225,7 @@ class GraphExecutor:
                 for node_id, node in document.data["nodes"].items()
             },
             "usage": _empty_usage(),
-            "diagnostics": [],
+            "diagnostics": _policy_warnings(policy),
             "metadata": {
                 "source": str(document.path),
                 "params": {
@@ -299,6 +309,10 @@ class GraphExecutor:
                 "agraph.resume_forced", graph_id=document.graph_id, graph_digest=document.digest
             )
             record["graph_digest"] = document.digest
+        seen = {(item.get("code"), item.get("pointer")) for item in record.get("diagnostics", [])}
+        record.setdefault("diagnostics", []).extend(
+            item for item in _policy_warnings(policy) if (item["code"], item["pointer"]) not in seen
+        )
         record["status"] = "running"
         resumed_params = self.resume_params(record, params)
         missing = redacted_param_names(resumed_params, self.redaction_markers)

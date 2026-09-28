@@ -982,6 +982,9 @@ class AGraphConfig(BaseModel):
     max_cost_usd: float | None = Field(default=None, gt=0)
     max_tier: Literal["minimal", "standard", "advanced", "frontier"] = "frontier"
     allow_command_criteria: bool = False
+    # Node executor extensions (for example MagAgent's `x-magagent-executor`) that Loro does not
+    # implement are refused; true runs those nodes as ordinary model tasks with a warning.
+    allow_unknown_executors: bool = False
     allow_external_criteria: bool = False
     external_criteria: list[str] = Field(default_factory=list)
     allow_external_subgraph_refs: bool = False

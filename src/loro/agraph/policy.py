@@ -8,6 +8,24 @@ from loro.config import AGraphConfig
 
 TIER_RANK = {"minimal": 1, "standard": 2, "advanced": 3, "frontier": 4}
 
+# Node-level `x-` extensions that choose how a node executes. AGS lets a harness ignore `x-`
+# members, but an extension must not change execution semantics (SPEC 23), so a graph that
+# depends on an executor Loro does not implement is refused rather than quietly run as a model
+# task. Loro implements none yet.
+IMPLEMENTED_EXECUTOR_EXTENSIONS: frozenset[str] = frozenset()
+
+
+def executor_extensions(node: dict[str, Any]) -> list[str]:
+    """The executor extension keys on a node (`x-executor` or `x-<vendor>-executor`)."""
+
+    return sorted(
+        key
+        for key in node
+        if isinstance(key, str)
+        and key.startswith("x-")
+        and (key == "x-executor" or key.endswith("-executor"))
+    )
+
 
 @dataclass(frozen=True)
 class PolicyFinding:
@@ -68,6 +86,31 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
         )
     for node_id, node in nodes.items():
         pointer = f"/nodes/{node_id}"
+        for key in executor_extensions(node):
+            if key in IMPLEMENTED_EXECUTOR_EXTENSIONS:
+                continue
+            if config.allow_unknown_executors:
+                findings.append(
+                    PolicyFinding(
+                        "LP011",
+                        f"node {node_id!r} declares executor extension {key!r}, which Loro "
+                        "does not implement; it will run as an ordinary model task because "
+                        "[agraph] allow_unknown_executors is true",
+                        f"{pointer}/{key}",
+                        severity="warning",
+                    )
+                )
+            else:
+                findings.append(
+                    PolicyFinding(
+                        "LP011",
+                        f"node {node_id!r} declares executor extension {key!r}, which Loro "
+                        "does not implement. Run it in a harness that does, or pass "
+                        "--allow-unknown-executors (or set [agraph] allow_unknown_executors = "
+                        "true) to run the node as an ordinary model task",
+                        f"{pointer}/{key}",
+                    )
+                )
         tier = ((node.get("intelligence") or {}).get("tier")) or "standard"
         if tier not in TIER_RANK:
             findings.append(

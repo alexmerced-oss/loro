@@ -62,7 +62,10 @@ class CriteriaEvaluator:
         self, item: dict[str, Any], _outputs: Mapping[str, Any], _scope: Mapping[str, Any]
     ) -> tuple[bool, str]:
         if not self.config.agraph.allow_command_criteria:
-            return False, "command criteria are denied by managed policy"
+            return False, (
+                "command criteria are disabled; set [agraph] allow_command_criteria = true "
+                "to enable them"
+            )
         cwd = self._path(str(item.get("cwd", ".")))
         result = SandboxRunner(
             self.config.sandbox, workspace_roots=self.config.permissions.workspace_roots

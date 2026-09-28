@@ -27,6 +27,35 @@ graph_app.add_typer(policy_app, name="policy")
 console = Console()
 
 
+AllowUnknownExecutors = Annotated[
+    bool,
+    typer.Option(
+        "--allow-unknown-executors",
+        help="Run nodes whose executor extension Loro does not implement as model tasks.",
+    ),
+]
+stderr = Console(stderr=True)
+
+
+def _graph_config(allow_unknown_executors: bool = False):
+    """Loaded config, with unknown executor extensions allowed when the flag asks for it."""
+
+    config = load_config()
+    if allow_unknown_executors:
+        config.agraph = config.agraph.model_copy(update={"allow_unknown_executors": True})
+    return config
+
+
+def _policy_errors(findings) -> list:
+    return [item for item in findings if item.severity == "error"]
+
+
+def _warn(findings) -> None:
+    for item in findings:
+        if item.severity == "warning":
+            stderr.print(f"Warning {item.code}: {item.message}")
+
+
 def _load(path: Path):
     try:
         return load_graph(path, max_bytes=load_config().agraph.max_document_bytes)
@@ -38,15 +67,21 @@ def _load(path: Path):
 def graph_validate(
     path: Annotated[Path, typer.Argument(help="AGS JSON or YAML document.")],
     strict: Annotated[bool, typer.Option("--strict", help="Treat warnings as failures.")] = False,
+    allow_unknown_executors: AllowUnknownExecutors = False,
 ) -> None:
     """Validate an AGS document and managed Loro policy."""
     document = _load(path)
     report = validate_graph(document)
-    policy = evaluate_policy(document.data, load_config().agraph)
+    policy = evaluate_policy(document.data, _graph_config(allow_unknown_executors).agraph)
     payload = report.to_payload()
     payload["digest"] = document.digest
     payload["policy_findings"] = [item.__dict__ for item in policy]
-    payload["ok"] = report.ok and not policy and not (strict and report.warnings)
+    policy_warnings = len(policy) - len(_policy_errors(policy))
+    payload["ok"] = (
+        report.ok
+        and not _policy_errors(policy)
+        and not (strict and (report.warnings or policy_warnings))
+    )
     console.print_json(data=payload)
     if not payload["ok"]:
         raise typer.Exit(code=1)
@@ -56,18 +91,21 @@ def graph_validate(
 def graph_plan(
     path: Annotated[Path, typer.Argument(help="AGS JSON or YAML document.")],
     as_json: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    allow_unknown_executors: AllowUnknownExecutors = False,
 ) -> None:
     """Show deterministic order, fan-out, cost, and routing demand."""
     document = _load(path)
     report = validate_graph(document)
-    config = load_config()
+    config = _graph_config(allow_unknown_executors)
     policy = evaluate_policy(document.data, config.agraph)
-    if not report.ok or policy:
+    if not report.ok or _policy_errors(policy):
         payload = report.to_payload()
         payload["policy_findings"] = [item.__dict__ for item in policy]
         console.print_json(data=payload)
         raise typer.Exit(code=1)
+    _warn(policy)
     payload = build_plan(document.data).to_payload()
+    payload["policy_findings"] = [item.__dict__ for item in policy]
     payload["effective_max_parallel_nodes"] = min(
         payload["max_parallel_nodes"], config.agraph.max_parallel_nodes
     )
@@ -84,14 +122,14 @@ def graph_plan(
 @policy_app.command("explain")
 def graph_policy_explain(
     path: Annotated[Path, typer.Argument(help="AGS JSON or YAML document.")],
+    allow_unknown_executors: AllowUnknownExecutors = False,
 ) -> None:
     """Explain every managed graph-policy denial."""
     document = _load(path)
-    findings = evaluate_policy(document.data, load_config().agraph)
-    console.print_json(
-        data={"allowed": not findings, "findings": [item.__dict__ for item in findings]}
-    )
-    if findings:
+    findings = evaluate_policy(document.data, _graph_config(allow_unknown_executors).agraph)
+    allowed = not _policy_errors(findings)
+    console.print_json(data={"allowed": allowed, "findings": [item.__dict__ for item in findings]})
+    if not allowed:
         raise typer.Exit(code=1)
 
 
@@ -169,14 +207,16 @@ def graph_run(
             help="Explicit text to propose for shared memory after a successful run.",
         ),
     ] = None,
+    allow_unknown_executors: AllowUnknownExecutors = False,
 ) -> None:
     """Execute a governed Agentic Graph.
 
     Parameters come from --params, then --param-file, then each --param (later wins).
     """
-    config = load_config()
+    config = _graph_config(allow_unknown_executors)
     if yes and not config.approvals.allow_non_interactive:
         raise typer.BadParameter("--yes is denied by approvals.allow_non_interactive")
+    _warn(evaluate_policy(_load(path).data, config.agraph))
     try:
         specs = (_load(path).data.get("params") or {}) if path.is_file() else {}
         values = _param_values(params, param_file, list(param or []), specs)
@@ -266,6 +306,7 @@ def graph_resume(
         Path | None,
         typer.Option("--param-file", help="JSON file with params to supply again."),
     ] = None,
+    allow_unknown_executors: AllowUnknownExecutors = False,
 ) -> None:
     """Resume a paused Agentic Graph with digest protection.
 
@@ -273,7 +314,7 @@ def graph_resume(
     again. In a terminal, Loro asks for each one with hidden input; otherwise it exits 2 and
     names them.
     """
-    config = load_config()
+    config = _graph_config(allow_unknown_executors)
     if yes and not config.approvals.allow_non_interactive:
         raise typer.BadParameter("--yes is denied by approvals.allow_non_interactive")
     try:
