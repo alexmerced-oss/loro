@@ -227,7 +227,8 @@ def apply_patch(text: str, root: Path, *, dry_run: bool = False) -> PatchResult:
             content: list[str] = []
             trailing_newline = True
         else:
-            assert source is not None
+            if source is None:
+                raise PatchError(f"Patch for {patch.target} names no source file.")
             if not source.is_file():
                 conflicts.append(Conflict(str(patch.old_path), 1, 1, "file does not exist"))
                 continue

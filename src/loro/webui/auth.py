@@ -61,6 +61,13 @@ class WebAuth:
         self._pending: dict[str, _PendingLogin] = {}
         self._lock = threading.Lock()
 
+    def _oidc_parts(self) -> tuple[OIDCProvider, OIDCConfig]:
+        # An explicit check rather than an assert: `python -O` strips asserts, and these
+        # guard the sign-in path.
+        if self.provider is None or self.oidc is None:
+            raise OIDCError("OIDC sign-in is not configured for this server.")
+        return self.provider, self.oidc
+
     # ------------------------------------------------------------------ sessions
 
     def new_session(
@@ -96,17 +103,17 @@ class WebAuth:
     # ------------------------------------------------------------------ bearer tokens
 
     def identity_from_bearer(self, authorization: str) -> IdentityContext:
-        assert self.provider is not None and self.oidc is not None
+        provider, oidc = self._oidc_parts()
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
             raise OIDCError("Send Authorization: Bearer <token>.")
-        claims = self.provider.verify(token.strip())
-        return identity_from_claims(self.oidc, claims, session_id=f"api-{secrets.token_hex(8)}")
+        claims = provider.verify(token.strip())
+        return identity_from_claims(oidc, claims, session_id=f"api-{secrets.token_hex(8)}")
 
     # ------------------------------------------------------------------ login flow
 
     def begin_login(self, redirect_uri: str, next_path: str) -> str:
-        assert self.provider is not None
+        provider, _ = self._oidc_parts()
         state = secrets.token_urlsafe(24)
         nonce = secrets.token_urlsafe(24)
         verifier, challenge = pkce_pair()
@@ -119,7 +126,7 @@ class WebAuth:
             while len(self._pending) >= MAX_PENDING_LOGINS:
                 self._pending.pop(next(iter(self._pending)))
             self._pending[state] = _PendingLogin(nonce, verifier, safe_next(next_path), now)
-        return self.provider.authorization_url(
+        return provider.authorization_url(
             redirect_uri=redirect_uri, state=state, nonce=nonce, code_challenge=challenge
         )
 
@@ -128,26 +135,24 @@ class WebAuth:
     ) -> tuple[IdentityContext, float, str]:
         """Exchange the code, verify the ID token, and return (identity, expiry, next path)."""
 
-        assert self.provider is not None and self.oidc is not None
+        provider, oidc = self._oidc_parts()
         with self._lock:
             pending = self._pending.pop(state, None)
         if pending is None or time.time() - pending.created_at > LOGIN_TTL_SECONDS:
             raise OIDCError("This sign-in link expired or was already used. Start again.")
-        secret = (
-            os.environ.get(self.oidc.client_secret_env) if self.oidc.client_secret_env else None
-        )
-        tokens = self.provider.exchange_code(
+        secret = os.environ.get(oidc.client_secret_env) if oidc.client_secret_env else None
+        tokens = provider.exchange_code(
             code=code,
             redirect_uri=redirect_uri,
             code_verifier=pending.verifier,
             client_secret=secret,
         )
-        claims = self.provider.verify(
-            str(tokens["id_token"]), audience=self.oidc.client_id, nonce=pending.nonce
+        claims = provider.verify(
+            str(tokens["id_token"]), audience=oidc.client_id, nonce=pending.nonce
         )
-        identity = identity_from_claims(self.oidc, claims, session_id=f"web-{secrets.token_hex(8)}")
+        identity = identity_from_claims(oidc, claims, session_id=f"web-{secrets.token_hex(8)}")
         # The ID token proves the sign-in; the session then lasts web_session_seconds.
-        expires = time.time() + self.oidc.web_session_seconds
+        expires = time.time() + oidc.web_session_seconds
         return identity, expires, pending.next_path
 
     def describe(self) -> dict[str, Any]:

@@ -133,7 +133,8 @@ class _PostgresTransaction:
         self._state = None
         self._recovery = payload
         condition = _condition(self._backend.description, payload)
-        assert condition is not None
+        if condition is None:  # pragma: no cover - _condition always builds one from a payload
+            raise RuntimeError("Could not describe the quarantined approval state.")
         return condition
 
     def clear_recovery(self) -> None:
@@ -142,7 +143,8 @@ class _PostgresTransaction:
 
     def _update(self, assignments: str, params: tuple[Any, ...]) -> None:
         self._connection.execute(
-            f"UPDATE loro_aais_state SET {assignments}, version = version + 1, "  # noqa: S608
+            # `assignments` is always a literal from this module, never user input.
+            f"UPDATE loro_aais_state SET {assignments}, version = version + 1, "  # noqa: S608  # nosec B608
             "updated_at = now() WHERE stream = %s",
             (*params, self._backend.key),
         )

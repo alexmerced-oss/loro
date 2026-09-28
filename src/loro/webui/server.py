@@ -242,7 +242,7 @@ def create_app(
         try:
             config = load_config(root)
             AuditLogger(config.audit, safety_config=config.safety).write(event_type, **details)
-        except Exception:  # noqa: BLE001 - auditing an access decision must not crash the request
+        except Exception:  # noqa: BLE001  # nosec B110 - auditing an access decision must not crash the request
             pass
 
     @app.middleware("http")

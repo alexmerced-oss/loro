@@ -343,7 +343,7 @@ class AAISBridge:
         if not wanted or not self._has_state():
             return {}
         with _store_errors():
-            requests = {
+            logged_requests = {
                 str(item["request"].get("id")): item
                 for item in self.store.events_after(0).events
                 if isinstance(item.get("request"), dict)
@@ -351,7 +351,7 @@ class AAISBridge:
             found: dict[str, Envelope] = {}
             for request_id in wanted:
                 entry: Envelope = {}
-                request = self.store.get_pending(request_id) or requests.get(request_id)
+                request = self.store.get_pending(request_id) or logged_requests.get(request_id)
                 if request is not None:
                     entry["request"] = copy.deepcopy(request)
                 decision = self.store.get_decision(request_id)
