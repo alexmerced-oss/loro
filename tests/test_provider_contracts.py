@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from loro import __version__
 from loro.budgets import _usage_tokens
 from loro.config import ModelConfig
 from loro.model_tools import parse_provider_tool_calls
@@ -30,7 +31,7 @@ def _fixture(name: str) -> dict:
 
 def test_provider_contract_matrix_covers_profiles_and_required_cases() -> None:
     report = validate_provider_contracts(MATRIX, FIXTURES)
-    assert report.release_line == "0.21"
+    assert report.release_line == ".".join(__version__.split(".")[:2])
     assert set(report.protocols) == {
         "openai-compatible",
         "anthropic",

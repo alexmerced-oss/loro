@@ -159,9 +159,42 @@ Unreleased work for the next version collects in [0.22.0](releases/0.22.0.md) un
 - Confirm `README.md` examples still match CLI behavior.
 - Confirm `docs/roadmap-1.0.md` statuses and remaining gates are current.
 - Confirm `scripts/generate_release_contract.py --check` passes without unreviewed drift.
-- Confirm `scripts/check_release_metadata.py --strict` passes after the version bump: mark the
-  release notes page as released (replace its `Unreleased` line), point the README "Current
-  release" line at it, and set the roadmap milestone row to `Released`.
+- Confirm `scripts/check_release_metadata.py --strict` passes after the version bump (see
+  "Version bump" below).
+
+## Version bump
+
+The version appears in these places. Change all of them in one release-preparation commit:
+
+1. `pyproject.toml` `version` and `src/loro/__init__.py` `__version__`.
+2. `webui/package.json` `version`, and `version` plus `packages[""].version` in
+   `webui/package-lock.json`.
+3. `implementation_version` in `docs/ags-conformance.json` and `docs/oap-conformance.json`, after
+   the AGS and OAP conformance workflows pass on the release commit.
+4. `release_line` (major.minor) in `docs/support-matrix.json`, `docs/data-support-matrix.json`,
+   `docs/interoperability-matrix.json` and `deploy/reference/manifest.json`.
+5. `docs/releases/<version>.md`: replace the `Unreleased` line with the release date.
+6. The README "Current release" line: point it at the new notes and drop the "work in progress"
+   sentence.
+7. `docs/roadmap-1.0.md`: set the milestone row for the new minor to `Released`.
+8. Regenerate the release contract, which picks up the package version, release line and matrix
+   digests: `PYTHONPATH=src python scripts/generate_release_contract.py --write`.
+
+Then all of these must pass:
+
+```bash
+PYTHONPATH=src python scripts/generate_release_contract.py --check
+PYTHONPATH=src python scripts/check_reference_deployment.py
+GITHUB_REF=refs/tags/v<version> python scripts/check_release_metadata.py --strict
+python -m pytest -q
+```
+
+Tests read the release line from the package version, so the bump needs no test edits. This
+sequence was rehearsed for 0.22.0 in a scratch worktree on 2026-09-27: every check passed and the
+full suite passed at 0.22.0.
+
+**Prerequisite for 0.22.0:** `agent-approval-interchange` 0.2.0 must be on PyPI first; Loro
+requires `>=0.2.0,<0.3`.
 - Confirm `docs/providers.md`, `docs/memory.md`, `docs/polaris-iceberg.md`, and `docs/mcp.md` reflect any
   changed command names or safety guarantees.
 - Confirm the MCP support matrix matches green conformance workflow artifacts for the release

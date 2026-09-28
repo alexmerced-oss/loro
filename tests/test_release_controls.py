@@ -4,11 +4,19 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from loro.audit.inventory import AUDIT_EVENT_FAMILIES, audit_event_family
 
 ROOT = Path(__file__).resolve().parents[1]
+# The release line follows the package version, so a version bump does not need test edits;
+# scripts/check_reference_deployment.py checks that every matrix names this line.
+RELEASE_LINE = ".".join(
+    tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ].split(".")[:2]
+)
 
 
 def test_audit_family_prefixes_are_unique_and_classify_expected_events() -> None:
@@ -59,7 +67,7 @@ def test_machine_readable_support_matrix_has_explicit_stability() -> None:
     matrix = json.loads((ROOT / "docs" / "support-matrix.json").read_text(encoding="utf-8"))
 
     assert matrix["schema_version"] == "1.0"
-    assert matrix["release_line"] == "0.21"
+    assert matrix["release_line"] == RELEASE_LINE
     assert matrix["stability"] == "stabilization"
     assert "linux" in matrix["operating_systems"]["supported"]
     assert "iceberg" in matrix["memory_backends"]["experimental"]
@@ -96,9 +104,9 @@ def test_release_manifest_hashes_actual_artifacts(tmp_path: Path) -> None:
     manifest = json.loads(output.read_text(encoding="utf-8"))
     assert manifest["commit"] == "a" * 40
     assert manifest["workflow_run"] == "fixture-run"
-    assert manifest["data_support_matrix"]["release_line"] == "0.21"
-    assert manifest["interoperability_matrix"]["release_line"] == "0.21"
-    assert manifest["release_contract"]["release_line"] == "0.21"
+    assert manifest["data_support_matrix"]["release_line"] == RELEASE_LINE
+    assert manifest["interoperability_matrix"]["release_line"] == RELEASE_LINE
+    assert manifest["release_contract"]["release_line"] == RELEASE_LINE
     assert manifest["artifacts"] == [
         {
             "bytes": len(b"fixture-wheel"),

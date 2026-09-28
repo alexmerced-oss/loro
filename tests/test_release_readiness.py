@@ -9,12 +9,15 @@ from loro.cli import app
 from loro.config import LoroConfig
 from loro.release_readiness import assess_release_readiness, load_release_contract
 
+# Follows the package version so a release bump needs no test edits.
+RELEASE_LINE = ".".join(__version__.split(".")[:2])
+
 
 def test_bundled_release_contract_matches_runtime_and_freezes_cli() -> None:
     contract = load_release_contract()
 
     assert contract["package_version"] == __version__
-    assert contract["release_line"] == "0.21"
+    assert contract["release_line"] == RELEASE_LINE
     assert contract["stability"] == "stabilization"
     assert "release-readiness" in contract["cli"]["operations"]
     assert contract["schemas"]["configuration"] == "1.0"
@@ -62,4 +65,4 @@ def test_release_readiness_cli_supports_warning_gate(monkeypatch, tmp_path) -> N
     assert normal.exit_code == 0, normal.output
     assert strict.exit_code == 1
     assert '"content_recorded": false' in normal.output
-    assert json.loads(output.read_text(encoding="utf-8"))["release_line"] == "0.21"
+    assert json.loads(output.read_text(encoding="utf-8"))["release_line"] == RELEASE_LINE
