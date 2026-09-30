@@ -472,4 +472,4 @@ loro operations release-readiness --output loro-readiness.json
 
 ## License
 
-MIT
+Apache-2.0. See [LICENSE](LICENSE).
