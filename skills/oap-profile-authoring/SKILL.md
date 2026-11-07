@@ -1,7 +1,7 @@
 ---
 name: oap-profile-authoring
 description: Generate, validate, review, and safely activate portable Open Agent Profile 1.0 specialists.
-license: MIT
+license: Apache-2.0
 compatibility: Requires Loro 0.18 or an OAP 1.0 compatible harness.
 allowed-tools: profile.create
 metadata:

@@ -3,8 +3,9 @@
 Since 0.18.0, Loro depends on `agentic-graph-spec>=1.0.1,<2` for canonical JSON, graph digests,
 specification validation, and the portable run-record schema. CI pins
 `AlexMercedCoder/agentic-graph-spec` commit
-`f180a4dbd07911f90dd0821f531d7ccd51bb0764`, licensed under MIT. The upstream repository is
-<https://github.com/AlexMercedCoder/agentic-graph-spec>.
+`f180a4dbd07911f90dd0821f531d7ccd51bb0764`. AGS code and JSON Schemas are licensed under the
+Apache License 2.0; the specification text is additionally available under CC BY 4.0. The upstream
+repository is <https://github.com/AlexMercedCoder/agentic-graph-spec>.
 
 The JSON Schemas under `schema/` and the schema in the bundled Agentic Graph Skill mirror that
 pinned 1.0.1 revision. `reference_validator.py` retains only the small token expression and finding/error types from

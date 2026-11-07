@@ -1,7 +1,7 @@
 ---
 name: agentic-graph
 description: Author, review, validate, and plan Agentic Graph Specification 1.0 documents.
-license: MIT
+license: Apache-2.0
 compatibility: Requires Loro 0.3 or an AGS 1.0 compatible harness.
 metadata:
   standard: AGS 1.0
