@@ -81,7 +81,8 @@ A gate without an available trusted approver moves the run to `awaiting_human` a
 under `[agraph].state_path`. Resume reloads the original source and refuses a changed canonical
 digest unless `--force` is supplied. `--yes` is accepted only when managed approval configuration
 allows non-interactive approval. Role-restricted gates require the active identity to carry an
-allowed role.
+allowed role; otherwise the gate is `blocked` and the run record gets an `LP013` diagnostic naming
+the required roles and the roles the identity holds.
 
 Before any non-dry run, Loro renders the node and worst-case execution counts and asks the user to
 approve the exact canonical digest. That approval is identity, session, policy, and argument bound

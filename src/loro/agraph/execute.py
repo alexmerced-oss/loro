@@ -62,11 +62,12 @@ class GraphExecutionError(RuntimeError):
 
 
 # Runtime diagnostic codes. RT codes are the AGS 1.0 meanings (SPEC 18.2). The spec defines no
-# runtime code for a permission Loro will not grant, so that uses Loro's own policy family (LP),
-# which never collides with RT codes.
+# runtime code for a permission Loro will not grant or a gate role the active identity lacks, so
+# those use Loro's own policy family (LP), which never collides with RT codes.
 LOOP_MAX_ITERATIONS = "RT021"
 GLOBAL_CONSTRAINT_EXCEEDED = "RT061"
 PERMISSION_NOT_GRANTED = "LP012"
+GATE_ROLE_NOT_HELD = "LP013"
 
 
 # Run records replace sensitive values with a marker: the data-protection pass on the run store
@@ -516,7 +517,7 @@ class GraphExecutor:
             return "failed", {}, {}
         node_type = node.get("type", "task")
         if node_type == "gate":
-            return self._run_gate(node)
+            return self._run_gate(node_id, node)
         if node_type == "decision":
             return self._run_decision(node, scope)
         if node_type in {"loop", "map", "subgraph"}:
@@ -765,11 +766,36 @@ class GraphExecutor:
             return "awaiting_human", outputs, {"attempts": attempts}
         return "failed", outputs, {"attempts": attempts}
 
-    def _run_gate(self, node: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    def _run_gate(
+        self, node_id: str, node: dict[str, Any]
+    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         gate = node["gate"]
         roles = tuple(gate.get("roles", ()))
-        if roles and not set(roles).intersection(resolve_identity(self.config.identity).roles):
-            return "blocked", {}, {}
+        pointer = f"/nodes/{node_id}/gate"
+        if roles:
+            identity = resolve_identity(self.config.identity)
+            if not set(roles).intersection(identity.roles):
+                # Say which roles were required and which the identity holds (role names
+                # only, never credentials), so a blocked gate explains itself.
+                held = ", ".join(identity.roles) if identity.roles else "none"
+                message = (
+                    f"gate {node_id!r} requires one of the roles {', '.join(roles)}; the "
+                    f"active identity (source: {identity.source}) holds roles: {held}. Grant "
+                    "a role with [identity] roles or "
+                    f"{self.config.identity.environment_prefix}ROLES, and check it with "
+                    "`loro identity`."
+                )
+                self.audit.write(
+                    "agraph.node_blocked",
+                    graph_node_id=node_id,
+                    reason=message,
+                    required_roles=list(roles),
+                    identity_roles=list(identity.roles),
+                )
+                self._add_diagnostic(
+                    GATE_ROLE_NOT_HELD, message, node_id=node_id, pointer=f"{pointer}/roles"
+                )
+                return "blocked", {}, {}
         if gate.get("mode") == "notify":
             return (
                 "succeeded",
