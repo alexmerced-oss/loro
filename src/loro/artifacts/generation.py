@@ -54,7 +54,11 @@ ArtifactPayload = Annotated[
     DocumentPayload | PresentationPayload | SpreadsheetPayload | BriefPayload,
     Field(discriminator="kind"),
 ]
-_PAYLOAD_ADAPTER = TypeAdapter(ArtifactPayload)
+# mypy cannot treat an Annotated union alias as a type form for TypeAdapter (it infers
+# type[Never]); pydantic accepts it and validates the discriminated union at run time.
+_PAYLOAD_ADAPTER: TypeAdapter[
+    DocumentPayload | PresentationPayload | SpreadsheetPayload | BriefPayload
+] = TypeAdapter(ArtifactPayload)  # type: ignore[arg-type]
 
 
 def generation_prompt(kind: str, prompt: str, *, brief_type: str | None = None) -> str:

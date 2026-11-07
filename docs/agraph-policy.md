@@ -46,7 +46,7 @@ Loro records them under its own `LP` codes:
 | `LP014` | A gate was not answered before its timeout; the severity follows `on_timeout`. |
 | `LP015` | Policy finding: a gate approves itself on timeout while `allow_approve_on_timeout` is false. |
 
-Before 0.22.1, a denied permission was recorded as `RT021` and an exceeded budget as `RT031`,
+Before 0.23.0, a denied permission was recorded as `RT021` and an exceeded budget as `RT031`,
 which mean something else in AGS 1.0.
 
 ## Command criteria are off by default

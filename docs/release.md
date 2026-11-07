@@ -149,10 +149,10 @@ Release `0.17.0` aligns OAP and AGS with the published 1.0.1 support libraries, 
 OAP documents and state deltas, uses RFC 8785 digests, and pins immutable upstream conformance
 fixtures in CI. See [Loro 0.17.0](releases/0.17.0.md).
 
-Releases `0.18.0` through `0.22.0` are described in their own notes:
+Releases `0.18.0` through `0.23.0` are described in their own notes:
 [0.18.0](releases/0.18.0.md), [0.19.0](releases/0.19.0.md), [0.19.1](releases/0.19.1.md),
-[0.19.2](releases/0.19.2.md), [0.20.0](releases/0.20.0.md), [0.21.0](releases/0.21.0.md) and
-[0.22.0](releases/0.22.0.md).
+[0.19.2](releases/0.19.2.md), [0.20.0](releases/0.20.0.md), [0.21.0](releases/0.21.0.md),
+[0.22.0](releases/0.22.0.md) and [0.23.0](releases/0.23.0.md).
 
 ## Documentation
 
@@ -207,7 +207,7 @@ Tests read the release line from the package version, so the bump needs no test 
 sequence was rehearsed for 0.22.0 in a scratch worktree on 2026-09-27: every check passed and the
 full suite passed at 0.22.0.
 
-Loro 0.22.0 requires `agent-approval-interchange>=0.2.0,<0.3`; a release whose dependency floor
+Loro 0.23.0 requires `agent-approval-interchange>=0.2.0,<0.3`; a release whose dependency floor
 moves must wait until that dependency is on PyPI, or CI and clean installs cannot resolve it.
 
 ## Packaging

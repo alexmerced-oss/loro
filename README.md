@@ -2,7 +2,7 @@
 
 The governed agent harness for data and platform teams: verified identity, tamper-evident audit, lakehouse-native tools.
 
-Current release: Loro `0.22.0` ([release notes](docs/releases/0.22.0.md)).
+Current release: Loro `0.23.0` ([release notes](docs/releases/0.23.0.md)).
 
 Loro is a Python CLI agent harness for enterprise coding, governed data work, and productivity tasks.
 

@@ -1,13 +1,14 @@
 # Loro Roadmap To 1.0
 
-Loro `0.22.0` (released 2026-09-28) is the current release. It focused on multi-turn conversation
-context with compaction, per-run evidence export and the shared AAIS approval store; see the
-[0.22.0 release notes](releases/0.22.0.md). The stable-core and enterprise GA boundaries below
-remain unchanged.
+Loro `0.23.0` (released 2026-11-07) is the current release. It enforces Agentic Graph gate
+timeouts and `on_reject`, records why a gate or permission blocked a node, aligns runtime
+diagnostic codes with AGS 1.0, lets managed configuration outrank `--allow-unknown-executors`, and
+corrects license metadata; see the [0.23.0 release notes](releases/0.23.0.md). The stable-core and
+enterprise GA boundaries below remain unchanged.
 
 ## Purpose
 
-This is the single authoritative roadmap for work remaining after Loro `0.22.0`. It records the
+This is the single authoritative roadmap for work remaining after Loro `0.23.0`. It records the
 experimental Open Agent Profile releases and the path to the first stable `1.0` release. Completed
 milestones belong in release notes; implementation proof belongs in the
 [Enterprise Evidence Register](enterprise-evidence.md).
@@ -18,7 +19,7 @@ may ship between these milestones.
 
 ## Current Baseline
 
-Loro `0.22.0` preserves the 0.10 stable-core baseline; releases 0.18 through 0.22 are summarized
+Loro `0.23.0` preserves the 0.10 stable-core baseline; releases 0.18 through 0.23 are summarized
 in the milestone table below. As of `0.17.0`, Loro includes the
 Level 3 OAP harness delivered provisionally in 0.12 and aligned to the published specification in
 0.17, the interactive workflows introduced in 0.13, the
@@ -105,6 +106,7 @@ available for evaluation.
 | `0.20` | Released | WebMCP becomes a governed capability in the CLI and Web UI, with exact-origin allowlists. |
 | `0.21` | Released | Durable cross-client approvals, capability readiness reporting, and explicit graph recovery. |
 | `0.22` | Released | Multi-turn conversation context with compaction, per-run evidence export, and lenient type checking. |
+| `0.23` | Released | Enforced AGS gate timeouts and `on_reject`, gate and permission diagnostics, spec-aligned runtime codes, managed precedence over `--allow-unknown-executors`, and Apache-2.0 license metadata. |
 | `1.0` | Next | Approved stable contracts, ownership, evidence, and public release artifacts are complete. |
 
 ## 0.11: Open Agent Profile
