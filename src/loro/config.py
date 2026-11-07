@@ -985,6 +985,9 @@ class AGraphConfig(BaseModel):
     # Node executor extensions (for example MagAgent's `x-magagent-executor`) that Loro does not
     # implement are refused; true runs those nodes as ordinary model tasks with a warning.
     allow_unknown_executors: bool = False
+    # A gate whose `on_timeout` is `approve` passes without a human decision (AGS SPEC 22 says
+    # policy SHOULD disallow it); false refuses such graphs with LP015.
+    allow_approve_on_timeout: bool = False
     allow_external_criteria: bool = False
     external_criteria: list[str] = Field(default_factory=list)
     allow_external_subgraph_refs: bool = False

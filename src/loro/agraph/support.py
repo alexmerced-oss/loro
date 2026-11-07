@@ -20,9 +20,6 @@ __all__ = ["UNSUPPORTED_FIELDS", "unsupported_feature_findings"]
 UNSUPPORTED_FIELDS: tuple[tuple[str, str], ...] = (
     ("policy.on_expression_error", "expression-error policy is not applied at run time"),
     ("map.max_parallel", "map fan-out runs under the graph-wide parallel limit instead"),
-    ("gate.timeout_seconds", "gate timeouts are not enforced"),
-    ("gate.on_timeout", "gate timeout handling is not applied"),
-    ("gate.on_reject", "gate rejection handling is not applied"),
     ("success.evaluation_order", "criteria are evaluated in declaration order"),
     ("failure.escalation", "escalation routing is not performed"),
 )
@@ -55,6 +52,19 @@ def unsupported_feature_findings(document: dict[str, Any]) -> list[Finding]:
                         f"{pointer_base}/{path.replace('.', '/')}",
                     )
                 )
+        gate = node.get("gate")
+        if isinstance(gate, dict) and gate.get("on_timeout") == "escalate":
+            # Gate timeouts are enforced; escalation routing is not, so a timed-out gate
+            # with on_timeout: escalate fails closed instead.
+            findings.append(
+                Finding(
+                    "AG901",
+                    "info",
+                    "gate.on_timeout: escalate is accepted but escalation routing is not "
+                    "performed by this harness: a timed-out gate fails instead.",
+                    f"{pointer_base}/gate/on_timeout",
+                )
+            )
         for index, criterion in _criteria(node):
             if not isinstance(criterion, dict) or "timeout_seconds" not in criterion:
                 continue

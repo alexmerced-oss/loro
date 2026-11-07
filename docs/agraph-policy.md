@@ -18,6 +18,7 @@ max_tier = "advanced"
 max_parallel_nodes = 4
 allow_command_criteria = false
 allow_unknown_executors = false
+allow_approve_on_timeout = false
 allow_external_criteria = false
 allow_external_subgraph_refs = false
 require_integrity_for_refs = true
@@ -27,7 +28,7 @@ required_criteria_kinds = ["file_exists", "expression", "json_schema"]
 allow_generation = true
 ```
 
-Loro policy diagnostics use `LP001` through `LP013`; unsupported conformance uses `AG303` and
+Loro policy diagnostics use `LP001` through `LP015`; unsupported conformance uses `AG303` and
 routing refusal uses `RT011`. `loro graph policy explain FILE` reports exact JSON pointers before
 execution. The canonical graph digest binds resume to reviewed content.
 
@@ -42,6 +43,8 @@ Loro records them under its own `LP` codes:
 | --- | --- |
 | `LP012` | A node's `requirements.permissions` entry is not granted by Loro's permission policy. The message names the deciding setting, for example `permissions.edit = 'ask'`. Every `fs:` permission, reads included, is checked against `permissions.edit`. |
 | `LP013` | A gate's `roles` do not include any role of the active identity. The message names the required roles and the roles the identity holds (role names only). |
+| `LP014` | A gate was not answered before its timeout; the severity follows `on_timeout`. |
+| `LP015` | Policy finding: a gate approves itself on timeout while `allow_approve_on_timeout` is false. |
 
 Before 0.22.1, a denied permission was recorded as `RT021` and an exceeded budget as `RT031`,
 which mean something else in AGS 1.0.
@@ -95,6 +98,13 @@ allow_unknown_executors = true
 When managed configuration sets `allow_unknown_executors` (to either value), the managed value
 wins: `--allow-unknown-executors` cannot enable what an administrator disabled, and Loro prints a
 warning that the flag was ignored.
+
+## Gate timeouts
+
+Gate `timeout_seconds`, `on_timeout` and `on_reject` are enforced; see
+[Gates And Resume](agentic-graphs.md#gates-and-resume). `on_timeout: approve` passes a gate
+without a human decision, which AGS says policy SHOULD disallow, so Loro refuses such graphs with
+`LP015` unless `allow_approve_on_timeout = true`.
 
 ## Model tiers
 

@@ -84,6 +84,24 @@ allows non-interactive approval. Role-restricted gates require the active identi
 allowed role; otherwise the gate is `blocked` and the run record gets an `LP013` diagnostic naming
 the required roles and the roles the identity holds.
 
+Gate timeouts are enforced. `timeout_seconds` falls back to `policy.default_human_timeout_seconds`
+and `on_timeout` to `policy.on_human_timeout` (default `hold`). The wait starts when the gate is
+first reached (the gate's `started_at` in the run record) and continues across pause and resume.
+A live approver (the Web UI, or an embedding application's gate provider) is given only the time
+that remains. Loro has no background scheduler, so a paused gate's deadline is checked when the
+run is resumed. After the deadline:
+
+- `fail`: the gate fails, records a `timed_out` human event and an `LP014` error.
+- `hold`: the gate keeps waiting (`awaiting_human`), and an approver who arrives later can still
+  answer it.
+- `escalate`: Loro has no escalation routing, so the gate fails closed (validation reports this as
+  `AG901`).
+- `approve`: refused by policy (`LP015`) unless `[agraph] allow_approve_on_timeout = true`.
+
+`on_reject` is applied: `fail` (default) fails the gate, `skip_dependents` marks it `skipped` so
+its dependents are skipped, and `route` marks it `succeeded` with `outputs.decision` set to
+`rejected` for conditional edges to choose the path.
+
 Before any non-dry run, Loro renders the node and worst-case execution counts and asks the user to
 approve the exact canonical digest. That approval is identity, session, policy, and argument bound
 through `ApprovalManager`; changing the document voids it. `--remember-outcome` never writes shared

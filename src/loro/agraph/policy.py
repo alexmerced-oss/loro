@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,28 @@ class PolicyFinding:
     message: str
     pointer: str
     severity: str = "error"
+
+
+def gate_timeout_policy(
+    gate: Mapping[str, Any], graph: Mapping[str, Any]
+) -> tuple[float | None, str]:
+    """A gate's effective timeout and `on_timeout` (SPEC 5.5 and 15).
+
+    `timeout_seconds` falls back to `policy.default_human_timeout_seconds`, and `on_timeout` to
+    `policy.on_human_timeout`, whose default is `hold`.
+    """
+
+    declared = graph.get("policy")
+    policy: Mapping[str, Any] = declared if isinstance(declared, Mapping) else {}
+    timeout = gate.get("timeout_seconds")
+    if timeout is None:
+        timeout = policy.get("default_human_timeout_seconds")
+    on_timeout = gate.get("on_timeout") or policy.get("on_human_timeout") or "hold"
+    try:
+        seconds = float(timeout) if timeout is not None else None
+    except (TypeError, ValueError):
+        seconds = None
+    return seconds, str(on_timeout)
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -111,6 +134,25 @@ def evaluate_policy(document: dict[str, Any], config: AGraphConfig) -> tuple[Pol
                         f"{pointer}/{key}",
                     )
                 )
+        gate = node.get("gate")
+        if (
+            node.get("type") == "gate"
+            and isinstance(gate, Mapping)
+            and gate.get("mode") != "notify"
+            and gate_timeout_policy(gate, document)[1] == "approve"
+            and not config.allow_approve_on_timeout
+        ):
+            # SPEC 22: approving on timeout defeats the checkpoint and SHOULD be disallowed
+            # by policy for anything but notify.
+            findings.append(
+                PolicyFinding(
+                    "LP015",
+                    f"gate {node_id!r} approves itself when it times out (on_timeout: "
+                    "approve), which is disabled; an administrator can allow it with [agraph] "
+                    "allow_approve_on_timeout = true",
+                    f"{pointer}/gate/on_timeout",
+                )
+            )
         tier = ((node.get("intelligence") or {}).get("tier")) or "standard"
         if tier not in TIER_RANK:
             findings.append(

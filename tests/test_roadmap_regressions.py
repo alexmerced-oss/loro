@@ -636,7 +636,10 @@ def test_unsupported_ags_fields_are_reported_at_load() -> None:
     )
 
     assert {finding.code for finding in findings} == {"AG901"}
-    assert len(findings) == 4
+    # Gate timeouts and on_timeout: fail are enforced now, so only the two criteria
+    # fields are reported.
+    assert len(findings) == 2
+    assert not any("/gate/" in finding.pointer for finding in findings)
 
 
 def test_resuming_a_dry_run_plan_is_refused(tmp_path, monkeypatch) -> None:

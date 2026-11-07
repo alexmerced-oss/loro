@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from time import monotonic
 from typing import Any, Protocol
 from uuid import uuid4
@@ -22,7 +24,7 @@ from loro.agraph.document import GraphDocument, graph_digest, load_graph
 from loro.agraph.expressions import evaluate, interpolate
 from loro.agraph.mapping import missing_tools, permission_resource
 from loro.agraph.plan import topological_order
-from loro.agraph.policy import evaluate_policy
+from loro.agraph.policy import evaluate_policy, gate_timeout_policy
 from loro.agraph.record import aggregate_usage, validate_run_record
 from loro.agraph.routing import RoutingError, route_model
 from loro.agraph.schedule import ready_nodes
@@ -61,13 +63,22 @@ class GraphExecutionError(RuntimeError):
     pass
 
 
+class GateTimeoutError(RuntimeError):
+    """Raised by a gate provider whose approver did not answer in time.
+
+    The executor then applies the gate's `on_timeout` instead of treating silence as a
+    rejection.
+    """
+
+
 # Runtime diagnostic codes. RT codes are the AGS 1.0 meanings (SPEC 18.2). The spec defines no
-# runtime code for a permission Loro will not grant or a gate role the active identity lacks, so
-# those use Loro's own policy family (LP), which never collides with RT codes.
+# runtime code for a permission Loro will not grant, a gate role the active identity lacks, or a
+# gate timeout, so those use Loro's own policy family (LP), which never collides with RT codes.
 LOOP_MAX_ITERATIONS = "RT021"
 GLOBAL_CONSTRAINT_EXCEEDED = "RT061"
 PERMISSION_NOT_GRANTED = "LP012"
 GATE_ROLE_NOT_HELD = "LP013"
+GATE_TIMED_OUT = "LP014"
 
 
 # Run records replace sensitive values with a marker: the data-protection pass on the run store
@@ -95,6 +106,38 @@ def _policy_warnings(findings: Any) -> list[dict[str, Any]]:
         for item in findings
         if item.severity == "warning"
     ]
+
+
+def _accepts_timeout(provider: Callable[..., Any]) -> bool:
+    """Whether a gate provider takes a ``timeout_seconds`` keyword and enforces it itself."""
+
+    try:
+        parameters = inspect.signature(provider).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        item.name == "timeout_seconds" or item.kind is inspect.Parameter.VAR_KEYWORD
+        for item in parameters
+    )
+
+
+def _timeout_as_no(provider: GateProvider | None) -> GateProvider | None:
+    """Wrap a gate provider for checkpoints and human criteria, where a timeout means "no".
+
+    Only gate nodes apply `on_timeout`; elsewhere a provider's `GateTimeoutError` keeps the
+    earlier behavior of an unanswered prompt.
+    """
+
+    if provider is None:
+        return None
+
+    def ask(prompt: str, roles: tuple[str, ...]) -> GateResponse:
+        try:
+            return provider(prompt, roles)
+        except GateTimeoutError:
+            return False
+
+    return ask
 
 
 def redacted_param_names(
@@ -151,7 +194,7 @@ class GraphExecutor:
         self.criteria = CriteriaEvaluator(
             config,
             workspace=self.workspace,
-            human=gate_provider,
+            human=_timeout_as_no(gate_provider),
             external=external_checkers,
         )
         # Built once per executor rather than per node execution: both read immutable
@@ -423,6 +466,13 @@ class GraphExecutor:
         states = {node_id: value["status"] for node_id, value in record["nodes"].items()}
         while True:
             candidates = ready_nodes(graph, states, scope)
+            # ready_nodes marks unreachable nodes skipped (SPEC 17.6) in `states` and the
+            # scope only; without this the run record kept them `pending`, for example the
+            # dependents of a gate rejected with on_reject: skip_dependents.
+            for skipped_id, status in states.items():
+                node_record = record["nodes"].get(skipped_id)
+                if status == "skipped" and node_record and node_record["status"] == "pending":
+                    node_record.update({"status": "skipped", "outputs": {}})
             if not candidates:
                 break
             runnable: list[str] = []
@@ -517,7 +567,7 @@ class GraphExecutor:
             return "failed", {}, {}
         node_type = node.get("type", "task")
         if node_type == "gate":
-            return self._run_gate(node_id, node)
+            return self._run_gate(node_id, node, graph)
         if node_type == "decision":
             return self._run_decision(node, scope)
         if node_type in {"loop", "map", "subgraph"}:
@@ -558,10 +608,9 @@ class GraphExecutor:
                         result[1],
                         {**result[2], "fallback_used": "relax_criteria"},
                     )
-            if strategy == "human_takeover" and self.gate_provider is not None:
-                approved = self.gate_provider(
-                    str(fallback.get("description", "Approve human takeover?")), ()
-                )
+            takeover = _timeout_as_no(self.gate_provider)
+            if strategy == "human_takeover" and takeover is not None:
+                approved = takeover(str(fallback.get("description", "Approve human takeover?")), ())
                 if approved:
                     return (
                         "succeeded",
@@ -767,7 +816,7 @@ class GraphExecutor:
         return "failed", outputs, {"attempts": attempts}
 
     def _run_gate(
-        self, node_id: str, node: dict[str, Any]
+        self, node_id: str, node: dict[str, Any], graph: Mapping[str, Any]
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         gate = node["gate"]
         roles = tuple(gate.get("roles", ()))
@@ -811,44 +860,180 @@ class GraphExecutor:
                     ]
                 },
             )
+        prompt = str(gate.get("prompt") or node["description"])
+        timeout, on_timeout = gate_timeout_policy(gate, graph)
+        # The wait starts when the gate is first reached and survives pause and resume, so a
+        # timeout bounds the whole wait, not each attempt to answer it.
+        timing: dict[str, Any] = {"started_at": self._gate_started_at(node_id)}
+        remaining: float | None = None
+        if timeout is not None:
+            started = datetime.fromisoformat(timing["started_at"])
+            remaining = float(timeout) - (datetime.now(UTC) - started).total_seconds()
+        expired = remaining is not None and remaining <= 0
+        # `hold` keeps waiting after the deadline (SPEC 15), so an approver who arrives later,
+        # for example on resume, can still answer.
+        if expired and on_timeout != "hold":
+            return self._gate_timed_out(node_id, gate, timeout, on_timeout, timing)
         if self.gate_provider is None:
-            return "awaiting_human", {}, {}
-        response = self.gate_provider(str(gate.get("prompt") or node["description"]), roles)
+            return "awaiting_human", {}, timing
+        try:
+            response = self._ask_gate(prompt, roles, None if expired else remaining)
+        except GateTimeoutError:
+            return self._gate_timed_out(node_id, gate, timeout, on_timeout, timing)
         collected = dict(response) if isinstance(response, Mapping) else {}
         if gate.get("mode") == "input":
             for name, spec in gate.get("collect", {}).items():
                 if name not in collected and "default" in spec:
                     collected[name] = spec["default"]
                 if name not in collected and spec.get("required", True):
-                    return "awaiting_human", {}, {}
+                    return "awaiting_human", {}, timing
                 if name in collected and not _matches_type(collected[name], str(spec["type"])):
-                    return "failed", {}, {}
+                    return "failed", {}, timing
         approved = bool(response)
         if approved:
             self._consume_approval(
                 action="agraph.gate",
                 target=str(node.get("title", "gate")),
-                arguments={"prompt": str(gate.get("prompt") or node["description"])},
+                arguments={"prompt": prompt},
                 approved=True,
                 non_interactive=True,
             )
         outcome = "approved" if approved else "rejected"
         self.audit.write("agraph.gate_decided", outcome=outcome, roles=list(roles))
-        return (
-            ("succeeded" if approved else "failed"),
-            {"decision": outcome, **collected},
-            {
-                "decision": outcome,
-                "human_events": [
-                    {
-                        "at_stage": "gate",
-                        "mode": gate["mode"],
-                        "outcome": outcome,
-                        "at": _now(),
-                    }
-                ],
-            },
+        details = {
+            **timing,
+            "finished_at": _now(),
+            "decision": outcome,
+            "human_events": [
+                {
+                    "at_stage": "gate",
+                    "mode": gate["mode"],
+                    "outcome": outcome,
+                    "at": _now(),
+                }
+            ],
+        }
+        outputs = {"decision": outcome, **collected}
+        if approved:
+            return "succeeded", outputs, details
+        on_reject = str(gate.get("on_reject", "fail"))
+        if on_reject == "skip_dependents":
+            # Skipped, so normal skip propagation (SPEC 17.6) skips the dependents.
+            return (
+                "skipped",
+                outputs,
+                {**details, "skip_reason": "gate rejected (on_reject: skip_dependents)"},
+            )
+        if on_reject == "route":
+            # Outgoing conditional edges choose the path from outputs.decision.
+            return "succeeded", outputs, details
+        return "failed", outputs, details
+
+    def _gate_started_at(self, node_id: str) -> str:
+        """When this gate first started waiting, from the run record, or now."""
+
+        nodes = (self._active_record or {}).get("nodes")
+        existing = nodes.get(node_id) if isinstance(nodes, dict) else None
+        if isinstance(existing, dict) and existing.get("type") == "gate":
+            started = existing.get("started_at")
+            if isinstance(started, str) and started:
+                return started
+        return _now()
+
+    def _ask_gate(self, prompt: str, roles: tuple[str, ...], timeout: float | None) -> GateResponse:
+        """Ask the gate provider, giving up after ``timeout`` seconds.
+
+        A provider that accepts ``timeout_seconds`` enforces it itself and raises
+        `GateTimeoutError`; any other provider is waited on from a daemon thread, so a provider
+        that never returns cannot hold the run past the gate's deadline.
+        """
+
+        provider = self.gate_provider
+        assert provider is not None
+        if timeout is None:
+            return provider(prompt, roles)
+        if _accepts_timeout(provider):
+            return provider(prompt, roles, timeout_seconds=timeout)  # type: ignore[call-arg]
+        outcome: dict[str, Any] = {}
+        done = Event()
+
+        def ask() -> None:
+            try:
+                outcome["response"] = provider(prompt, roles)
+            except BaseException as error:  # noqa: BLE001 - re-raised in the caller
+                outcome["error"] = error
+            finally:
+                done.set()
+
+        Thread(target=ask, name="loro-gate-provider", daemon=True).start()
+        if not done.wait(timeout):
+            raise GateTimeoutError(f"gate was not answered within {timeout:.0f}s")
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["response"]
+
+    def _gate_timed_out(
+        self,
+        node_id: str,
+        gate: Mapping[str, Any],
+        timeout: float | None,
+        on_timeout: str,
+        timing: dict[str, Any],
+    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Apply `on_timeout` to a gate nobody answered in time (SPEC 7.3, 15)."""
+
+        self.audit.write(
+            "agraph.gate_timed_out",
+            graph_node_id=node_id,
+            timeout_seconds=timeout,
+            on_timeout=on_timeout,
         )
+        event = {
+            "at_stage": "gate",
+            "mode": str(gate.get("mode", "approve")),
+            "outcome": "timed_out",
+            "at": _now(),
+        }
+        pointer = f"/nodes/{node_id}/gate/on_timeout"
+        waited = f"gate {node_id!r} was not answered" + (
+            f" within {timeout:g}s" if timeout is not None else " before the approver gave up"
+        )
+        if on_timeout == "hold":
+            self._add_diagnostic(
+                GATE_TIMED_OUT,
+                f"{waited}; on_timeout: hold keeps it awaiting a decision, so resume the run "
+                "to answer it",
+                severity="info",
+                node_id=node_id,
+                pointer=pointer,
+            )
+            return "awaiting_human", {}, {**timing, "human_events": [event]}
+        finished = {**timing, "finished_at": _now(), "human_events": [event]}
+        if on_timeout == "approve" and self.config.agraph.allow_approve_on_timeout:
+            # Policy refuses top-level gates with LP015 unless this is allowed; checking again
+            # here also covers gates inside loop, map and subgraph bodies.
+            self._add_diagnostic(
+                GATE_TIMED_OUT,
+                f"{waited}; on_timeout: approve approved it without a human decision",
+                severity="warning",
+                node_id=node_id,
+                pointer=pointer,
+            )
+            return "succeeded", {"decision": "approved"}, {**finished, "decision": "approved"}
+        if on_timeout == "escalate":
+            message = (
+                f"{waited}; on_timeout: escalate is not performed by Loro (it has no "
+                "escalation routing), so the gate fails closed"
+            )
+        elif on_timeout == "approve":
+            message = (
+                f"{waited}; on_timeout: approve is disabled by [agraph] "
+                "allow_approve_on_timeout, so the gate fails closed"
+            )
+        else:
+            message = f"{waited}; on_timeout: fail"
+        self._add_diagnostic(GATE_TIMED_OUT, message, node_id=node_id, pointer=pointer)
+        return "failed", {}, finished
 
     def _run_decision(
         self, node: dict[str, Any], scope: dict[str, Any]
@@ -1178,7 +1363,8 @@ class GraphExecutor:
                 continue
             if checkpoint.get("mode") == "notify":
                 continue
-            if self.gate_provider is None or not self.gate_provider(
+            ask = _timeout_as_no(self.gate_provider)
+            if ask is None or not ask(
                 str(checkpoint.get("prompt", "Approve?")), tuple(checkpoint.get("roles", ()))
             ):
                 return False

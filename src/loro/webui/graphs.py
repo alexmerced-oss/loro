@@ -481,14 +481,20 @@ class GraphService:
             handle.publish("run.failed", error=handle.error)
             return
         try:
-            from loro.agraph.execute import GraphExecutor
+            from loro.agraph.execute import GateTimeoutError, GraphExecutor
 
             config = load_config(self.project_root)
             path = confined_path(self.project_root, raw_path)
             approval_lock = threading.RLock()
 
-            def gate_provider(prompt: str, roles: Any) -> bool:
-                """Block the run on a browser decision instead of auto-approving."""
+            def gate_provider(
+                prompt: str, roles: Any, timeout_seconds: float | None = None
+            ) -> bool:
+                """Block the run on a browser decision instead of auto-approving.
+
+                The executor passes the gate's remaining `timeout_seconds`; silence is a
+                timeout (the gate's `on_timeout` applies), never a rejection.
+                """
                 # The UI intentionally presents one exact decision at a time.
                 # Serialising both human gates and tool approvals prevents a
                 # parallel graph card from replacing another pending prompt.
@@ -506,10 +512,11 @@ class GraphService:
                         roles=request.roles,
                     )
                     # A gate that is never answered must not pin a worker forever.
-                    if not request.decided.wait(timeout=1800):
+                    wait = 1800.0 if timeout_seconds is None else min(1800.0, timeout_seconds)
+                    if not request.decided.wait(timeout=wait):
                         handle.publish("gate.timeout", request_id=request.request_id)
                         handle.gate = None
-                        return False
+                        raise GateTimeoutError("the browser gate was not answered in time")
                     handle.publish(
                         "gate.resolved",
                         request_id=request.request_id,

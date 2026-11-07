@@ -63,14 +63,7 @@
     "ok": "bool"
   },
   "loro graph plan --json": {
-    "findings": [
-      {
-        "code": "str",
-        "message": "str",
-        "pointer": "str",
-        "severity": "str"
-      }
-    ],
+    "findings": [],
     "ok": "bool",
     "path": "str",
     "policy_findings": [
