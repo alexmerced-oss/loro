@@ -16,7 +16,7 @@ from loro.agraph.plan import build_plan
 from loro.agraph.policy import evaluate_policy
 from loro.agraph.store import GraphRunStore
 from loro.agraph.validate import validate_graph
-from loro.config import load_config
+from loro.config import load_config, managed_sets
 from loro.data_protection import DataProtectionEngine
 from loro.memory.proposals import MemoryProposal, MemoryProposalStore
 from loro.runtime import AgentRuntime
@@ -38,11 +38,24 @@ stderr = Console(stderr=True)
 
 
 def _graph_config(allow_unknown_executors: bool = False):
-    """Loaded config, with unknown executor extensions allowed when the flag asks for it."""
+    """Loaded config, with unknown executor extensions allowed when the flag asks for it.
+
+    Managed configuration outranks the flag: when an administrator sets
+    `[agraph] allow_unknown_executors`, that value stands and the flag is ignored with a warning.
+    """
 
     config = load_config()
     if allow_unknown_executors:
-        config.agraph = config.agraph.model_copy(update={"allow_unknown_executors": True})
+        if managed_sets("agraph", "allow_unknown_executors"):
+            if not config.agraph.allow_unknown_executors:
+                stderr.print(
+                    "Warning: --allow-unknown-executors is ignored because managed "
+                    "configuration sets [agraph] allow_unknown_executors = false",
+                    markup=False,
+                    soft_wrap=True,
+                )
+        else:
+            config.agraph = config.agraph.model_copy(update={"allow_unknown_executors": True})
     return config
 
 

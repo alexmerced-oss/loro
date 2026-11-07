@@ -1302,6 +1302,17 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
     env_content = os.environ.get("LORO_CONFIG_CONTENT")
     if env_content:
         data = _merge(data, tomllib.loads(env_content))
+    data = _merge(data, managed_config_data())
+    return LoroConfig.model_validate(migrate_config_data(data))
+
+
+def managed_config_data() -> dict[str, Any]:
+    """The merged, verified managed (administrator) configuration as raw TOML data.
+
+    Managed configuration is applied after every other layer. Runtime overrides such as CLI
+    flags use this to tell whether an administrator set a key, so they cannot outrank it.
+    """
+
     managed_sources: list[tuple[str, bytes]] = []
     for path in managed_config_paths():
         if path.exists():
@@ -1325,8 +1336,14 @@ def load_config(project_root: Path | None = None) -> LoroConfig:
         except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ManagedConfigIntegrityError(f"Invalid managed config: {label}") from error
         managed_data = _merge(managed_data, parsed)
-    data = _merge(data, managed_data)
-    return LoroConfig.model_validate(migrate_config_data(data))
+    return managed_data
+
+
+def managed_sets(section: str, key: str) -> bool:
+    """Whether managed configuration sets ``[section] key`` (to any value)."""
+
+    table = managed_config_data().get(section)
+    return isinstance(table, dict) and key in table
 
 
 def config_digest(config: LoroConfig) -> str:

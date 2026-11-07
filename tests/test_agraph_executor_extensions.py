@@ -131,3 +131,36 @@ def test_cli_run_prints_the_warning_when_allowed(tmp_path, monkeypatch) -> None:
     assert "Warning LP011" in result.output
     refused = CliRunner().invoke(app, ["graph", "run", str(_graph(tmp_path)), "--dry-run"])
     assert refused.exit_code == 2 and "LP011" in refused.output
+
+
+def test_managed_config_outranks_the_allow_unknown_executors_flag(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LORO_CONFIG_CONTENT", f'[agraph]\nstate_path = "{tmp_path / "runs"}"')
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_CONTENT", "[agraph]\nallow_unknown_executors = false\n")
+    runner = CliRunner()
+    graph = str(_graph(tmp_path))
+    for command in (
+        ["graph", "validate", graph, "--allow-unknown-executors"],
+        ["graph", "plan", graph, "--json", "--allow-unknown-executors"],
+        ["graph", "policy", "explain", graph, "--allow-unknown-executors"],
+    ):
+        refused = runner.invoke(app, command)
+        assert refused.exit_code == 1, (command, refused.output)
+        assert "x-magagent-executor" in refused.output
+        assert "managed configuration sets [agraph] allow_unknown_executors = false" in (
+            refused.output
+        )
+    run = runner.invoke(app, ["graph", "run", graph, "--dry-run", "--allow-unknown-executors"])
+    assert run.exit_code == 2 and "LP011" in run.output
+
+
+def test_managed_true_allows_without_the_flag_and_flag_works_without_managed(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORO_CONFIG_CONTENT", f'[agraph]\nstate_path = "{tmp_path / "runs"}"')
+    graph = str(_graph(tmp_path))
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_CONTENT", "[agraph]\nallow_unknown_executors = true\n")
+    assert CliRunner().invoke(app, ["graph", "validate", graph]).exit_code == 0
+    # Managed config that does not set the key leaves the flag in charge.
+    monkeypatch.setenv("LORO_MANAGED_CONFIG_CONTENT", "[agraph]\nmax_nodes = 50\n")
+    allowed = CliRunner().invoke(app, ["graph", "validate", graph, "--allow-unknown-executors"])
+    assert allowed.exit_code == 0, allowed.output

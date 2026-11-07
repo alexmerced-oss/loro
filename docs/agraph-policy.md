@@ -77,6 +77,10 @@ allow_unknown_executors = true
 `LP011` then becomes a warning, printed before the run and kept in the run record's
 `diagnostics`. `loro graph validate --strict` still fails on it.
 
+When managed configuration sets `allow_unknown_executors` (to either value), the managed value
+wins: `--allow-unknown-executors` cannot enable what an administrator disabled, and Loro prints a
+warning that the flag was ignored.
+
 ## Model tiers
 
 Model tiers are configured under `[model.tiers]`:
