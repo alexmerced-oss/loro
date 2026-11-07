@@ -27,9 +27,23 @@ required_criteria_kinds = ["file_exists", "expression", "json_schema"]
 allow_generation = true
 ```
 
-Loro policy diagnostics use `LP001` through `LP011`; unsupported conformance uses `AG303` and
+Loro policy diagnostics use `LP001` through `LP012`; unsupported conformance uses `AG303` and
 routing refusal uses `RT011`. `loro graph policy explain FILE` reports exact JSON pointers before
 execution. The canonical graph digest binds resume to reviewed content.
+
+## Runtime diagnostics
+
+`RT` codes in a run record's `diagnostics` keep their AGS 1.0 meaning (SPEC 18.2): `RT011` for an
+unsatisfiable tier, `RT021` for a loop that hit `max_iterations`, and `RT061` for an exceeded
+global constraint (cost, tokens or wall clock). AGS defines no runtime code for the following, so
+Loro records them under its own `LP` codes:
+
+| Code | Recorded when |
+| --- | --- |
+| `LP012` | A node's `requirements.permissions` entry is not granted by Loro's permission policy. The message names the deciding setting, for example `permissions.edit = 'ask'`. Every `fs:` permission, reads included, is checked against `permissions.edit`. |
+
+Before 0.22.1, a denied permission was recorded as `RT021` and an exceeded budget as `RT031`,
+which mean something else in AGS 1.0.
 
 ## Command criteria are off by default
 

@@ -638,7 +638,8 @@ def test_fallback_and_global_budget_failure(tmp_path: Path) -> None:
         config, workspace=tmp_path, runtime_factory=lambda _config: FakeRuntime()
     ).run(path, plan_approved=True)
     assert record["status"] == "failed"
-    assert record["diagnostics"][0]["code"] == "RT031"
+    # AGS 1.0 uses RT061 for an exceeded global constraint (RT031 is an output type failure).
+    assert record["diagnostics"][0]["code"] == "RT061"
 
 
 def test_recovery_refuses_uncertain_node_without_explicit_review(tmp_path):

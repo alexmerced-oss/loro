@@ -61,6 +61,14 @@ class GraphExecutionError(RuntimeError):
     pass
 
 
+# Runtime diagnostic codes. RT codes are the AGS 1.0 meanings (SPEC 18.2). The spec defines no
+# runtime code for a permission Loro will not grant, so that uses Loro's own policy family (LP),
+# which never collides with RT codes.
+LOOP_MAX_ITERATIONS = "RT021"
+GLOBAL_CONSTRAINT_EXCEEDED = "RT061"
+PERMISSION_NOT_GRANTED = "LP012"
+
+
 # Run records replace sensitive values with a marker: the data-protection pass on the run store
 # (``safety.redaction_text``, whole values or a token inside a longer string) and params declared
 # ``redact: true``. MagAgent writes ``[REDACTED]``. A resumed run must never receive a marker in
@@ -617,16 +625,19 @@ class GraphExecutor:
                     reason=str(error),
                     permission=str(permission),
                 )
-                record = self._active_record
-                if record is not None and isinstance(record.get("diagnostics"), list):
-                    record["diagnostics"].append(
-                        {
-                            "code": "RT021",
-                            "severity": "error",
-                            "message": f"permission {permission!r} is not granted: {error}",
-                            "node_id": node_id,
-                        }
-                    )
+                # AGS 1.0 defines no runtime code for a permission the harness will not
+                # grant (RT021 means a loop hit max_iterations), so this is Loro's own
+                # policy code. Name the policy that decided, so the fix is discoverable.
+                decision = self.permissions.evaluate(
+                    PermissionRequest(tool=tool, action=action, target=target)
+                )
+                self._add_diagnostic(
+                    PERMISSION_NOT_GRANTED,
+                    f"permission {permission!r} is not granted: {error} "
+                    f"(decided by {decision.policy_source} = {decision.decision!r})",
+                    node_id=node_id,
+                    pointer=f"/nodes/{node_id}/requirements/permissions",
+                )
                 return "blocked", {}, {}
         node_scope = deepcopy(scope)
         node_scope["env"] = {
@@ -958,8 +969,17 @@ class GraphExecutor:
             if block["mode"] == "until" and bool(evaluate(str(block["condition"]), child_scope)):
                 condition_reached = True
                 break
-        if not condition_reached and block.get("on_max_iterations", "fail") == "fail":
-            return "failed", {}, {"iterations": consumed + len(iterations)}
+        if not condition_reached:
+            on_max = block.get("on_max_iterations", "fail")
+            self._add_diagnostic(
+                LOOP_MAX_ITERATIONS,
+                f"loop {node_id!r} hit max_iterations={maximum} (on_max_iterations: {on_max})",
+                severity="error" if on_max == "fail" else "warning",
+                node_id=node_id,
+                pointer=f"/nodes/{node_id}/loop/max_iterations",
+            )
+            if on_max == "fail":
+                return "failed", {}, {"iterations": consumed + len(iterations)}
         outputs = (
             {
                 name: evaluate(str(expr), child_scope)
@@ -1217,14 +1237,37 @@ class GraphExecutor:
             exceeded = True
         if exceeded:
             self._budget_failed = True
+            # RT031 is an output type failure in AGS 1.0; a global constraint is RT061.
             record["diagnostics"].append(
                 {
-                    "code": "RT031",
+                    "code": GLOBAL_CONSTRAINT_EXCEEDED,
                     "severity": "error",
                     "message": "graph execution budget exceeded",
                 }
             )
         return exceeded
+
+    def _add_diagnostic(
+        self,
+        code: str,
+        message: str,
+        *,
+        severity: str = "error",
+        node_id: str | None = None,
+        pointer: str | None = None,
+    ) -> None:
+        """Append a diagnostic to the active run record (no-op outside a run)."""
+
+        record = self._active_record
+        if record is None or not isinstance(record.get("diagnostics"), list):
+            return
+        entry: dict[str, Any] = {"code": code, "severity": severity, "message": message}
+        if node_id:
+            entry["node_id"] = node_id
+        if pointer:
+            entry["pointer"] = pointer
+        entry["at"] = _now()
+        record["diagnostics"].append(entry)
 
     def _record_diagnostic(self, node_id: str, error: RoutingError) -> None:
         """Record a node-level routing failure on the run record and the audit chain."""
